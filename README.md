@@ -39,7 +39,7 @@ After a few days, the voting period is over, and David checks the results. His p
 As the team completes the tasks and milestones of the project, they log their progress in the DAO's task tracking system. They can also assign roles to each member of the project team and grant them project permissions. In this way, the proper members are granted the necessary access to project-specific tasks, documents, and materials.
 As they complete the tasks and log the progress, they realize that there is ambiguity in the project's requirements for safety equipment. They set up a proposal dispute by using the "disputeProposal" function and adding the details, the proposal ID, and the necessary information. After the members vote on the proposals suggested to resolve the issue, the proposal with the highest number of yes votes becomes the solution that will be implemented.
 Overall, the Project_DAO.sol contract allows David and his team to efficiently manage their EPC project in a transparent, decentralized, and secure way. This framework helps them to manage their tasks, collaborate remotely, and keep track
-2.3	OFFSHORE WIND PROJECT
+### 2.3	OFFSHORE WIND PROJECT
 #### Use Case:
 A renewable energy company is managing an offshore wind project to design, install and maintain a wind farm. They want to use a decentralized way to organize the project, manage milestones, and allocate the necessary project roles among their team. They decide to use Project_DAO.sol as their framework for managing the project.
 
