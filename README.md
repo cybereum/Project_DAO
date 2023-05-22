@@ -4,18 +4,18 @@ Project_DAO.sol is a smart contract written in Solidity, a programming language 
 The contract includes several modifier functions with onlyOwner, onlyMember, and onlyRole access control checks to ensure that only authorized parties can execute specific functions.
 The paused state variable is used to control whether the contract is active or not via functions pauseContract() and resumeContract() called by the owner of the contract in case an unexpected issue or breach occurs.
 Several events are emitted when tasks are created, updated, deleted or when members, roles or permissions are added or removed.
-•	The contract provides functionality for a Decentralized Autonomous Organization (DAO).
-•	Some important data structures used in the contract include:
-o	Member represents a member of the DAO with their voting power.
-o	Milestone represents a milestone that the DAO aims to achieve.
-o	Proposal represents a proposal made by a member of the DAO with details such as description, deadline, and voting results.
-o	Task represents a task that needs be completed for a milestone.
-o	Progress represents the progress made on completing a task.
-o	Role represents a role in the DAO (e.g., owner, builder, verifier) with corresponding permissions and members.
-•	The contract includes functions for members to join the DAO, create proposals, vote on proposals, view milestones and tasks, assign roles for a milestone, and more.
-•	There is also a pause feature built in for when the contract is "paused" due to errors, breaches, hacks, or other unexpected issues.
-•	The contract includes a new disputeProposal function which allows members to dispute local milestone proposals by creating proposal dispute objects. It also includes updates to the voteOnProposalDispute function to include checks for milestone specific members.
-•	Project_DAO.sol contract provides a comprehensive framework for DAO management with efficient and secure allocation of tasks, roles, and permission determination.
+-	The contract provides functionality for a Decentralized Autonomous Organization (DAO).
+-	Some important data structures used in the contract include:
+  -	Member represents a member of the DAO with their voting power.
+  -	Milestone represents a milestone that the DAO aims to achieve.
+  -	Proposal represents a proposal made by a member of the DAO with details such as description, deadline, and voting results.
+  -	Task represents a task that needs be completed for a milestone.
+  -	Progress represents the progress made on completing a task.
+  -	Role represents a role in the DAO (e.g., owner, builder, verifier) with corresponding permissions and members.
+-	The contract includes functions for members to join the DAO, create proposals, vote on proposals, view milestones and tasks, assign roles for a milestone, and more.
+-	There is also a pause feature built in for when the contract is "paused" due to errors, breaches, hacks, or other unexpected issues.
+-	The contract includes a new disputeProposal function which allows members to dispute local milestone proposals by creating proposal dispute objects. It also includes updates to the voteOnProposalDispute function to include checks for milestone specific members.
+-	Project_DAO.sol contract provides a comprehensive framework for DAO management with efficient and secure allocation of tasks, roles, and permission determination.
 
 ### 1.1	FUNCTIONS
 
