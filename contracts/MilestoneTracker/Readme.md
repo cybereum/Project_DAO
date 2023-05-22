@@ -1,4 +1,4 @@
-#INTRODUCTION
+# INTRODUCTION
 The MilestoneTracker contract contains the logic for tracking project milestones and their associated payments. The contract has several supporting structs, enums, and mappings:
 The contract defines a Milestone Tracker that allows clients to create milestones, track their progress, and pay contractors for completed work. The contract uses several other contracts (imported via import) to ensure security and functionality, including a safe math library (SafeMath.sol), a contract for syncing dates (DateSync.sol), and an interface for interacting with another project organization contract (ProjectOrganization.sol).
 The contract contains several data structures including the Milestone struct that contains information about each milestone created, such as the client's address, a list of contractors, a verifier, deadline, amount, a hash of the milestone document, and whether the milestone has been completed or paid. It also contains two mappings to track the reputation of contractors and verifiers, respectively
