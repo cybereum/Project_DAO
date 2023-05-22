@@ -13,3 +13,26 @@ The MilestoneTracker contract provides a way for clients to set and track their 
 - OrderStatus and MilestoneType: These enums define constants for tracking various states of an order and milestones respectively.
 - The MilestoneTracker contract also contains a number of functions for adding authorized addresses, removing authorized addresses and updating the minVerifierReputation threshold. Additionally, there is a fundCybereum() function to fund the 'cybereum' address that should be provided, but wasn’t available in this contract code.
 - The createMilestone() function is used to create a new milestone for a project. This function takes several arguments, including an array of contractors.
+## Functions
+Here is a brief description of some of the main functions in the MilestoneTracker.sol contract:
+- createMilestone: This function is used to create a new milestone and requires various arguments such as the contractors' addresses, the verifier's address, the deadline, the amount, and a document hash. It calculates the value each contractor is owed and adds a new PaymentMilestone to keep track of payment information. The function returns the ID number of the created milestone.
+- completeMilestone: This function is used to complete a milestone and requires arguments such as the milestone ID, and verifier and contractor signatures. If the milestone is completed before its deadline, the entire amount that the milestone is worth ($USD, ETH etc) will be paid to the contractors. If it is completed past the deadline, a penalty might be subtracted from the total amount and paid to the verifier. The function emits an event indicating that the milestone has been completed.
+- getMilestoneValue: This function is used to get the current value of a milestone in the contract, given its ID.
+- setMilestoneValue: This function is used to set the value of a milestone in the contract, given its ID and a new value.
+- addAuthorizedAddress/removeAuthorizedAddress: These functions are used to add or remove an authorized address to perform certain actions in the contract.
+- updateMinVerifierReputation: This function is used to update the minimum reputation score required for a user to be a verifier in the contract. This ensures that only users with a minimum reputation score can act as project verifiers.
+- fundCybereum: This function is a joke function in the code and demonstrates how to transfer ether/cryptocurrency to an address.
+- updateMinVerifierReputation: This function allows the contract owner to update the minimum reputation score required for a user to be a verifier in the contract, as mentioned earlier.
+- fundCybereum: This function demonstrates how to send cryptocurrency (Ether) to an address (in this case, a joke address called cybereum).
+- isValidContractor: This function is a modifier that ensures that a given address is a valid contractor with a reputation score greater than zero.
+- isValidVerifier: This function is a modifier that ensures that a given address is a valid verifier with a reputation score greater than zero.
+- isAuthorized: This function is a modifier that ensures that a given address is authorized to perform a specific action, either because it is the contract owner or because it has been added as an authorized address.
+- getMilestone: This function is used to get the details of a given milestone, given its ID. It returns the milestone's ID, description, amount, and type (which is either REGULAR or PAYMENT).
+- setMilestoneValue: This function is used to set the value of a milestone in the contract and requires the milestone ID and a new value.
+- getMilestoneValue: This function is used to get the current value of a milestone in the contract, given its ID.
+- updateContractorReputation: This function is used to update the reputation of a contractor in the contract.
+- updateVerifierReputation: This function is used to update the reputation of a verifier in the contract.
+- rateContractor: This function is used to rate a contractor in the contract and requires a score between 1 and 5.
+- rateVerifier: This function is used to rate a verifier in the contract and requires a score between 1 and 5.
+- resolveDispute: This function is used to resolve a dispute over a milestone and requires the milestone ID. If a dispute arises, it can be resolved by the owner of the contract.
+
