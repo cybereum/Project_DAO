@@ -2,5 +2,5 @@ VCDAO.sol is a Solidity contract that defines a Decentralized Autonomous Organiz
 VCDAO contract provides several functionalities such as verification of a company, adding a member company, revoking a verified company, casting votes, managing disputes among companies and sending email and website verifications. This contract can be used to create a decentralized verification/audit system for member companies, where members can vote on each other's conduct and reliability scores, add or remove members to the organization, and establish a quorum percentage required for decision making.
 This contract can be used as a decentralized reputation management system for companies, where trust is built through auditing and voting by member companies, providing a transparent and secure ecosystem for companies to operate and coexist.
 VCDAO.sol is meant to verify companies and issue them credentials, so that they can be added to projects or supply chains. It can be maintained by companies for their approved vendors or contractors or higher up in the hierarchy for entire industry sectors.
-Structure
+*Structure
 
