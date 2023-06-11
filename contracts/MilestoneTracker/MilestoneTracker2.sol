@@ -28,6 +28,8 @@ contract MilestoneTracker is Ownable, ReentrancyGuard {
         bool completedByContractor;
         uint klerosDisputeID;
         uint aragonCourtDisputeID;
+        address[] predecessorAddresses; // The addresses of the milestone's immediate predecessor milestones
+        bytes32[] predecessorHashes; // The hashes of the milestone's immediate predecessor milestones
     }
 
     struct Reputation {
