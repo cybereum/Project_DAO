@@ -1,42 +1,45 @@
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
 contract VCDAO {
-    
-  struct Company {
-      string name;
-      string registeredOffice;
-      uint verificationDate;
-      uint revocationDate;
-      bool isMember;
-      bool isVerified;
-      bool hasPassedAudit;
-      uint reliabilityScore;
-      address memberAddress;
-      string email;
-      string website;
-      bool isEmailVerified;
-      bool isWebsiteVerified;
-      uint verificationCode;
-      string companyName; // new field for the company's name
-      uint registrationNumber; // new field for the company's registration number
-      uint validityPeriod; // new field for the validity period of the verified credentials
-      string[] credentials; // new field for storing the verified credentials
-  }
-    
+
+    struct Company {
+        string name;
+        string registeredOffice;
+        uint256 verificationDate;
+        uint256 revocationDate;
+        bool isMember;
+        bool isVerified;
+        bool hasPassedAudit;
+        uint256 reliabilityScore;
+        address memberAddress;
+        string email;
+        string website;
+        bool isEmailVerified;
+        bool isWebsiteVerified;
+        uint256 verificationCode;
+        string companyName;
+        uint256 registrationNumber;
+        uint256 validityPeriod;
+        string[] credentials;
+    }
+
     mapping(address => Company) public companies;
     mapping(address => mapping(address => bool)) public votes;
-    mapping(address => bytes32) public encryptionKeys;
 
-    
     address public anchorOfTrust;
-    uint public verificationTimeLimit;
-    uint public quorumPercentage;
-    uint public minimumAuditInterval;
-    
-    uint public totalCompanies;
-    uint public totalVerifiedCompanies;
-    uint public totalMembers;
-    
+    address public cybereamAddress;
+    uint256 public verificationTimeLimit;
+    uint256 public quorumPercentage;
+    uint256 public minimumAuditInterval;
+
+    uint256 public totalCompanies;
+    uint256 public totalVerifiedCompanies;
+    uint256 public totalMemberCount;
+
+    // Track member addresses for iteration
+    address[] public memberAddresses;
+
     event CompanyVerified(address indexed companyAddress, string name);
     event CompanyRevoked(address indexed companyAddress);
     event MemberAdded(address indexed memberAddress);
@@ -49,267 +52,282 @@ contract VCDAO {
     event EmailVerified(address indexed companyAddress);
     event WebsiteVerificationSent(address indexed companyAddress, string website);
     event WebsiteVerified(address indexed companyAddress);
-    
-    constructor(address _anchorOfTrust, uint _verificationTimeLimit, uint _quorumPercentage, uint _minimumAuditInterval) {
+
+    constructor(
+        address _anchorOfTrust,
+        uint256 _verificationTimeLimit,
+        uint256 _quorumPercentage,
+        uint256 _minimumAuditInterval
+    ) {
         anchorOfTrust = _anchorOfTrust;
         verificationTimeLimit = _verificationTimeLimit;
         quorumPercentage = _quorumPercentage;
         minimumAuditInterval = _minimumAuditInterval;
     }
-    
+
     modifier onlyAnchorOfTrust() {
         require(msg.sender == anchorOfTrust, "Only the anchor of trust can perform this action");
         _;
     }
-    
-    function verifyCompany(address _companyAddress, bytes32 _nameEncrypted, bytes32 _registeredOfficeEncrypted, string memory _email, string memory _website) public onlyAnchorOfTrust {
+
+    modifier onlyCybeream() {
+        require(msg.sender == cybereamAddress, "Only Cybeream can perform this action");
+        _;
+    }
+
+    function setCybereamAddress(address _cybereamAddress) public onlyAnchorOfTrust {
+        require(_cybereamAddress != address(0), "Invalid Cybeream address");
+        cybereamAddress = _cybereamAddress;
+    }
+
+    function verifyCompany(
+        address _companyAddress,
+        string memory _name,
+        string memory _registeredOffice,
+        string memory _email,
+        string memory _website
+    ) public onlyAnchorOfTrust {
         Company storage company = companies[_companyAddress];
         require(!company.isVerified, "Company is already verified");
-    
-        // Decrypt the encryption key for this company
-        bytes32 encryptionKey = encryptionKeys[_companyAddress];
-    
-        // Decrypt the name and registeredOffice fields using the encryption key
-        bytes32 name = AES.decrypt(_nameEncrypted, encryptionKey);
-        bytes32 registeredOffice = AES.decrypt(_registeredOfficeEncrypted, encryptionKey);
-    
-        company.nameEncrypted = _nameEncrypted;
-        company.registeredOfficeEncrypted = _registeredOfficeEncrypted;
+
+        company.name = _name;
+        company.registeredOffice = _registeredOffice;
         company.email = _email;
         company.website = _website;
         company.verificationDate = block.timestamp;
         company.isVerified = true;
         totalCompanies++;
         totalVerifiedCompanies++;
-        emit CompanyVerified(_companyAddress, name);
-    
+        emit CompanyVerified(_companyAddress, _name);
+
         // Send email verification
         emit EmailVerificationSent(_companyAddress, _email);
-        uint verificationCode = generateVerificationCode();
+        uint256 verificationCode = generateVerificationCode();
         company.verificationCode = verificationCode;
         sendEmailVerification(_email, verificationCode);
-    
+
         // Send website verification
         emit WebsiteVerificationSent(_companyAddress, _website);
         sendWebsiteVerification(_website, verificationCode);
     }
-    
-    function generateVerificationCode() internal returns (uint) {
-        // Generate a unique verification code
-        return uint(keccak256(abi.encodePacked(block.timestamp, msg.sender, totalVerifiedCompanies)));
+
+    function generateVerificationCode() internal view returns (uint256) {
+        return uint256(keccak256(abi.encodePacked(block.timestamp, msg.sender, totalVerifiedCompanies)));
     }
-    
-    function sendEmailVerification(string memory _email, uint _verificationCode) internal {
-        // Send an email to the company's email address with the verification code and instructions
-        // TODO: implement email verification
+
+    function sendEmailVerification(string memory _email, uint256 _verificationCode) internal {
+        // TODO: implement off-chain email verification via oracle
     }
-    
-    function sendWebsiteVerification(string memory _website, uint _verificationCode) internal {
-        // Send a request to the website with the verification code as a parameter in the URL
-        // TODO: implement website verification
+
+    function sendWebsiteVerification(string memory _website, uint256 _verificationCode) internal {
+        // TODO: implement off-chain website verification via oracle
     }
-    
-    function verifyEmail(uint _verificationCode) public {
-        Company storage company = companies[_verificationCode];
+
+    function verifyEmail(uint256 _verificationCode) public {
+        Company storage company = companies[msg.sender];
         require(company.isVerified, "Company is not verified");
-        require(company.isEmailVerified == false, "Email is already verified");
+        require(!company.isEmailVerified, "Email is already verified");
         require(company.verificationCode == _verificationCode, "Invalid verification code");
         company.isEmailVerified = true;
-        emit EmailVerified(company.memberAddress);
-    }     
-    function revokeCompany(address _companyAddress) public onlyAnchorOfTrust {
-      Company storage company = companies[_companyAddress];
-      require(company.isVerified, "Company is not verified");
-      require(company.isMember == false, "Cannot revoke a member company");
-      require(company.revocationDate == 0, "Company is already revoked");
-      company.revocationDate = block.timestamp;
-      totalVerifiedCompanies--;
-      emit CompanyRevoked(_companyAddress);
+        emit EmailVerified(msg.sender);
     }
+
+    function revokeCompany(address _companyAddress) public onlyAnchorOfTrust {
+        Company storage company = companies[_companyAddress];
+        require(company.isVerified, "Company is not verified");
+        require(!company.isMember, "Cannot revoke a member company");
+        require(company.revocationDate == 0, "Company is already revoked");
+        company.isVerified = false;
+        company.revocationDate = block.timestamp;
+        totalVerifiedCompanies--;
+        emit CompanyRevoked(_companyAddress);
+    }
+
     function addMember(address _memberAddress) public onlyAnchorOfTrust {
         Company storage company = companies[_memberAddress];
         require(company.isVerified, "Company is not verified");
-        require(company.isMember == false, "Company is already a member");
+        require(!company.isMember, "Company is already a member");
         company.isMember = true;
         company.memberAddress = _memberAddress;
-        totalMembers++;
+        memberAddresses.push(_memberAddress);
+        totalMemberCount++;
         emit MemberAdded(_memberAddress);
     }
 
-    function addVerifiedCredential(address _companyAddress, string memory _name, uint _registrationNumber, uint _verificationDate, uint _validityPeriod) public {
-      require(msg.sender == cybereamAddress, "Only Cybeream can add verified credentials");
-  
-      Company storage company = companies[_companyAddress];
-      require(company.isVerified == true, "Company must be verified to add verified credentials");
-  
-      // Add the new verified credential to the credentials array
-      company.credentials.push(abi.encode(_name, _registrationNumber, _verificationDate, _validityPeriod));
-  }
-  
-  function updateVerifiedCredential(address _companyAddress, uint _credentialIndex, string memory _name, uint _registrationNumber, uint _verificationDate, uint _validityPeriod) public {
-      require(msg.sender == cybereamAddress, "Only Cybeream can update verified credentials");
-  
-      Company storage company = companies[_companyAddress];
-      require(company.isVerified == true, "Company must be verified to update verified credentials");
-  
-      // Update the specified credential in the credentials array
-      bytes memory encoded = abi.encode(_name, _registrationNumber, _verificationDate, _validityPeriod);
-      require(_credentialIndex < company.credentials.length, "Invalid credential index");
-      company.credentials[_credentialIndex] = encoded;
-  }
-  
-  function removeVerifiedCredential(address _companyAddress, uint _credentialIndex) public {
-      require(msg.sender == cybereamAddress, "Only Cybeream can remove verified credentials");
-  
-      Company storage company = companies[_companyAddress];
-      require(company.isVerified == true, "Company must be verified to remove verified credentials");
-  
-      // Remove the specified credential from the credentials array
-      require(_credentialIndex < company.credentials.length, "Invalid credential index");
-      delete company.credentials[_credentialIndex];
-  }
-
-  function castVote(address _memberAddress, uint _reliabilityScore) public {
-      require(companies[msg.sender].isMember == true, "Only members can cast votes");
-      require(companies[_memberAddress].isVerified == true, "Company is not verified");
-      require(votes[msg.sender][_memberAddress] == false, "You have already casted your vote");
-      votes[msg.sender][_memberAddress] = true;
-      
-      uint currentReliabilityScore = companies[_memberAddress].reliabilityScore;
-      uint newReliabilityScore = (currentReliabilityScore + _reliabilityScore) / 2;
-      companies[_memberAddress].reliabilityScore = newReliabilityScore;
-      
-      emit VoteCasted(msg.sender, _memberAddress);
-  }
-  
-  
-  function castVote(address _memberAddress) public {
-      require(companies[msg.sender].isMember == true, "Only members can cast votes");
-      require(companies[_memberAddress].isVerified == true, "Company is not verified");
-      require(votes[msg.sender][_memberAddress] == false, "You have already casted your vote");
-      votes[msg.sender][_memberAddress] = true;
-      emit VoteCasted(msg.sender, _memberAddress);
-  }
-  
-  function calculateQuorum() internal view returns (uint) {
-      return (totalMembers * quorumPercentage) / 100;
-  }
-  
-  function hasQuorum(uint _voteCount) internal view returns (bool) {
-      return (_voteCount * 100) >= (totalMembers * quorumPercentage);
-  }
-  
-  
-  function isAuditDue(address _memberAddress) public view returns (bool) {
-      Company storage company = companies[_memberAddress];
-      if (!company.hasPassedAudit) {
-          return true;
-      }
-      uint timeSinceAudit = block.timestamp - company.verificationDate;
-      return timeSinceAudit >= minimumAuditInterval;
-  }
-  
-  function verifyMember(address _memberAddress) public onlyAnchorOfTrust {
-      Company storage company = companies[_memberAddress];
-      require(company.isVerified == true, "Company is not verified");
-      require(company.isMember == true, "Company is not a member");
-      require(isAuditDue(_memberAddress), "Audit is not due yet");
-      
-      uint voteCount = 0;
-      for (uint i = 0; i < totalMembers; i++) {
-          address voter = companies[i].memberAddress;
-          if (voter != _memberAddress && votes[voter][_memberAddress]) {
-              voteCount++;
-          }
-      }
-      
-      if (hasQuorum(voteCount)) {
-          company.hasPassedAudit = true;
-      }
-      
-      uint newReliabilityScore = calculateReliabilityScore(_memberAddress);
-      company.reliabilityScore = newReliabilityScore;
-  }
-  
-  
-    function calculateReliabilityScore(address _memberAddress) internal view returns (uint) {
-        // calculate reliability score based on member's performance over time
-        // TODO: implement this function
-        return 0;
-    }
-  
-    function updateReliabilityScore(address _memberAddress, bytes32 _reliabilityScoreEncrypted) public onlyAnchorOfTrust {
-        Company storage company = companies[_memberAddress];
-        require(company.isMember == true, "Company is not a member");
-        
-        // Decrypt the encryption key for this company
-        bytes32 encryptionKey = encryptionKeys[_memberAddress];
-
-        // Decrypt the reliability score using the encryption key
-        uint reliabilityScore = uint(AES.decrypt(_reliabilityScoreEncrypted, encryptionKey));
-        
-        // Store the encrypted reliability score in the Company struct
-        company.reliabilityScoreEncrypted = _reliabilityScoreEncrypted;
-        
-        // Update the decrypted reliability score
-        company.reliabilityScore = reliabilityScore;
-    }
-  
-    function getReliabilityScore(address _memberAddress) public view returns (uint) {
-      Company memory company = companies[_memberAddress];
-      require(company.isMember == true, "Company is not a member");
-      return company.reliabilityScore;
-    }
-    
-    function getCompanyDetails(address _companyAddress) public view returns (bytes32, bytes32, uint, uint, bool, bool, bool, bytes32, address) {
+    function addVerifiedCredential(
+        address _companyAddress,
+        string memory _name,
+        uint256 _registrationNumber,
+        uint256 _verificationDate,
+        uint256 _validityPeriod
+    ) public onlyCybeream {
         Company storage company = companies[_companyAddress];
-        
-        // Decrypt the encryption key for this company
-        bytes32 encryptionKey = encryptionKeys[_companyAddress];
+        require(company.isVerified, "Company must be verified to add verified credentials");
 
-        // Decrypt the name, registeredOffice, and reliabilityScore fields using the encryption key
-        bytes32 nameEncrypted = company.nameEncrypted;
-        bytes32 registeredOfficeEncrypted = company.registeredOfficeEncrypted;
-        bytes32 reliabilityScoreEncrypted = company.reliabilityScoreEncrypted;
-        bytes32 name = AES.decrypt(nameEncrypted, encryptionKey);
-        bytes32 registeredOffice = AES.decrypt(registeredOfficeEncrypted, encryptionKey);
-        uint reliabilityScore = uint(AES.decrypt(reliabilityScoreEncrypted, encryptionKey));
-        
-        return (nameEncrypted, registeredOfficeEncrypted, company.verificationDate, company.revocationDate, company.isMember, company.isVerified, company.hasPassedAudit, reliabilityScoreEncrypted, company.memberAddress);
-    }
-    
-    function provideFeedback(address _reportedCompany, string memory _feedback) public {
-        require(companies[msg.sender].isMember == true, "Only members can provide feedback");
-        require(companies[_reportedCompany].isMember == true, "Reported company is not a member");
-        emit FeedbackProvided(msg.sender, _reportedCompany, _feedback);
-      }
-  
-  function raiseDispute(address _reportedCompany, string memory _complaint) public {
-      require(companies[msg.sender].isMember == true, "Only members can raise disputes");
-      require(companies[_reportedCompany].isMember == true, "Reported company is not a member");
-      emit DisputeRaised(msg.sender, _reportedCompany, _complaint);
-    }
-  
-    function resolveDispute(address _reportingCompany, address _reportedCompany, bool _resolved) public onlyAnchorOfTrust {
-      require(companies[_reportingCompany].isMember == true, "Reporting company is not a member");
-      require(companies[_reportedCompany].isMember == true, "Reported company is not a member");
-      emit DisputeResolved(_reportingCompany, _reportedCompany, _resolved);
-    }
-    
-    function trackImpact(address _companyAddress, string memory _impactType, uint _impactValue) public onlyAnchorOfTrust {
-      require(companies[_companyAddress].isVerified == true, "Company is not verified");
-      // TODO: implement tracking of environmental and social impact of member companies
+        string memory encoded = string(abi.encode(_name, _registrationNumber, _verificationDate, _validityPeriod));
+        company.credentials.push(encoded);
     }
 
-  function totalMembers() public view returns (uint) {
-    uint count = 0;
-    for (uint i = 0; i < totalCompanies; i++) {
-        if (companies[getMemberAddress(i)].isMember) {
-            count++;
+    function updateVerifiedCredential(
+        address _companyAddress,
+        uint256 _credentialIndex,
+        string memory _name,
+        uint256 _registrationNumber,
+        uint256 _verificationDate,
+        uint256 _validityPeriod
+    ) public onlyCybeream {
+        Company storage company = companies[_companyAddress];
+        require(company.isVerified, "Company must be verified to update verified credentials");
+        require(_credentialIndex < company.credentials.length, "Invalid credential index");
+
+        string memory encoded = string(abi.encode(_name, _registrationNumber, _verificationDate, _validityPeriod));
+        company.credentials[_credentialIndex] = encoded;
+    }
+
+    function removeVerifiedCredential(address _companyAddress, uint256 _credentialIndex) public onlyCybeream {
+        Company storage company = companies[_companyAddress];
+        require(company.isVerified, "Company must be verified to remove verified credentials");
+        require(_credentialIndex < company.credentials.length, "Invalid credential index");
+        delete company.credentials[_credentialIndex];
+    }
+
+    function castVoteWithScore(address _memberAddress, uint256 _reliabilityScore) public {
+        require(companies[msg.sender].isMember, "Only members can cast votes");
+        require(companies[_memberAddress].isVerified, "Company is not verified");
+        require(!votes[msg.sender][_memberAddress], "You have already cast your vote");
+        votes[msg.sender][_memberAddress] = true;
+
+        uint256 currentReliabilityScore = companies[_memberAddress].reliabilityScore;
+        uint256 newReliabilityScore = (currentReliabilityScore + _reliabilityScore) / 2;
+        companies[_memberAddress].reliabilityScore = newReliabilityScore;
+
+        emit VoteCasted(msg.sender, _memberAddress);
+    }
+
+    function castVote(address _memberAddress) public {
+        require(companies[msg.sender].isMember, "Only members can cast votes");
+        require(companies[_memberAddress].isVerified, "Company is not verified");
+        require(!votes[msg.sender][_memberAddress], "You have already cast your vote");
+        votes[msg.sender][_memberAddress] = true;
+        emit VoteCasted(msg.sender, _memberAddress);
+    }
+
+    function calculateQuorum() internal view returns (uint256) {
+        return (totalMemberCount * quorumPercentage) / 100;
+    }
+
+    function hasQuorum(uint256 _voteCount) internal view returns (bool) {
+        return (_voteCount * 100) >= (totalMemberCount * quorumPercentage);
+    }
+
+    function isAuditDue(address _memberAddress) public view returns (bool) {
+        Company storage company = companies[_memberAddress];
+        if (!company.hasPassedAudit) {
+            return true;
         }
+        uint256 timeSinceAudit = block.timestamp - company.verificationDate;
+        return timeSinceAudit >= minimumAuditInterval;
     }
-    return count;
-}
-    
-}
 
+    function verifyMember(address _memberAddress) public onlyAnchorOfTrust {
+        Company storage company = companies[_memberAddress];
+        require(company.isVerified, "Company is not verified");
+        require(company.isMember, "Company is not a member");
+        require(isAuditDue(_memberAddress), "Audit is not due yet");
+
+        uint256 voteCount = 0;
+        for (uint256 i = 0; i < memberAddresses.length; i++) {
+            address voter = memberAddresses[i];
+            if (voter != _memberAddress && votes[voter][_memberAddress]) {
+                voteCount++;
+            }
+        }
+
+        if (hasQuorum(voteCount)) {
+            company.hasPassedAudit = true;
+        }
+
+        uint256 newReliabilityScore = calculateReliabilityScore(_memberAddress);
+        company.reliabilityScore = newReliabilityScore;
+    }
+
+    function calculateReliabilityScore(address _memberAddress) internal view returns (uint256) {
+        // TODO: implement reliability score calculation based on member's performance
+        return companies[_memberAddress].reliabilityScore;
+    }
+
+    function updateReliabilityScore(address _memberAddress, uint256 _reliabilityScore) public onlyAnchorOfTrust {
+        Company storage company = companies[_memberAddress];
+        require(company.isMember, "Company is not a member");
+        company.reliabilityScore = _reliabilityScore;
+    }
+
+    function getReliabilityScore(address _memberAddress) public view returns (uint256) {
+        Company memory company = companies[_memberAddress];
+        require(company.isMember, "Company is not a member");
+        return company.reliabilityScore;
+    }
+
+    function getCompanyDetails(address _companyAddress) public view returns (
+        string memory name,
+        string memory registeredOffice,
+        uint256 verificationDate,
+        uint256 revocationDate,
+        bool isMember,
+        bool isVerified,
+        bool hasPassedAudit,
+        uint256 reliabilityScore,
+        address memberAddress
+    ) {
+        Company storage company = companies[_companyAddress];
+        return (
+            company.name,
+            company.registeredOffice,
+            company.verificationDate,
+            company.revocationDate,
+            company.isMember,
+            company.isVerified,
+            company.hasPassedAudit,
+            company.reliabilityScore,
+            company.memberAddress
+        );
+    }
+
+    function provideFeedback(address _reportedCompany, string memory _feedback) public {
+        require(companies[msg.sender].isMember, "Only members can provide feedback");
+        require(companies[_reportedCompany].isMember, "Reported company is not a member");
+        emit FeedbackProvided(msg.sender, _reportedCompany, _feedback);
+    }
+
+    function raiseDispute(address _reportedCompany, string memory _complaint) public {
+        require(companies[msg.sender].isMember, "Only members can raise disputes");
+        require(companies[_reportedCompany].isMember, "Reported company is not a member");
+        emit DisputeRaised(msg.sender, _reportedCompany, _complaint);
+    }
+
+    function resolveDispute(address _reportingCompany, address _reportedCompany, bool _resolved) public onlyAnchorOfTrust {
+        require(companies[_reportingCompany].isMember, "Reporting company is not a member");
+        require(companies[_reportedCompany].isMember, "Reported company is not a member");
+        emit DisputeResolved(_reportingCompany, _reportedCompany, _resolved);
+    }
+
+    function trackImpact(address _companyAddress, string memory _impactType, uint256 _impactValue) public onlyAnchorOfTrust {
+        require(companies[_companyAddress].isVerified, "Company is not verified");
+        // TODO: implement tracking of environmental and social impact of member companies
+    }
+
+    function getMemberCount() public view returns (uint256) {
+        uint256 count = 0;
+        for (uint256 i = 0; i < memberAddresses.length; i++) {
+            if (companies[memberAddresses[i]].isMember) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    function getMemberAddress(uint256 _index) public view returns (address) {
+        require(_index < memberAddresses.length, "Index out of bounds");
+        return memberAddresses[_index];
+    }
+}
