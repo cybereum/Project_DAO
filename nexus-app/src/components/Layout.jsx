@@ -98,6 +98,7 @@ function TopBar() {
 
 export default function Layout({ children }) {
   const [collapsed, setCollapsed] = useState(false);
+  const location = useLocation();
   return (
     <div className="min-h-screen bg-nexus-bg grid-bg">
       <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />

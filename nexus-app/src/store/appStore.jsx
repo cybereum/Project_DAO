@@ -89,12 +89,12 @@ const MOCK_TASKS = [
 ];
 
 export function useAppState() {
-  const [projects] = useState(MOCK_PROJECTS);
+  const [projects, setProjects] = useState(MOCK_PROJECTS);
   const [milestones] = useState(MOCK_MILESTONES);
   const [proposals, setProposals] = useState(MOCK_PROPOSALS);
   const [members] = useState(MOCK_MEMBERS);
-  const [companies] = useState(MOCK_COMPANIES);
-  const [nfts] = useState(MOCK_NFTS);
+  const [companies, setCompanies] = useState(MOCK_COMPANIES);
+  const [nfts, setNfts] = useState(MOCK_NFTS);
   const [tasks] = useState(MOCK_TASKS);
   const [walletConnected, setWalletConnected] = useState(false);
   const [walletAddress, setWalletAddress] = useState('');
@@ -115,9 +115,26 @@ export function useAppState() {
     }));
   }, []);
 
+  const addProject = useCallback((project) => {
+    setProjects(prev => [...prev, { ...project, id: prev.length + 1, status: 'Pending', members: 1, milestones: 0, completedMilestones: 0, proposals: 0, tasks: 0, completedTasks: 0, progress: 0 }]);
+  }, []);
+
+  const addProposal = useCallback((proposal) => {
+    setProposals(prev => [...prev, { ...proposal, id: prev.length + 1, status: 'Active', yesVotes: 0, noVotes: 0, author: walletAddress || '0x0000...0000' }]);
+  }, [walletAddress]);
+
+  const addCompany = useCallback((company) => {
+    setCompanies(prev => [...prev, { ...company, status: 'Pending', reliability: 0, members: false, audited: false, credentials: 0 }]);
+  }, []);
+
+  const addNft = useCallback((nft) => {
+    setNfts(prev => [...prev, { ...nft, id: prev.length + 1, owner: walletAddress || '0x0000...0000', image: `gradient-${(prev.length % 6) + 1}` }]);
+  }, [walletAddress]);
+
   return {
     projects, milestones, proposals, members, companies, nfts, tasks,
     walletConnected, walletAddress, connectWallet, castVote,
+    addProject, addProposal, addCompany, addNft,
   };
 }
 

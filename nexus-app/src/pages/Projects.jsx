@@ -20,9 +20,10 @@ const STATUS_COLORS = {
 };
 
 export default function Projects() {
-  const { projects } = useApp();
+  const { projects, addProject } = useApp();
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [newProject, setNewProject] = useState({ name: '', type: 'Infrastructure', description: '', budget: '', votingPeriod: 7 });
 
   const filtered = projects.filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -49,29 +50,35 @@ export default function Projects() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs text-nexus-text-dim mb-1.5">Project Name</label>
-              <input className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm text-nexus-text focus:border-nexus-cyan focus:outline-none transition-colors" placeholder="Enter project name..." />
+              <input value={newProject.name} onChange={e => setNewProject(p => ({ ...p, name: e.target.value }))}
+                className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm text-nexus-text focus:border-nexus-cyan focus:outline-none transition-colors" placeholder="Enter project name..." />
             </div>
             <div>
               <label className="block text-xs text-nexus-text-dim mb-1.5">Category</label>
-              <select className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm text-nexus-text focus:border-nexus-cyan focus:outline-none">
+              <select value={newProject.type} onChange={e => setNewProject(p => ({ ...p, type: e.target.value }))}
+                className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm text-nexus-text focus:border-nexus-cyan focus:outline-none">
                 <option>Infrastructure</option><option>Technology</option><option>Environmental</option><option>Healthcare</option>
               </select>
             </div>
             <div className="md:col-span-2">
               <label className="block text-xs text-nexus-text-dim mb-1.5">Description</label>
-              <textarea className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm text-nexus-text focus:border-nexus-cyan focus:outline-none h-20 resize-none" placeholder="Describe the project..." />
+              <textarea value={newProject.description} onChange={e => setNewProject(p => ({ ...p, description: e.target.value }))}
+                className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm text-nexus-text focus:border-nexus-cyan focus:outline-none h-20 resize-none" placeholder="Describe the project..." />
             </div>
             <div>
               <label className="block text-xs text-nexus-text-dim mb-1.5">Initial Budget (USD)</label>
-              <input type="text" className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm text-nexus-text focus:border-nexus-cyan focus:outline-none" placeholder="0" />
+              <input type="text" value={newProject.budget} onChange={e => setNewProject(p => ({ ...p, budget: e.target.value }))}
+                className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm text-nexus-text focus:border-nexus-cyan focus:outline-none" placeholder="0" />
             </div>
             <div>
               <label className="block text-xs text-nexus-text-dim mb-1.5">Voting Period (days)</label>
-              <input type="number" defaultValue={7} className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm text-nexus-text focus:border-nexus-cyan focus:outline-none" />
+              <input type="number" value={newProject.votingPeriod} onChange={e => setNewProject(p => ({ ...p, votingPeriod: parseInt(e.target.value) || 7 }))}
+                className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm text-nexus-text focus:border-nexus-cyan focus:outline-none" />
             </div>
           </div>
           <div className="flex gap-3 mt-5">
-            <button className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-nexus-cyan to-nexus-purple text-white text-sm font-medium hover:opacity-90">Deploy Contract</button>
+            <button onClick={() => { if (newProject.name.trim()) { addProject(newProject); setNewProject({ name: '', type: 'Infrastructure', description: '', budget: '', votingPeriod: 7 }); setShowCreate(false); } }}
+              className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-nexus-cyan to-nexus-purple text-white text-sm font-medium hover:opacity-90">Deploy Contract</button>
             <button onClick={() => setShowCreate(false)} className="px-5 py-2.5 rounded-lg border border-nexus-border text-nexus-text-dim text-sm hover:bg-white/5">Cancel</button>
           </div>
         </motion.div>

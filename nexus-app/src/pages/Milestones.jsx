@@ -24,8 +24,9 @@ export default function Milestones() {
     status: m.status,
   }));
 
-  const totalValue = milestones.reduce((sum, m) => sum + parseInt(m.amount.replace(/,/g, '')), 0);
-  const completedValue = milestones.filter(m => m.status === 'Completed').reduce((sum, m) => sum + parseInt(m.amount.replace(/,/g, '')), 0);
+  const parseAmount = (amount) => parseInt(String(amount).replace(/,/g, '')) || 0;
+  const totalValue = milestones.reduce((sum, m) => sum + parseAmount(m.amount), 0);
+  const completedValue = milestones.filter(m => m.status === 'Completed').reduce((sum, m) => sum + parseAmount(m.amount), 0);
 
   return (
     <div className="space-y-6">

@@ -37,9 +37,9 @@ export default function Reputation() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { icon: Trophy, label: 'Top Score', value: sorted[0]?.reputation || 0, color: 'amber' },
-          { icon: Star, label: 'Avg Score', value: Math.round(members.reduce((s, m) => s + m.reputation, 0) / members.length), color: 'cyan' },
+          { icon: Star, label: 'Avg Score', value: members.length > 0 ? Math.round(members.reduce((s, m) => s + m.reputation, 0) / members.length) : 0, color: 'cyan' },
           { icon: Target, label: 'Total Tasks', value: members.reduce((s, m) => s + m.tasks, 0), color: 'purple' },
-          { icon: TrendingUp, label: 'Completion Rate', value: `${Math.round(members.reduce((s, m) => s + m.completed, 0) / members.reduce((s, m) => s + m.tasks, 0) * 100)}%`, color: 'green' },
+          { icon: TrendingUp, label: 'Completion Rate', value: `${members.reduce((s, m) => s + m.tasks, 0) > 0 ? Math.round(members.reduce((s, m) => s + m.completed, 0) / members.reduce((s, m) => s + m.tasks, 0) * 100) : 0}%`, color: 'green' },
         ].map((s, i) => (
           <motion.div key={s.label} {...anim(i)} className="rounded-xl border border-nexus-border bg-nexus-card p-4">
             <s.icon size={18} className={`text-nexus-${s.color} mb-2`} />

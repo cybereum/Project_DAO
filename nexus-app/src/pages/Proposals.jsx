@@ -13,10 +13,11 @@ const STATUS_CONFIG = {
 };
 
 export default function Proposals() {
-  const { proposals, projects, castVote, walletConnected } = useApp();
+  const { proposals, projects, castVote, walletConnected, addProposal } = useApp();
   const [filter, setFilter] = useState('All');
   const [expanded, setExpanded] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [newProposal, setNewProposal] = useState({ title: '', description: '', projectId: projects[0]?.id || 1, votingDays: 7 });
 
   const filtered = filter === 'All' ? proposals : proposals.filter(p => p.status === filter);
 
@@ -40,26 +41,31 @@ export default function Proposals() {
           <div className="space-y-4">
             <div>
               <label className="block text-xs text-nexus-text-dim mb-1.5">Title</label>
-              <input className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm text-nexus-text focus:border-nexus-cyan focus:outline-none" placeholder="Proposal title..." />
+              <input value={newProposal.title} onChange={e => setNewProposal(p => ({ ...p, title: e.target.value }))}
+                className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm text-nexus-text focus:border-nexus-cyan focus:outline-none" placeholder="Proposal title..." />
             </div>
             <div>
               <label className="block text-xs text-nexus-text-dim mb-1.5">Description</label>
-              <textarea className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm text-nexus-text focus:border-nexus-cyan focus:outline-none h-24 resize-none" placeholder="Detailed description..." />
+              <textarea value={newProposal.description} onChange={e => setNewProposal(p => ({ ...p, description: e.target.value }))}
+                className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm text-nexus-text focus:border-nexus-cyan focus:outline-none h-24 resize-none" placeholder="Detailed description..." />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs text-nexus-text-dim mb-1.5">Project</label>
-                <select className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm text-nexus-text">
-                  {projects.map(p => <option key={p.id}>{p.name}</option>)}
+                <select value={newProposal.projectId} onChange={e => setNewProposal(p => ({ ...p, projectId: parseInt(e.target.value) }))}
+                  className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm text-nexus-text">
+                  {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-xs text-nexus-text-dim mb-1.5">Voting Period (days)</label>
-                <input type="number" defaultValue={7} className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm text-nexus-text focus:border-nexus-cyan focus:outline-none" />
+                <input type="number" value={newProposal.votingDays} onChange={e => setNewProposal(p => ({ ...p, votingDays: parseInt(e.target.value) || 7 }))}
+                  className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm text-nexus-text focus:border-nexus-cyan focus:outline-none" />
               </div>
             </div>
             <div className="flex gap-3">
-              <button className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-nexus-cyan to-nexus-purple text-white text-sm font-medium">Submit Proposal</button>
+              <button onClick={() => { if (newProposal.title.trim()) { const deadline = new Date(); deadline.setDate(deadline.getDate() + newProposal.votingDays); addProposal({ ...newProposal, deadline: deadline.toISOString().split('T')[0] }); setNewProposal({ title: '', description: '', projectId: projects[0]?.id || 1, votingDays: 7 }); setShowCreate(false); } }}
+                className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-nexus-cyan to-nexus-purple text-white text-sm font-medium">Submit Proposal</button>
               <button onClick={() => setShowCreate(false)} className="px-5 py-2.5 rounded-lg border border-nexus-border text-nexus-text-dim text-sm hover:bg-white/5">Cancel</button>
             </div>
           </div>

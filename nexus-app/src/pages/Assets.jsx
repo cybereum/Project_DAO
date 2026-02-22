@@ -23,10 +23,11 @@ const TYPE_COLORS = {
 };
 
 export default function Assets() {
-  const { nfts } = useApp();
+  const { nfts, addNft } = useApp();
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(null);
   const [showMint, setShowMint] = useState(false);
+  const [newNft, setNewNft] = useState({ name: '', type: 'Infrastructure', value: '', project: 'Orbital Station Alpha' });
 
   const filtered = nfts.filter(n =>
     n.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -71,27 +72,32 @@ export default function Assets() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs text-nexus-text-dim mb-1.5">Asset Name</label>
-              <input className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm focus:border-nexus-cyan focus:outline-none" placeholder="Asset name..." />
+              <input value={newNft.name} onChange={e => setNewNft(n => ({ ...n, name: e.target.value }))}
+                className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm focus:border-nexus-cyan focus:outline-none" placeholder="Asset name..." />
             </div>
             <div>
               <label className="block text-xs text-nexus-text-dim mb-1.5">Asset Type</label>
-              <select className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm focus:border-nexus-cyan focus:outline-none">
+              <select value={newNft.type} onChange={e => setNewNft(n => ({ ...n, type: e.target.value }))}
+                className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm focus:border-nexus-cyan focus:outline-none">
                 <option>Infrastructure</option><option>Energy</option><option>IP</option><option>Environmental</option><option>Architecture</option>
               </select>
             </div>
             <div>
               <label className="block text-xs text-nexus-text-dim mb-1.5">Value (USD)</label>
-              <input type="text" className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm focus:border-nexus-cyan focus:outline-none" placeholder="0" />
+              <input type="text" value={newNft.value} onChange={e => setNewNft(n => ({ ...n, value: e.target.value }))}
+                className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm focus:border-nexus-cyan focus:outline-none" placeholder="0" />
             </div>
             <div>
               <label className="block text-xs text-nexus-text-dim mb-1.5">Associated Project</label>
-              <select className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm focus:border-nexus-cyan focus:outline-none">
+              <select value={newNft.project} onChange={e => setNewNft(n => ({ ...n, project: e.target.value }))}
+                className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm focus:border-nexus-cyan focus:outline-none">
                 <option>Orbital Station Alpha</option><option>Quantum Network Bridge</option><option>Terra Reforestation DAO</option>
               </select>
             </div>
           </div>
           <div className="flex gap-3 mt-5">
-            <button className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-nexus-cyan to-nexus-purple text-white text-sm font-medium">Mint NFT</button>
+            <button onClick={() => { if (newNft.name.trim()) { addNft(newNft); setNewNft({ name: '', type: 'Infrastructure', value: '', project: 'Orbital Station Alpha' }); setShowMint(false); } }}
+              className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-nexus-cyan to-nexus-purple text-white text-sm font-medium">Mint NFT</button>
             <button onClick={() => setShowMint(false)} className="px-5 py-2.5 rounded-lg border border-nexus-border text-nexus-text-dim text-sm hover:bg-white/5">Cancel</button>
           </div>
         </motion.div>

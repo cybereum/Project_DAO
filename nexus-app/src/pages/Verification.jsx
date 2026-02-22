@@ -15,10 +15,11 @@ const STATUS_COLORS = {
 };
 
 export default function Verification() {
-  const { companies } = useApp();
+  const { companies, addCompany } = useApp();
   const [search, setSearch] = useState('');
   const [showRegister, setShowRegister] = useState(false);
   const [expandedCompany, setExpandedCompany] = useState(null);
+  const [newCompany, setNewCompany] = useState({ name: '', regNumber: '', email: '', website: '', office: '', wallet: '' });
 
   const filtered = companies.filter(c =>
     c.name.toLowerCase().includes(search.toLowerCase())
@@ -64,31 +65,38 @@ export default function Verification() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs text-nexus-text-dim mb-1.5">Company Name</label>
-              <input className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm focus:border-nexus-purple focus:outline-none" placeholder="Legal entity name..." />
+              <input value={newCompany.name} onChange={e => setNewCompany(c => ({ ...c, name: e.target.value }))}
+                className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm focus:border-nexus-purple focus:outline-none" placeholder="Legal entity name..." />
             </div>
             <div>
               <label className="block text-xs text-nexus-text-dim mb-1.5">Registration Number</label>
-              <input className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm focus:border-nexus-purple focus:outline-none" placeholder="Company reg. number..." />
+              <input value={newCompany.regNumber} onChange={e => setNewCompany(c => ({ ...c, regNumber: e.target.value }))}
+                className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm focus:border-nexus-purple focus:outline-none" placeholder="Company reg. number..." />
             </div>
             <div>
               <label className="block text-xs text-nexus-text-dim mb-1.5">Email</label>
-              <input type="email" className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm focus:border-nexus-purple focus:outline-none" placeholder="contact@company.com" />
+              <input type="email" value={newCompany.email} onChange={e => setNewCompany(c => ({ ...c, email: e.target.value }))}
+                className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm focus:border-nexus-purple focus:outline-none" placeholder="contact@company.com" />
             </div>
             <div>
               <label className="block text-xs text-nexus-text-dim mb-1.5">Website</label>
-              <input className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm focus:border-nexus-purple focus:outline-none" placeholder="https://..." />
+              <input value={newCompany.website} onChange={e => setNewCompany(c => ({ ...c, website: e.target.value }))}
+                className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm focus:border-nexus-purple focus:outline-none" placeholder="https://..." />
             </div>
             <div>
               <label className="block text-xs text-nexus-text-dim mb-1.5">Registered Office</label>
-              <input className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm focus:border-nexus-purple focus:outline-none" placeholder="Office address..." />
+              <input value={newCompany.office} onChange={e => setNewCompany(c => ({ ...c, office: e.target.value }))}
+                className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm focus:border-nexus-purple focus:outline-none" placeholder="Office address..." />
             </div>
             <div>
               <label className="block text-xs text-nexus-text-dim mb-1.5">Wallet Address</label>
-              <input className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm font-mono focus:border-nexus-purple focus:outline-none" placeholder="0x..." />
+              <input value={newCompany.wallet} onChange={e => setNewCompany(c => ({ ...c, wallet: e.target.value }))}
+                className="w-full px-3 py-2.5 rounded-lg bg-nexus-bg border border-nexus-border text-sm font-mono focus:border-nexus-purple focus:outline-none" placeholder="0x..." />
             </div>
           </div>
           <div className="flex gap-3 mt-5">
-            <button className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-nexus-purple to-nexus-pink text-white text-sm font-medium">Submit for Verification</button>
+            <button onClick={() => { if (newCompany.name.trim()) { addCompany({ name: newCompany.name, address: newCompany.wallet || `0x${Math.random().toString(16).slice(2, 6)}...${Math.random().toString(16).slice(2, 6)}` }); setNewCompany({ name: '', regNumber: '', email: '', website: '', office: '', wallet: '' }); setShowRegister(false); } }}
+              className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-nexus-purple to-nexus-pink text-white text-sm font-medium">Submit for Verification</button>
             <button onClick={() => setShowRegister(false)} className="px-5 py-2.5 rounded-lg border border-nexus-border text-nexus-text-dim text-sm hover:bg-white/5">Cancel</button>
           </div>
         </motion.div>
