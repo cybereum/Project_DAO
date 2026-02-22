@@ -102,6 +102,7 @@ contract Project_DAO {
     event PermissionAdded(uint256 roleId, string permission);
     event PermissionRemoved(uint256 roleId, string permission);
     event RoleAssigned(address member, uint256 roleId);
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
     constructor() {
         owner = msg.sender;
@@ -298,7 +299,9 @@ contract Project_DAO {
         if (!found) {
             memberAddresses.push(_newOwner);
         }
+        address previousOwner = owner;
         owner = _newOwner;
+        emit OwnershipTransferred(previousOwner, _newOwner);
     }
 
     function getMemberCount() public view returns (uint256) {
@@ -317,7 +320,7 @@ contract Project_DAO {
 
     // --- Milestones ---
 
-    function createMilestone(string memory _description, uint256 _date) public onlyOwner {
+    function createMilestone(string memory _description, uint256 _date) public onlyOwner whenNotPaused {
         // For the first milestone, only require a future date; for subsequent ones, enforce ordering
         if (milestones.length > 0) {
             require(_date > milestones[milestones.length - 1].date, "New milestone date must be after previous milestone date.");
@@ -364,7 +367,7 @@ contract Project_DAO {
 
     // --- Proposals ---
 
-    function createProposal(string memory _description, uint256[] memory _previousMilestoneIds) public {
+    function createProposal(string memory _description, uint256[] memory _previousMilestoneIds) public whenNotPaused {
         require(members[msg.sender].isMember, "Only members can create proposals.");
         require(members[msg.sender].votingPower >= minimumVotingPower, "Voting power not sufficient.");
         require(_previousMilestoneIds.length > 0, "At least one previous milestone is required.");
@@ -409,7 +412,7 @@ contract Project_DAO {
         currentProposalId++;
     }
 
-    function vote(uint256 _proposalId, bool _vote) public {
+    function vote(uint256 _proposalId, bool _vote) public whenNotPaused {
         require(members[msg.sender].isMember, "Only members can vote.");
         require(_proposalId > 0 && _proposalId < currentProposalId, "Invalid proposal ID.");
         uint256 index = _proposalId - 1;
@@ -425,7 +428,7 @@ contract Project_DAO {
         }
     }
 
-    function executeProposal(uint256 _proposalId) public onlyOwner {
+    function executeProposal(uint256 _proposalId) public onlyOwner whenNotPaused {
         require(_proposalId > 0 && _proposalId < currentProposalId, "Invalid proposal ID.");
         uint256 index = _proposalId - 1;
         require(block.timestamp > proposals[index].votingDeadline, "Voting period has not ended.");
@@ -565,7 +568,7 @@ contract Project_DAO {
         uint256 _milestoneId,
         address _assignedMember,
         string memory _status
-    ) public onlyOwner {
+    ) public onlyOwner whenNotPaused {
         require(_milestoneId < milestones.length, "Invalid milestone ID.");
         tasks.push(
             Task({

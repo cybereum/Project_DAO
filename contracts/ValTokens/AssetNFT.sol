@@ -40,21 +40,6 @@ contract AssetNFT is ERC721URIStorage, Ownable {
         nextAssetId++;
     }
 
-    function createAsset(
-        string memory _assetType,
-        bytes32[] memory _params
-    ) public onlyOwner {
-        require(_params.length % 2 == 0, "Params must be key-value pairs.");
-        uint256 assetId = nextAssetId;
-        assets.push(Asset(assetId, _assetType));
-        _safeMint(msg.sender, assetId);
-        _setTokenURI(assetId, string(abi.encodePacked("https://example.com/asset/", _uint2str(assetId))));
-        for (uint256 i = 0; i < _params.length; i += 2) {
-            assetParams[assetId][_params[i]] = _params[i + 1];
-        }
-        nextAssetId++;
-    }
-
     function getAsset(uint256 _id) public view returns (Asset memory) {
         require(_id < nextAssetId, "Asset does not exist.");
         return assets[_id];

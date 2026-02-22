@@ -189,21 +189,22 @@ contract MilestoneTracker {
             milestone.client == msg.sender || milestone.verifier == msg.sender || _isContractor(msg.sender, _milestoneId),
             "Only client, verifier, or contractor can complete milestone"
         );
-        require(milestone.deadline >= block.timestamp, "Milestone is past deadline");
         require(!milestone.completed, "Milestone is already completed");
 
         uint256 amountToPay = milestone.amount;
 
-        // Apply penalty if past deadline
+        // Apply penalty if completed past deadline
         if (block.timestamp > milestone.deadline && milestone.penalty > 0) {
             require(amountToPay > milestone.penalty, "Penalty exceeds milestone amount");
             amountToPay = amountToPay - milestone.penalty;
         }
 
-        _payContractors(_milestoneId, amountToPay);
-
+        // Update state before external calls (checks-effects-interactions)
         milestone.completed = true;
         milestone.completedByContractor = (msg.sender != milestone.verifier && msg.sender != milestone.client);
+
+        _payContractors(_milestoneId, amountToPay);
+
         emit MilestoneCompleted(_milestoneId, milestone.documentHash);
 
         // Update reputations
@@ -234,26 +235,7 @@ contract MilestoneTracker {
         }
     }
 
-    function _payVerifiers() internal {
-        for (uint256 i = 0; i < numMilestones; i++) {
-            Milestone storage milestone = milestones[i];
-            if (milestone.completed && !milestone.paid && verifierReputations[milestone.verifier].score >= minVerifierReputation) {
-                for (uint256 j = 0; j < milestone.paymentMilestones.length; j++) {
-                    PaymentMilestone storage paymentMilestone = milestone.paymentMilestones[j];
-                    if (!paymentMilestone.paid) {
-                        uint256 verifierPayment = paymentMilestone.amount / 10; // 10% goes to verifier
-                        payable(milestone.verifier).transfer(verifierPayment);
-                        paymentMilestone.paid = true;
-                        emit VerifierPaid(i, milestone.verifier, verifierPayment);
-                    }
-                }
-                milestone.paid = true;
-                emit MilestonePaid(i);
-            }
-        }
-    }
-
-    function payMilestone(uint256 _milestoneId, uint256 _paymentMilestoneIndex) public {
+    function payMilestone(uint256 _milestoneId, uint256 _paymentMilestoneIndex) public isAuthorized {
         require(_milestoneId < numMilestones, "Invalid milestone ID");
         Milestone storage milestone = milestones[_milestoneId];
         require(_paymentMilestoneIndex < milestone.paymentMilestones.length, "Invalid payment milestone index");
@@ -330,11 +312,6 @@ contract MilestoneTracker {
         } else {
             emit ContractorRated(_user, rating);
         }
-    }
-
-    function updateVerifierReputationThreshold(uint256 _newThreshold) public onlyOwner {
-        require(_newThreshold > 0, "New threshold must be greater than zero");
-        minVerifierReputation = _newThreshold;
     }
 
     function increaseContractorReputation(address _contractor, uint256 _amount) public isAuthorized isValidContractor(_contractor) {
