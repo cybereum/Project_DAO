@@ -264,9 +264,7 @@ export function useAppState() {
     addProject, addProposal, addCompany, addNft,
   ]);
 
-  return {
-    ...appState,
-  };
+  return appState;
 }
 
 export { AppContext };
