@@ -178,7 +178,7 @@ export function useAppState() {
     setWalletError('');
     const contract = getDaoReadContract();
     if (!contract) {
-      setWalletError('Contract not configured or wallet unavailable. Add VITE_PROJECT_DAO_ADDRESS and ensure an injected wallet provider is available.');
+      setWalletError('Contract not configured or browser provider unavailable. Add VITE_PROJECT_DAO_ADDRESS and ensure MetaMask or another Web3 provider is installed.');
       return;
     }
 
