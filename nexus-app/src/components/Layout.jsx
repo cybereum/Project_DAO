@@ -67,32 +67,41 @@ function Sidebar({ collapsed, onToggle }) {
 }
 
 function TopBar() {
-  const { walletConnected, walletAddress, connectWallet } = useApp();
+  const { walletConnected, walletAddress, walletError, txPending, connectWallet } = useApp();
   return (
-    <header className="h-16 border-b border-nexus-border bg-nexus-surface/80 backdrop-blur-md flex items-center justify-between px-6 sticky top-0 z-30">
-      <div className="flex items-center gap-3">
-        <Globe size={16} className="text-nexus-cyan animate-pulse-glow" />
-        <span className="text-xs text-nexus-text-dim font-mono">NETWORK: ETHEREUM MAINNET</span>
-        <span className="w-2 h-2 rounded-full bg-nexus-green animate-pulse" />
-      </div>
-      <div className="flex items-center gap-4">
-        <div className="text-xs text-nexus-text-dim font-mono hidden sm:block">
-          BLOCK: #19,847,293
+    <>
+      <header className="h-16 border-b border-nexus-border bg-nexus-surface/80 backdrop-blur-md flex items-center justify-between px-6 sticky top-0 z-30">
+        <div className="flex items-center gap-3">
+          <Globe size={16} className="text-nexus-cyan animate-pulse-glow" />
+          <span className="text-xs text-nexus-text-dim font-mono">NETWORK: ETHEREUM MAINNET</span>
+          <span className="w-2 h-2 rounded-full bg-nexus-green animate-pulse" />
         </div>
-        {walletConnected ? (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-nexus-cyan/10 border border-nexus-cyan/20">
-            <div className="w-2 h-2 rounded-full bg-nexus-green" />
-            <span className="text-xs font-mono text-nexus-cyan">{walletAddress}</span>
+        <div className="flex items-center gap-4">
+          <div className="text-xs text-nexus-text-dim font-mono hidden sm:block">
+            BLOCK: #19,847,293
           </div>
-        ) : (
-          <button onClick={connectWallet}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-nexus-cyan to-nexus-purple text-white text-sm font-medium hover:opacity-90 transition-opacity">
-            <Wallet size={16} />
-            Connect Wallet
-          </button>
-        )}
-      </div>
-    </header>
+          {walletConnected ? (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-nexus-cyan/10 border border-nexus-cyan/20">
+              <div className="w-2 h-2 rounded-full bg-nexus-green" />
+              <span className="text-xs font-mono text-nexus-cyan">{walletAddress}</span>
+            </div>
+          ) : (
+            <button onClick={connectWallet}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-nexus-cyan to-nexus-purple text-white text-sm font-medium hover:opacity-90 transition-opacity">
+              <Wallet size={16} />
+              Connect Wallet
+            </button>
+          )}
+        </div>
+      </header>
+
+      {(txPending || walletError) && (
+        <div className="px-6 pt-2">
+          {txPending && <p className="text-xs text-nexus-amber">Transaction pending confirmation...</p>}
+          {walletError && <p className="text-xs text-red-400">{walletError}</p>}
+        </div>
+      )}
+    </>
   );
 }
 

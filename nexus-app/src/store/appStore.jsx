@@ -1,4 +1,6 @@
 import { useState, createContext, useContext, useCallback } from 'react';
+import { BrowserProvider, Contract, isAddress } from 'ethers';
+import { PROJECT_DAO_ABI, PROJECT_DAO_ADDRESS, hasContractConfig } from '../config/contract';
 
 const AppContext = createContext(null);
 
@@ -98,13 +100,59 @@ export function useAppState() {
   const [tasks] = useState(MOCK_TASKS);
   const [walletConnected, setWalletConnected] = useState(false);
   const [walletAddress, setWalletAddress] = useState('');
+  const [walletError, setWalletError] = useState('');
+  const [txPending, setTxPending] = useState(false);
 
-  const connectWallet = useCallback(async () => {
-    setWalletAddress('0x7a23...f4d1');
-    setWalletConnected(true);
+  const getBrowserProvider = useCallback(() => {
+    if (!window?.ethereum) return null;
+    return new BrowserProvider(window.ethereum);
   }, []);
 
-  const castVote = useCallback((proposalId, vote) => {
+  const getDaoContract = useCallback(async () => {
+    if (!hasContractConfig() || !isAddress(PROJECT_DAO_ADDRESS)) return null;
+    const provider = getBrowserProvider();
+    if (!provider) return null;
+    const signer = await provider.getSigner();
+    return new Contract(PROJECT_DAO_ADDRESS, PROJECT_DAO_ABI, signer);
+  }, [getBrowserProvider]);
+
+  const connectWallet = useCallback(async () => {
+    setWalletError('');
+    const provider = getBrowserProvider();
+    if (!provider) {
+      setWalletError('No injected wallet found. Install MetaMask to enable on-chain actions.');
+      return;
+    }
+
+    try {
+      const accounts = await provider.send('eth_requestAccounts', []);
+      const address = accounts?.[0] || '';
+      if (!address) throw new Error('No account returned from wallet provider.');
+      setWalletAddress(address);
+      setWalletConnected(true);
+    } catch (error) {
+      setWalletError(error?.message || 'Wallet connection failed.');
+      setWalletConnected(false);
+    }
+  }, [getBrowserProvider]);
+
+  const castVote = useCallback(async (proposalId, vote) => {
+    setWalletError('');
+    const contract = await getDaoContract();
+
+    if (contract) {
+      try {
+        setTxPending(true);
+        const tx = await contract.vote(proposalId, vote);
+        await tx.wait();
+      } catch (error) {
+        setWalletError(error?.shortMessage || error?.message || 'On-chain vote failed.');
+      } finally {
+        setTxPending(false);
+      }
+    }
+
+    // Keep dashboard responsive even when contract isn't configured/reachable.
     setProposals(prev => prev.map(p => {
       if (p.id === proposalId) {
         return vote
@@ -113,7 +161,7 @@ export function useAppState() {
       }
       return p;
     }));
-  }, []);
+  }, [getDaoContract]);
 
   const addProject = useCallback((project) => {
     setProjects(prev => [...prev, { ...project, id: prev.length + 1, status: 'Pending', members: 1, milestones: 0, completedMilestones: 0, proposals: 0, tasks: 0, completedTasks: 0, progress: 0 }]);
@@ -133,7 +181,7 @@ export function useAppState() {
 
   return {
     projects, milestones, proposals, members, companies, nfts, tasks,
-    walletConnected, walletAddress, connectWallet, castVote,
+    walletConnected, walletAddress, walletError, txPending, connectWallet, castVote,
     addProject, addProposal, addCompany, addNft,
   };
 }
