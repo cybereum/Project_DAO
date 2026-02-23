@@ -1,4 +1,4 @@
-import { useState, createContext, useContext, useCallback } from 'react';
+import { useState, createContext, useContext, useCallback, useMemo } from 'react';
 import { BrowserProvider, Contract, isAddress } from 'ethers';
 import { PROJECT_DAO_ABI, PROJECT_DAO_ADDRESS, hasContractConfig } from '../config/contract';
 
@@ -102,13 +102,21 @@ export function useAppState() {
   const [walletAddress, setWalletAddress] = useState('');
   const [walletError, setWalletError] = useState('');
   const [txPending, setTxPending] = useState(false);
+  const [syncingProposals, setSyncingProposals] = useState(false);
 
   const getBrowserProvider = useCallback(() => {
     if (!window?.ethereum) return null;
     return new BrowserProvider(window.ethereum);
   }, []);
 
-  const getDaoContract = useCallback(async () => {
+  const getDaoReadContract = useCallback(() => {
+    if (!hasContractConfig() || !isAddress(PROJECT_DAO_ADDRESS)) return null;
+    const provider = getBrowserProvider();
+    if (!provider) return null;
+    return new Contract(PROJECT_DAO_ADDRESS, PROJECT_DAO_ABI, provider);
+  }, [getBrowserProvider]);
+
+  const getDaoWriteContract = useCallback(async () => {
     if (!hasContractConfig() || !isAddress(PROJECT_DAO_ADDRESS)) return null;
     const provider = getBrowserProvider();
     if (!provider) return null;
@@ -138,13 +146,15 @@ export function useAppState() {
 
   const castVote = useCallback(async (proposalId, vote) => {
     setWalletError('');
-    const contract = await getDaoContract();
+    const contract = await getDaoWriteContract();
+    let voteCommittedOnChain = false;
 
     if (contract) {
       try {
         setTxPending(true);
         const tx = await contract.vote(proposalId, vote);
         await tx.wait();
+        voteCommittedOnChain = true;
       } catch (error) {
         setWalletError(error?.shortMessage || error?.message || 'On-chain vote failed.');
       } finally {
@@ -152,16 +162,79 @@ export function useAppState() {
       }
     }
 
-    // Keep dashboard responsive even when contract isn't configured/reachable.
-    setProposals(prev => prev.map(p => {
-      if (p.id === proposalId) {
-        return vote
-          ? { ...p, yesVotes: p.yesVotes + 1 }
-          : { ...p, noVotes: p.noVotes + 1 };
-      }
-      return p;
-    }));
-  }, [getDaoContract]);
+    if (!contract || voteCommittedOnChain) {
+      setProposals(prev => prev.map(p => {
+        if (p.id === proposalId) {
+          return vote
+            ? { ...p, yesVotes: p.yesVotes + 1 }
+            : { ...p, noVotes: p.noVotes + 1 };
+        }
+        return p;
+      }));
+    }
+  }, [getDaoWriteContract]);
+
+  const syncProposalsFromChain = useCallback(async () => {
+    setWalletError('');
+    const contract = getDaoReadContract();
+    if (!contract) {
+      setWalletError('Contract not configured or wallet unavailable. Add VITE_PROJECT_DAO_ADDRESS and ensure an injected wallet provider is available.');
+      return;
+    }
+
+    try {
+      setSyncingProposals(true);
+      const count = await contract.getProposalCount();
+      const countNumber = Number(count);
+      if (!Number.isFinite(countNumber) || countNumber <= 0) return;
+
+      const chainProposals = await Promise.all(
+        Array.from({ length: countNumber }, (_, i) => contract.getProposal(i + 1))
+      );
+
+      setProposals((prev) => {
+        const merged = [...prev];
+
+        chainProposals.forEach((proposalTuple, i) => {
+          const proposalId = Number(proposalTuple.id ?? i + 1);
+          const votingDeadline = Number(proposalTuple.votingDeadline ?? 0);
+          const yesVotes = Number(proposalTuple.yesVotes ?? 0);
+          const noVotes = Number(proposalTuple.noVotes ?? 0);
+          const existingIndex = merged.findIndex((p) => p.id === proposalId);
+          const title = (proposalTuple.description || `On-chain Proposal #${proposalId}`).slice(0, 64);
+          const status = proposalTuple.executed
+            ? (proposalTuple.proposalPassed ? 'Passed' : 'Rejected')
+            : 'Active';
+
+          const hydrated = {
+            id: proposalId,
+            title,
+            description: proposalTuple.description || 'On-chain governance proposal.',
+            status,
+            yesVotes,
+            noVotes,
+            projectId: merged[existingIndex]?.projectId || 1,
+            author: merged[existingIndex]?.author || 'On-chain',
+            deadline: votingDeadline
+              ? new Date(votingDeadline * 1000).toISOString().split('T')[0]
+              : merged[existingIndex]?.deadline || 'N/A',
+          };
+
+          if (existingIndex >= 0) {
+            merged[existingIndex] = { ...merged[existingIndex], ...hydrated };
+          } else {
+            merged.push(hydrated);
+          }
+        });
+
+        return merged.sort((a, b) => a.id - b.id);
+      });
+    } catch (error) {
+      setWalletError(error?.shortMessage || error?.message || 'Failed to sync proposals from chain.');
+    } finally {
+      setSyncingProposals(false);
+    }
+  }, [getDaoReadContract]);
 
   const addProject = useCallback((project) => {
     setProjects(prev => [...prev, { ...project, id: prev.length + 1, status: 'Pending', members: 1, milestones: 0, completedMilestones: 0, proposals: 0, tasks: 0, completedTasks: 0, progress: 0 }]);
@@ -179,10 +252,20 @@ export function useAppState() {
     setNfts(prev => [...prev, { ...nft, id: prev.length + 1, owner: walletAddress || '0x0000...0000', image: `gradient-${(prev.length % 6) + 1}` }]);
   }, [walletAddress]);
 
-  return {
+  const appState = useMemo(() => ({
     projects, milestones, proposals, members, companies, nfts, tasks,
-    walletConnected, walletAddress, walletError, txPending, connectWallet, castVote,
+    walletConnected, walletAddress, walletError, txPending, syncingProposals,
+    connectWallet, castVote, syncProposalsFromChain,
     addProject, addProposal, addCompany, addNft,
+  }), [
+    projects, milestones, proposals, members, companies, nfts, tasks,
+    walletConnected, walletAddress, walletError, txPending, syncingProposals,
+    connectWallet, castVote, syncProposalsFromChain,
+    addProject, addProposal, addCompany, addNft,
+  ]);
+
+  return {
+    ...appState,
   };
 }
 

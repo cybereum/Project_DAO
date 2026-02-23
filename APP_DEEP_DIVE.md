@@ -63,9 +63,10 @@ Navigation and page routing are centralized in `App.jsx` + `Layout.jsx`.
 
 Important implementation reality:
 
-- The UI currently uses **mock in-memory state** from `nexus-app/src/store/appStore.jsx`.
-- Actions like connect wallet, cast vote, add project/proposal/company/NFT mutate local React state only.
-- There is no contract-read or transaction-write integration in the current code path.
+- The UI still uses **mock in-memory state** as the primary source from `nexus-app/src/store/appStore.jsx`.
+- Wallet connect and proposal voting already attempt real transactions when `VITE_PROJECT_DAO_ADDRESS` is configured.
+- Proposal data can now be synced from the deployed contract (`getProposalCount` + `getProposal`), then merged into local state for a hybrid on-chain/off-chain UX.
+- Project creation, verification, reputation, and NFT minting remain local simulation flows in the current app.
 
 So today, the app functions as a **high-fidelity product prototype / simulation console** for the intended protocol, rather than a fully wired on-chain dApp.
 
