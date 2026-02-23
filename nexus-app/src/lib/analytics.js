@@ -19,7 +19,7 @@ function initGA(id) {
   document.head.appendChild(script);
 
   window.dataLayer = window.dataLayer || [];
-  function gtag() { window.dataLayer.push(arguments); }
+  function gtag(...args) { window.dataLayer.push(args); }
   window.gtag = gtag;
   gtag('js', new Date());
   gtag('config', id, {
