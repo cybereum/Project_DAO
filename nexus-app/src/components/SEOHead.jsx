@@ -43,11 +43,32 @@ const ROUTE_SEO = {
   },
 };
 
+const getRouteSEO = (pathname) => {
+  // Exact match from static route config
+  if (ROUTE_SEO[pathname]) {
+    return ROUTE_SEO[pathname];
+  }
+
+  // Dynamic project detail routes: /projects/:id
+  if (pathname.startsWith('/projects/') && pathname !== '/projects') {
+    return {
+      title: 'Project Details | NEXUS Protocol',
+      description:
+        'View detailed information, milestones, governance activity, and performance metrics for this NEXUS Protocol project.',
+      keywords:
+        'project details, NEXUS project, governance, milestones, decentralized project overview',
+    };
+  }
+
+  // Fallback to global defaults handled later
+  return {};
+};
+
 export default function SEOHead({ title, description, keywords }) {
   const location = useLocation();
 
   useEffect(() => {
-    const routeSEO = ROUTE_SEO[location.pathname] || {};
+    const routeSEO = getRouteSEO(location.pathname);
     const pageTitle = title || routeSEO.title || `${SITE_NAME} | Decentralized Governance & Verified Trust`;
     const pageDescription = description || routeSEO.description || 'Decentralized platform where companies earn verified trust, govern transparently, and build reputation on-chain.';
     const pageKeywords = keywords || routeSEO.keywords || 'DAO, decentralized governance, verified trust, blockchain';
