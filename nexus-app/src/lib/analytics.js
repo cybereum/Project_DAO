@@ -76,14 +76,21 @@ export function reportWebVitals() {
     });
     lcpObserver.observe({ type: 'largest-contentful-paint', buffered: true });
 
-    // First Input Delay
-    const fidObserver = new PerformanceObserver((list) => {
+    // Interaction to Next Paint (INP)
+    let inpValue = 0;
+    const inpObserver = new PerformanceObserver((list) => {
       const entries = list.getEntries();
-      entries.forEach(entry => {
-        trackEvent('web_vitals', { metric: 'FID', value: Math.round(entry.processingStart - entry.startTime) });
+      entries.forEach((entry) => {
+        // Only consider entries that are part of an interaction
+        if (!entry.interactionId) return;
+
+        if (entry.duration > inpValue) {
+          inpValue = entry.duration;
+          trackEvent('web_vitals', { metric: 'INP', value: Math.round(inpValue) });
+        }
       });
     });
-    fidObserver.observe({ type: 'first-input', buffered: true });
+    inpObserver.observe({ type: 'event', buffered: true, durationThreshold: 40 });
 
     // Cumulative Layout Shift
     let clsValue = 0;
