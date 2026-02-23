@@ -87,15 +87,32 @@ export function reportWebVitals() {
 
     // Cumulative Layout Shift
     let clsValue = 0;
+    let clsReported = false;
     const clsObserver = new PerformanceObserver((list) => {
       list.getEntries().forEach(entry => {
         if (!entry.hadRecentInput) {
           clsValue += entry.value;
         }
       });
-      trackEvent('web_vitals', { metric: 'CLS', value: Math.round(clsValue * 1000) });
     });
     clsObserver.observe({ type: 'layout-shift', buffered: true });
+
+    const reportFinalCLS = () => {
+      if (clsReported) return;
+      clsReported = true;
+      clsObserver.disconnect();
+      trackEvent('web_vitals', { metric: 'CLS', value: Math.round(clsValue * 1000) });
+    };
+
+    window.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        reportFinalCLS();
+      }
+    }, { once: true });
+
+    window.addEventListener('pagehide', () => {
+      reportFinalCLS();
+    }, { once: true });
   } catch {
     // PerformanceObserver not supported
   }
