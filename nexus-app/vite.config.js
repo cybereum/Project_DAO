@@ -5,7 +5,7 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   build: {
-    // Enable source maps for production debugging
+    // Disable source maps for production
     sourcemap: false,
     // Optimize chunk splitting for better caching
     rollupOptions: {
