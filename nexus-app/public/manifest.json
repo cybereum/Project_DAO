@@ -1,0 +1,47 @@
+{
+  "name": "NEXUS Protocol - Decentralized Governance & Verified Trust",
+  "short_name": "NEXUS Protocol",
+  "description": "Decentralized platform where companies earn verified trust, govern transparently, and build reputation on-chain.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0e1a",
+  "theme_color": "#06b6d4",
+  "orientation": "any",
+  "scope": "/",
+  "lang": "en",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "url": "/",
+      "description": "Protocol command center and overview"
+    },
+    {
+      "name": "Projects",
+      "short_name": "Projects",
+      "url": "/projects",
+      "description": "Browse and manage decentralized projects"
+    },
+    {
+      "name": "Proposals",
+      "short_name": "Proposals",
+      "url": "/proposals",
+      "description": "View and vote on governance proposals"
+    },
+    {
+      "name": "Verification",
+      "short_name": "Verify",
+      "url": "/verification",
+      "description": "Company verification and credentials"
+    }
+  ]
+}

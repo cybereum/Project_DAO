@@ -1,6 +1,7 @@
 import { Routes, Route } from 'react-router-dom';
 import { AppProvider } from './store/appStore';
 import Layout from './components/Layout';
+import SEOHead from './components/SEOHead';
 import Dashboard from './pages/Dashboard';
 import Projects from './pages/Projects';
 import ProjectDetail from './pages/ProjectDetail';
@@ -13,6 +14,7 @@ import Assets from './pages/Assets';
 export default function App() {
   return (
     <AppProvider>
+      <SEOHead />
       <Layout>
         <Routes>
           <Route path="/" element={<Dashboard />} />

@@ -1,0 +1,104 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0a0e1a"/>
+      <stop offset="50%" stop-color="#111827"/>
+      <stop offset="100%" stop-color="#0a0e1a"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="400" y2="400" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#06b6d4"/>
+      <stop offset="50%" stop-color="#a855f7"/>
+      <stop offset="100%" stop-color="#ec4899"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="300" y1="100" x2="900" y2="500" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#a855f7" stop-opacity="0.05"/>
+    </linearGradient>
+    <filter id="blur1" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="60"/>
+    </filter>
+    <filter id="blur2" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="40"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bg)"/>
+
+  <!-- Grid pattern -->
+  <g opacity="0.06">
+    <line x1="0" y1="0" x2="0" y2="630" stroke="#06b6d4" stroke-width="0.5" transform="translate(40,0)"/>
+    <line x1="0" y1="0" x2="0" y2="630" stroke="#06b6d4" stroke-width="0.5" transform="translate(80,0)"/>
+    <line x1="0" y1="0" x2="0" y2="630" stroke="#06b6d4" stroke-width="0.5" transform="translate(120,0)"/>
+    <line x1="0" y1="0" x2="0" y2="630" stroke="#06b6d4" stroke-width="0.5" transform="translate(160,0)"/>
+    <line x1="0" y1="0" x2="0" y2="630" stroke="#06b6d4" stroke-width="0.5" transform="translate(200,0)"/>
+    <line x1="0" y1="0" x2="0" y2="630" stroke="#06b6d4" stroke-width="0.5" transform="translate(240,0)"/>
+    <line x1="0" y1="0" x2="0" y2="630" stroke="#06b6d4" stroke-width="0.5" transform="translate(280,0)"/>
+    <line x1="0" y1="0" x2="0" y2="630" stroke="#06b6d4" stroke-width="0.5" transform="translate(320,0)"/>
+    <line x1="0" y1="0" x2="0" y2="630" stroke="#06b6d4" stroke-width="0.5" transform="translate(360,0)"/>
+    <line x1="0" y1="0" x2="0" y2="630" stroke="#06b6d4" stroke-width="0.5" transform="translate(400,0)"/>
+    <line x1="0" y1="0" x2="1200" y2="0" stroke="#06b6d4" stroke-width="0.5" transform="translate(0,40)"/>
+    <line x1="0" y1="0" x2="1200" y2="0" stroke="#06b6d4" stroke-width="0.5" transform="translate(0,80)"/>
+    <line x1="0" y1="0" x2="1200" y2="0" stroke="#06b6d4" stroke-width="0.5" transform="translate(0,120)"/>
+    <line x1="0" y1="0" x2="1200" y2="0" stroke="#06b6d4" stroke-width="0.5" transform="translate(0,160)"/>
+    <line x1="0" y1="0" x2="1200" y2="0" stroke="#06b6d4" stroke-width="0.5" transform="translate(0,200)"/>
+    <line x1="0" y1="0" x2="1200" y2="0" stroke="#06b6d4" stroke-width="0.5" transform="translate(0,240)"/>
+    <line x1="0" y1="0" x2="1200" y2="0" stroke="#06b6d4" stroke-width="0.5" transform="translate(0,280)"/>
+    <line x1="0" y1="0" x2="1200" y2="0" stroke="#06b6d4" stroke-width="0.5" transform="translate(0,320)"/>
+  </g>
+
+  <!-- Glow orbs -->
+  <circle cx="200" cy="200" r="200" fill="#06b6d4" opacity="0.08" filter="url(#blur1)"/>
+  <circle cx="1000" cy="450" r="180" fill="#a855f7" opacity="0.06" filter="url(#blur1)"/>
+  <circle cx="600" cy="300" r="150" fill="#ec4899" opacity="0.04" filter="url(#blur2)"/>
+
+  <!-- Logo icon -->
+  <g transform="translate(80, 180)">
+    <rect width="72" height="72" rx="16" fill="url(#accent)" opacity="0.9"/>
+    <path d="M36 18L52 30V54L36 66L20 54V30L36 18Z" fill="none" stroke="white" stroke-width="2.5"/>
+    <path d="M36 28L44 34V46L36 52L28 46V34L36 28Z" fill="white" opacity="0.9"/>
+  </g>
+
+  <!-- Title -->
+  <text x="170" y="220" font-family="Inter, system-ui, sans-serif" font-size="56" font-weight="800" fill="#e2e8f0" letter-spacing="-1">NEXUS Protocol</text>
+
+  <!-- Subtitle -->
+  <text x="82" y="290" font-family="Inter, system-ui, sans-serif" font-size="26" font-weight="400" fill="#94a3b8">Decentralized Governance &amp; Verified Trust</text>
+  <text x="82" y="330" font-family="Inter, system-ui, sans-serif" font-size="26" font-weight="400" fill="#94a3b8">for the Global Economy</text>
+
+  <!-- Feature pills -->
+  <g transform="translate(82, 380)">
+    <rect width="180" height="40" rx="20" fill="#06b6d4" opacity="0.15" stroke="#06b6d4" stroke-opacity="0.3" stroke-width="1"/>
+    <text x="90" y="26" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="600" fill="#06b6d4" text-anchor="middle">DAO Governance</text>
+  </g>
+  <g transform="translate(280, 380)">
+    <rect width="200" height="40" rx="20" fill="#a855f7" opacity="0.15" stroke="#a855f7" stroke-opacity="0.3" stroke-width="1"/>
+    <text x="100" y="26" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="600" fill="#a855f7" text-anchor="middle">Verified Credentials</text>
+  </g>
+  <g transform="translate(498, 380)">
+    <rect width="200" height="40" rx="20" fill="#10b981" opacity="0.15" stroke="#10b981" stroke-opacity="0.3" stroke-width="1"/>
+    <text x="100" y="26" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="600" fill="#10b981" text-anchor="middle">On-Chain Reputation</text>
+  </g>
+  <g transform="translate(716, 380)">
+    <rect width="180" height="40" rx="20" fill="#f59e0b" opacity="0.15" stroke="#f59e0b" stroke-opacity="0.3" stroke-width="1"/>
+    <text x="90" y="26" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="600" fill="#f59e0b" text-anchor="middle">Impact Tracking</text>
+  </g>
+
+  <!-- Stats bar -->
+  <g transform="translate(82, 460)">
+    <text x="0" y="16" font-family="JetBrains Mono, monospace" font-size="14" fill="#06b6d4">$11.6M TVL</text>
+    <text x="140" y="16" font-family="JetBrains Mono, monospace" font-size="14" fill="#94a3b8">|</text>
+    <text x="170" y="16" font-family="JetBrains Mono, monospace" font-size="14" fill="#a855f7">4 Active Projects</text>
+    <text x="370" y="16" font-family="JetBrains Mono, monospace" font-size="14" fill="#94a3b8">|</text>
+    <text x="400" y="16" font-family="JetBrains Mono, monospace" font-size="14" fill="#10b981">6 Verified Companies</text>
+    <text x="630" y="16" font-family="JetBrains Mono, monospace" font-size="14" fill="#94a3b8">|</text>
+    <text x="660" y="16" font-family="JetBrains Mono, monospace" font-size="14" fill="#ec4899">Ethereum Mainnet</text>
+  </g>
+
+  <!-- Bottom URL -->
+  <text x="82" y="560" font-family="JetBrains Mono, monospace" font-size="18" font-weight="500" fill="#06b6d4" opacity="0.8">nexusprotocol.io</text>
+
+  <!-- Border accent line -->
+  <rect x="0" y="0" width="1200" height="3" fill="url(#accent)"/>
+  <rect x="0" y="627" width="1200" height="3" fill="url(#accent)"/>
+</svg>
