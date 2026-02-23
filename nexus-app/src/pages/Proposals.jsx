@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useApp } from '../store/appStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Vote, ThumbsUp, ThumbsDown, Clock, User, AlertTriangle, CheckCircle2, XCircle, Plus, RefreshCcw } from 'lucide-react';
+import ShareProposal from '../components/ShareProposal';
 
 const anim = (i) => ({ initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, transition: { delay: i * 0.05 } });
 
@@ -130,11 +131,16 @@ export default function Proposals() {
                   {total === 0 && <div className="bg-nexus-border w-full rounded-full" />}
                 </div>
 
-                <div className="flex items-center gap-6 text-xs text-nexus-text-dim">
-                  <span className="flex items-center gap-1"><ThumbsUp size={12} className="text-nexus-green" /> {proposal.yesVotes} Yes</span>
-                  <span className="flex items-center gap-1"><ThumbsDown size={12} className="text-nexus-red" /> {proposal.noVotes} No</span>
-                  <span className="flex items-center gap-1"><Clock size={12} /> Ends {proposal.deadline}</span>
-                  <span className="flex items-center gap-1"><User size={12} /> {proposal.author}</span>
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-6 text-xs text-nexus-text-dim">
+                    <span className="flex items-center gap-1"><ThumbsUp size={12} className="text-nexus-green" /> {proposal.yesVotes} Yes</span>
+                    <span className="flex items-center gap-1"><ThumbsDown size={12} className="text-nexus-red" /> {proposal.noVotes} No</span>
+                    <span className="flex items-center gap-1"><Clock size={12} /> Ends {proposal.deadline}</span>
+                    <span className="flex items-center gap-1"><User size={12} /> {proposal.author}</span>
+                  </div>
+                  <div onClick={e => e.stopPropagation()}>
+                    <ShareProposal proposal={proposal} />
+                  </div>
                 </div>
               </div>
 

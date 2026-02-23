@@ -4,8 +4,11 @@
 User-agent: *
 Allow: /
 
+# Priority pages for crawl budget
+# /        - Landing page
+# /pulse   - Global Pulse (daily updates, high freshness signal)
+# /proposals - Governance hub
+# /projects  - Project registry
+
 # Sitemap location
 Sitemap: https://nexusprotocol.io/sitemap.xml
-
-# Crawl-delay (optional, respectful rate)
-Crawl-delay: 1

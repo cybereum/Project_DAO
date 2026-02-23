@@ -1,20 +1,22 @@
 import { useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useApp } from '../store/appStore';
 import {
   LayoutDashboard, FolderKanban, Milestone, Vote, ShieldCheck,
-  Trophy, Gem, Menu, X, Wallet, Zap, ChevronRight, Globe
+  Trophy, Gem, Menu, X, Wallet, Zap, ChevronRight, Globe,
+  AlertTriangle, ArrowLeft, Radio
 } from 'lucide-react';
 
 const NAV_ITEMS = [
-  { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/projects', label: 'Projects', icon: FolderKanban },
   { path: '/milestones', label: 'Milestones', icon: Milestone },
   { path: '/proposals', label: 'Proposals', icon: Vote },
   { path: '/verification', label: 'Verification', icon: ShieldCheck },
   { path: '/reputation', label: 'Reputation', icon: Trophy },
   { path: '/assets', label: 'Assets', icon: Gem },
+  { path: '/pulse', label: 'Global Pulse', icon: Radio, highlight: true },
 ];
 
 function Sidebar({ collapsed, onToggle }) {
@@ -37,21 +39,28 @@ function Sidebar({ collapsed, onToggle }) {
         )}
       </div>
       <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto">
-        {NAV_ITEMS.map(({ path, label, icon: Icon }) => {
-          const isActive = location.pathname === path || (path !== '/' && location.pathname.startsWith(path));
+        {NAV_ITEMS.map(({ path, label, icon: Icon, highlight }) => {
+          const isActive = location.pathname === path || (path !== '/dashboard' && location.pathname.startsWith(path));
           return (
             <NavLink key={path} to={path}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group relative ${
                 isActive
                   ? 'bg-nexus-cyan/10 text-nexus-cyan'
+                  : highlight
+                  ? 'text-amber-400 hover:bg-amber-500/10'
                   : 'text-nexus-text-dim hover:text-nexus-text hover:bg-white/5'
               }`}
             >
               {isActive && (
                 <motion.div layoutId="nav-indicator" className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-nexus-cyan rounded-r" />
               )}
-              <Icon size={20} className={isActive ? 'text-nexus-cyan' : 'group-hover:text-nexus-text'} />
-              {!collapsed && <span className="text-sm font-medium">{label}</span>}
+              <Icon size={20} className={isActive ? 'text-nexus-cyan' : highlight ? 'text-amber-400' : 'group-hover:text-nexus-text'} />
+              {!collapsed && (
+                <span className="text-sm font-medium flex items-center gap-2">
+                  {label}
+                  {highlight && !isActive && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />}
+                </span>
+              )}
             </NavLink>
           );
         })}
@@ -63,6 +72,29 @@ function Sidebar({ collapsed, onToggle }) {
         </button>
       </div>
     </aside>
+  );
+}
+
+function DemoBanner({ walletConnected }) {
+  const [dismissed, setDismissed] = useState(false);
+  if (walletConnected || dismissed) return null;
+  return (
+    <div className="bg-nexus-cyan/10 border-b border-nexus-cyan/20 px-6 py-2 flex items-center justify-between gap-4">
+      <div className="flex items-center gap-2 text-xs text-nexus-cyan">
+        <AlertTriangle size={13} />
+        <span>
+          <strong>Demo Mode</strong> — All data is simulated. Connect a wallet to interact on-chain, or explore freely without one.
+        </span>
+      </div>
+      <div className="flex items-center gap-3 flex-shrink-0">
+        <Link to="/" className="text-xs text-nexus-cyan/70 hover:text-nexus-cyan flex items-center gap-1 transition-colors">
+          <ArrowLeft size={11} /> Back to home
+        </Link>
+        <button onClick={() => setDismissed(true)} className="text-xs text-nexus-text-dim hover:text-nexus-text transition-colors">
+          Dismiss
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -94,6 +126,8 @@ function TopBar() {
           )}
         </div>
       </header>
+
+      <DemoBanner walletConnected={walletConnected} />
 
       {(txPending || walletError) && (
         <div className="px-6 pt-2">
