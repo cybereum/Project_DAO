@@ -79,6 +79,11 @@ export default function SEOHead({ title, description, keywords }) {
     let canonical = document.querySelector('link[rel="canonical"]');
     if (canonical) {
       canonical.setAttribute('href', pageUrl);
+    } else {
+      canonical = document.createElement('link');
+      canonical.setAttribute('rel', 'canonical');
+      canonical.setAttribute('href', pageUrl);
+      document.head.appendChild(canonical);
     }
 
     // Track page view for analytics
