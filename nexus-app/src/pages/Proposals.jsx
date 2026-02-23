@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useApp } from '../store/appStore';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Vote, ThumbsUp, ThumbsDown, Clock, User, AlertTriangle, CheckCircle2, XCircle, Plus } from 'lucide-react';
+import { Vote, ThumbsUp, ThumbsDown, Clock, User, AlertTriangle, CheckCircle2, XCircle, Plus, RefreshCcw } from 'lucide-react';
 
 const anim = (i) => ({ initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, transition: { delay: i * 0.05 } });
 
@@ -13,7 +13,10 @@ const STATUS_CONFIG = {
 };
 
 export default function Proposals() {
-  const { proposals, projects, castVote, walletConnected, addProposal } = useApp();
+  const {
+    proposals, projects, castVote, walletConnected, addProposal,
+    syncProposalsFromChain, syncingProposals,
+  } = useApp();
   const [filter, setFilter] = useState('All');
   const [expanded, setExpanded] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -28,10 +31,18 @@ export default function Proposals() {
           <h1 className="text-2xl font-bold text-glow-cyan">Governance Hub</h1>
           <p className="text-nexus-text-dim text-sm mt-1">Vote on proposals, resolve disputes, and shape project direction</p>
         </div>
-        <button onClick={() => setShowCreate(!showCreate)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-nexus-cyan to-nexus-purple text-white text-sm font-medium hover:opacity-90">
-          <Plus size={16} /> New Proposal
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={syncProposalsFromChain}
+            disabled={syncingProposals}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-nexus-border text-nexus-text-dim text-sm font-medium hover:bg-white/5 disabled:opacity-50">
+            <RefreshCcw size={16} className={syncingProposals ? 'animate-spin' : ''} />
+            {syncingProposals ? 'Syncing...' : 'Sync On-chain'}
+          </button>
+          <button onClick={() => setShowCreate(!showCreate)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-nexus-cyan to-nexus-purple text-white text-sm font-medium hover:opacity-90">
+            <Plus size={16} /> New Proposal
+          </button>
+        </div>
       </div>
 
       {showCreate && (
