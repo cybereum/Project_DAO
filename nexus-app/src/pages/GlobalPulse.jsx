@@ -148,7 +148,6 @@ const URGENCY_COLOR = {
 };
 
 function ConcernCard({ concern, index }) {
-  const [expanded, setExpanded] = useState(false);
   const c = COLOR_MAP[concern.color];
 
   const shareText = `${concern.headline} — and NEXUS Protocol provides a structural solution. nexusprotocol.io/pulse`;
