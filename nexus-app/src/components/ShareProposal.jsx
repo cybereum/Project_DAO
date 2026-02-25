@@ -15,10 +15,52 @@ export default function ShareProposal({ proposal }) {
   const text = `"${proposal.title}" — ${pct}% approval on NEXUS Protocol. Transparent on-chain governance in action. ${url}`;
 
   const copy = () => {
-    navigator.clipboard.writeText(url).then(() => {
+    const markCopied = () => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    });
+    };
+
+    const fallbackCopy = () => {
+      if (typeof document === 'undefined') {
+        return false;
+      }
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = url;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'absolute';
+        textarea.style.left = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.select();
+        const successful = document.execCommand && document.execCommand('copy');
+        document.body.removeChild(textarea);
+        if (successful) {
+          markCopied();
+        }
+        return successful;
+      } catch (err) {
+        console.error('Fallback copy failed', err);
+        return false;
+      }
+    };
+
+    if (
+      typeof navigator !== 'undefined' &&
+      navigator.clipboard &&
+      typeof navigator.clipboard.writeText === 'function'
+    ) {
+      navigator.clipboard
+        .writeText(url)
+        .then(() => {
+          markCopied();
+        })
+        .catch((err) => {
+          console.error('Clipboard write failed, using fallback copy', err);
+          fallbackCopy();
+        });
+    } else {
+      fallbackCopy();
+    }
   };
 
   return (
