@@ -106,7 +106,7 @@ export default function Proposals() {
           const isExpanded = expanded === proposal.id;
 
           return (
-            <motion.div key={proposal.id} {...anim(i)}
+            <motion.div key={proposal.id} id={`proposal-${proposal.id}`} {...anim(i)}
               className="rounded-xl border border-nexus-border bg-nexus-card overflow-hidden hover:border-nexus-cyan/20 transition-colors">
               <div className="p-5 cursor-pointer" onClick={() => setExpanded(isExpanded ? null : proposal.id)}>
                 <div className="flex items-start justify-between gap-4 mb-3">
