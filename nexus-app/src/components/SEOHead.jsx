@@ -7,6 +7,16 @@ const SITE_NAME = 'NEXUS Protocol';
 
 const ROUTE_SEO = {
   '/': {
+    title: 'NEXUS Protocol | Decentralized Governance for Every City, Community & Cause',
+    description: 'The open protocol making corruption structurally impossible. Verify companies on-chain, govern projects transparently, track impact in real-time. Free. Global. Deployable in minutes.',
+    keywords: 'decentralized governance, DAO, corruption prevention, transparent government, community governance, public accountability, NGO transparency, ESG verification, blockchain governance, open source DAO',
+  },
+  '/pulse': {
+    title: 'Global Pulse | NEXUS Protocol — Live Accountability Concerns Monitor',
+    description: 'Real-time tracker of global governance failures, corruption hotspots, ESG greenwashing, and accountability gaps — with NEXUS Protocol structural solutions for each.',
+    keywords: 'global corruption, ESG greenwashing, public spending transparency, community governance, accountability, NGO fraud, infrastructure corruption, supply chain fraud',
+  },
+  '/dashboard': {
     title: 'Command Center | NEXUS Protocol',
     description: 'Real-time overview of decentralized governance activity, project milestones, proposals, and protocol health across the NEXUS ecosystem.',
     keywords: 'DAO dashboard, decentralized governance overview, protocol metrics, Web3 command center',
