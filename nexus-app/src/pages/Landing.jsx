@@ -132,8 +132,41 @@ function ShareBar() {
   const url = typeof window !== 'undefined' ? window.location.href : 'https://nexusprotocol.io';
   const text = 'NEXUS Protocol — decentralised governance for every city, community, and cause. Built for accountability at scale.';
 
+  const fallbackCopyToClipboard = (value) => {
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = value;
+      textarea.style.position = 'fixed';
+      textarea.style.top = '-1000px';
+      textarea.style.left = '-1000px';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      const successful = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      if (successful) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    } catch (e) {
+      // Swallow errors to avoid breaking the UI; optionally log if needed.
+    }
+  };
+
   const copy = () => {
-    navigator.clipboard.writeText(url).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard
+        .writeText(url)
+        .then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        })
+        .catch(() => {
+          fallbackCopyToClipboard(url);
+        });
+    } else {
+      fallbackCopyToClipboard(url);
+    }
   };
 
   return (
