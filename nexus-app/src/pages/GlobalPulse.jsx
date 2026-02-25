@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-  AlertTriangle, Leaf, Building2, HeartHandshake, Cpu, Landmark, Users,
-  Globe, TrendingUp, Zap, ArrowRight, ExternalLink, CheckCircle,
-  Twitter, Linkedin, Link2, BarChart3, ShieldOff, Eye, Scale
+  Leaf, Building2, HeartHandshake, Cpu, Users,
+  Zap, ArrowRight,
+  Twitter, Linkedin, ShieldOff, Eye, Scale
 } from 'lucide-react';
 
 const CONCERNS = [
