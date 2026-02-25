@@ -217,12 +217,14 @@ function ConcernCard({ concern, index }) {
           <div className="flex items-center gap-2">
             <a href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`}
               target="_blank" rel="noopener noreferrer"
-              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-nexus-text-dim hover:text-white transition-colors">
+              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-nexus-text-dim hover:text-white transition-colors"
+              aria-label="Share this concern on X (Twitter)">
               <Twitter size={13} />
             </a>
             <a href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`}
               target="_blank" rel="noopener noreferrer"
-              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-nexus-text-dim hover:text-white transition-colors">
+              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-nexus-text-dim hover:text-white transition-colors"
+              aria-label="Share this concern on LinkedIn">
               <Linkedin size={13} />
             </a>
           </div>
