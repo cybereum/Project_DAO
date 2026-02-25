@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Zap, ShieldCheck, Vote, Trophy, Milestone, Gem, Globe, ArrowRight,
-  TrendingUp, AlertTriangle, Users, Lock, BarChart3, CheckCircle,
+  AlertTriangle, Users, Lock, BarChart3, CheckCircle,
   Twitter, Linkedin, Link2, ChevronDown, ExternalLink, Building2,
   Leaf, HeartHandshake, Cpu, Landmark
 } from 'lucide-react';
