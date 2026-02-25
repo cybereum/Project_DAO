@@ -139,18 +139,29 @@ function ShareBar() {
   return (
     <div className="flex items-center gap-3">
       <span className="text-xs text-nexus-text-dim uppercase tracking-widest">Share</span>
-      <a href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`}
-        target="_blank" rel="noopener noreferrer"
-        className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-nexus-text-dim hover:text-white">
+      <a
+        href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-nexus-text-dim hover:text-white"
+        aria-label="Share this page on Twitter"
+      >
         <Twitter size={15} />
       </a>
-      <a href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`}
-        target="_blank" rel="noopener noreferrer"
-        className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-nexus-text-dim hover:text-white">
+      <a
+        href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-nexus-text-dim hover:text-white"
+        aria-label="Share this page on LinkedIn"
+      >
         <Linkedin size={15} />
       </a>
-      <button onClick={copy}
-        className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-nexus-text-dim hover:text-white relative">
+      <button
+        onClick={copy}
+        className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-nexus-text-dim hover:text-white relative"
+        aria-label={copied ? "Link copied to clipboard" : "Copy link to share"}
+      >
         {copied ? <CheckCircle size={15} className="text-green-400" /> : <Link2 size={15} />}
       </button>
     </div>
