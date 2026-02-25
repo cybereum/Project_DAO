@@ -5,7 +5,7 @@ import {
   Zap, ShieldCheck, Vote, Trophy, Milestone, Gem, Globe, ArrowRight,
   AlertTriangle, Users, Lock, BarChart3, CheckCircle,
   Twitter, Linkedin, Link2, ChevronDown, ExternalLink, Building2,
-  Leaf, HeartHandshake, Cpu, Landmark
+  Leaf, HeartHandshake, Cpu, Landmark, MessageCircle, Send
 } from 'lucide-react';
 
 // ─── Global Pulse data: real-world concerns NEXUS addresses ──────────────────
@@ -130,7 +130,9 @@ const USE_CASES = [
 function ShareBar() {
   const [copied, setCopied] = useState(false);
   const url = typeof window !== 'undefined' ? window.location.href : 'https://nexusprotocol.io';
-  const text = 'NEXUS Protocol — decentralised governance for every city, community, and cause. Built for accountability at scale.';
+  const text = '🌍 Corruption steals $82,385 every second. NEXUS Protocol makes it structurally impossible — free, open source governance for every city, community & cause.';
+  const whatsappText = `🌍 Corruption steals $82,385 every second.\n\nNEXUS Protocol makes it structurally impossible — free, open source governance for every city, community & cause.\n\n${url}`;
+  const telegramText = `Corruption steals $82,385 every second. NEXUS Protocol makes it structurally impossible. Free. Open source. ${url}`;
 
   const fallbackCopyToClipboard = (value) => {
     try {
@@ -170,14 +172,14 @@ function ShareBar() {
   };
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-2">
       <span className="text-xs text-nexus-text-dim uppercase tracking-widest">Share</span>
       <a
         href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`}
         target="_blank"
         rel="noopener noreferrer"
         className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-nexus-text-dim hover:text-white"
-        aria-label="Share this page on Twitter"
+        aria-label="Share on X (Twitter)"
       >
         <Twitter size={15} />
       </a>
@@ -186,9 +188,27 @@ function ShareBar() {
         target="_blank"
         rel="noopener noreferrer"
         className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-nexus-text-dim hover:text-white"
-        aria-label="Share this page on LinkedIn"
+        aria-label="Share on LinkedIn"
       >
         <Linkedin size={15} />
+      </a>
+      <a
+        href={`https://wa.me/?text=${encodeURIComponent(whatsappText)}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="p-2 rounded-lg bg-white/5 hover:bg-green-500/10 transition-colors text-nexus-text-dim hover:text-green-400"
+        aria-label="Share on WhatsApp"
+      >
+        <MessageCircle size={15} />
+      </a>
+      <a
+        href={`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(telegramText)}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="p-2 rounded-lg bg-white/5 hover:bg-sky-500/10 transition-colors text-nexus-text-dim hover:text-sky-400"
+        aria-label="Share on Telegram"
+      >
+        <Send size={15} />
       </a>
       <button
         onClick={copy}
