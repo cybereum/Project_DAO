@@ -59,11 +59,6 @@ const getRouteSEO = (pathname) => {
     return ROUTE_SEO[pathname];
   }
 
-  // Dashboard alias
-  if (pathname === '/dashboard') {
-    return ROUTE_SEO['/dashboard'] || {};
-  }
-
   // Dynamic project detail routes: /projects/:id
   if (pathname.startsWith('/projects/') && pathname !== '/projects') {
     return {
