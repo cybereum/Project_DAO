@@ -183,12 +183,21 @@ function CorruptionClock() {
 function ConcernCard({ concern, index }) {
   const c = COLOR_MAP[concern.color];
   const [copied, setCopied] = useState(false);
+  const timeoutRef = useRef(null);
 
   const shareText = `${concern.headline} — and NEXUS Protocol provides a structural solution. nexusprotocol.io/pulse`;
   const shareUrl = typeof window !== 'undefined' ? `${window.location.origin}/pulse#${concern.id}` : `https://nexusprotocol.io/pulse#${concern.id}`;
   const whatsappText = `🔴 ${concern.headline}\n\n${concern.impact} across ${concern.affectedCountries} countries.\n\nNEXUS Protocol addresses this structurally: ${shareUrl}`;
   const telegramText = `${concern.headline} — ${concern.impact} across ${concern.affectedCountries} countries. NEXUS response: ${shareUrl}`;
   const copyText = `📊 ${concern.headline}\n\nImpact: ${concern.impact} | ${concern.affectedCountries} countries affected\nSource: ${concern.source}\n\nNEXUS Protocol structural solution: ${shareUrl}`;
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
 
   const copyToClipboard = async () => {
     let success = false;
@@ -224,7 +233,10 @@ function ConcernCard({ concern, index }) {
 
     if (success) {
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+      timeoutRef.current = setTimeout(() => setCopied(false), 2000);
     }
   };
 
