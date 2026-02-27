@@ -191,20 +191,41 @@ function ConcernCard({ concern, index }) {
   const copyText = `📊 ${concern.headline}\n\nImpact: ${concern.impact} | ${concern.affectedCountries} countries affected\nSource: ${concern.source}\n\nNEXUS Protocol structural solution: ${shareUrl}`;
 
   const copyToClipboard = async () => {
+    let success = false;
+
+    // Try modern async clipboard API first, if available
     try {
-      await navigator.clipboard.writeText(copyText);
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(copyText);
+        success = true;
+      }
     } catch {
-      const ta = document.createElement('textarea');
-      ta.value = copyText;
-      ta.style.cssText = 'position:fixed;top:-1000px;left:-1000px';
-      document.body.appendChild(ta);
-      ta.focus();
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
+      // Ignore and fall back to execCommand-based approach
     }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+
+    // Fallback: use a hidden textarea and document.execCommand('copy')
+    if (!success) {
+      try {
+        if (typeof document !== 'undefined' && document.body) {
+          const ta = document.createElement('textarea');
+          ta.value = copyText;
+          ta.style.cssText = 'position:fixed;top:-1000px;left:-1000px';
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          const execResult = document.execCommand('copy');
+          document.body.removeChild(ta);
+          success = execResult === true;
+        }
+      } catch {
+        success = false;
+      }
+    }
+
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   return (
