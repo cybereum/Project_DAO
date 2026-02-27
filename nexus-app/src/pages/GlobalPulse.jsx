@@ -191,6 +191,7 @@ function ConcernCard({ concern, index }) {
       if (copyTimeoutRef.current) {
         clearTimeout(copyTimeoutRef.current);
       }
+      setCopied(false);
     };
   }, []);
 
@@ -238,7 +239,10 @@ function ConcernCard({ concern, index }) {
       if (copyTimeoutRef.current) {
         clearTimeout(copyTimeoutRef.current);
       }
-      copyTimeoutRef.current = setTimeout(() => setCopied(false), 2000);
+      copyTimeoutRef.current = setTimeout(() => {
+        setCopied(false);
+        copyTimeoutRef.current = null;
+      }, 2000);
     }
   };
 
