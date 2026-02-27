@@ -183,6 +183,7 @@ function CorruptionClock() {
 function ConcernCard({ concern, index }) {
   const c = COLOR_MAP[concern.color];
   const [copied, setCopied] = useState(false);
+  const timeoutRef = useRef(null);
 
   const shareText = `${concern.headline} — and NEXUS Protocol provides a structural solution. nexusprotocol.io/pulse`;
   const shareUrl = typeof window !== 'undefined' ? `${window.location.origin}/pulse#${concern.id}` : `https://nexusprotocol.io/pulse#${concern.id}`;
@@ -224,9 +225,22 @@ function ConcernCard({ concern, index }) {
 
     if (success) {
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      // Clear any existing timeout before setting a new one
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+      timeoutRef.current = setTimeout(() => setCopied(false), 2000);
     }
   };
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
     <motion.div id={concern.id} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }}
