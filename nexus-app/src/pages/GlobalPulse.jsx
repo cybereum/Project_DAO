@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Leaf, Building2, HeartHandshake, Cpu, Users,
   Zap, ArrowRight,
-  Twitter, Linkedin, ShieldOff, Eye, Scale
+  Twitter, Linkedin, ShieldOff, Eye, Scale,
+  MessageCircle, Send, Copy, CheckCircle2
 } from 'lucide-react';
 
 const CONCERNS = [
@@ -147,11 +148,85 @@ const URGENCY_COLOR = {
   MEDIUM: 'bg-blue-500/20 text-blue-300 border border-blue-500/30',
 };
 
+// ─── Live Corruption Clock ────────────────────────────────────────────────────
+const CORRUPTION_PER_SECOND = 82385; // $2.6T/year ÷ 31,557,600 seconds
+
+function CorruptionClock() {
+  const startRef = useRef(Date.now());
+  const [stolen, setStolen] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      const secs = Math.floor((Date.now() - startRef.current) / 1000);
+      setStolen(secs * CORRUPTION_PER_SECOND);
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
+      className="max-w-2xl mx-auto mt-8 p-5 rounded-2xl border border-red-500/20 bg-red-500/5 text-center">
+      <p className="text-xs font-mono text-red-400 uppercase tracking-widest mb-3">
+        ⏱ Live — Since You Opened This Page
+      </p>
+      <div className="text-4xl sm:text-5xl font-black text-red-400 font-mono tabular-nums">
+        ${stolen.toLocaleString()}
+      </div>
+      <p className="text-sm text-nexus-text-dim mt-2">
+        stolen by corruption — at <span className="text-red-400 font-semibold">$82,385 every second</span>
+      </p>
+      <p className="text-xs text-nexus-text-dim mt-1">Source: World Bank 2025 Governance Report</p>
+    </motion.div>
+  );
+}
+
 function ConcernCard({ concern, index }) {
   const c = COLOR_MAP[concern.color];
+  const [copied, setCopied] = useState(false);
 
   const shareText = `${concern.headline} — and NEXUS Protocol provides a structural solution. nexusprotocol.io/pulse`;
   const shareUrl = typeof window !== 'undefined' ? `${window.location.origin}/pulse#${concern.id}` : `https://nexusprotocol.io/pulse#${concern.id}`;
+  const whatsappText = `🔴 ${concern.headline}\n\n${concern.impact} across ${concern.affectedCountries} countries.\n\nNEXUS Protocol addresses this structurally: ${shareUrl}`;
+  const telegramText = `${concern.headline} — ${concern.impact} across ${concern.affectedCountries} countries. NEXUS response: ${shareUrl}`;
+  const copyText = `📊 ${concern.headline}\n\nImpact: ${concern.impact} | ${concern.affectedCountries} countries affected\nSource: ${concern.source}\n\nNEXUS Protocol structural solution: ${shareUrl}`;
+
+  const copyToClipboard = async () => {
+    let success = false;
+
+    // Try modern async clipboard API first, if available
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(copyText);
+        success = true;
+      }
+    } catch {
+      // Ignore and fall back to execCommand-based approach
+    }
+
+    // Fallback: use a hidden textarea and document.execCommand('copy')
+    if (!success) {
+      try {
+        if (typeof document !== 'undefined' && document.body) {
+          const ta = document.createElement('textarea');
+          ta.value = copyText;
+          ta.style.cssText = 'position:fixed;top:-1000px;left:-1000px';
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          const execResult = document.execCommand('copy');
+          document.body.removeChild(ta);
+          success = execResult === true;
+        }
+      } catch {
+        success = false;
+      }
+    }
+
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   return (
     <motion.div id={concern.id} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }}
@@ -208,25 +283,42 @@ function ConcernCard({ concern, index }) {
         </div>
 
         {/* Actions */}
-        <div className="flex items-center justify-between mt-4 pt-4 border-t border-nexus-border">
+        <div className="flex items-center justify-between mt-4 pt-4 border-t border-nexus-border flex-wrap gap-2">
           <Link to="/dashboard"
             className="flex items-center gap-1.5 text-xs text-nexus-cyan hover:underline">
             <Zap size={12} />
             Use NEXUS for this
           </Link>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <a href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`}
               target="_blank" rel="noopener noreferrer"
               className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-nexus-text-dim hover:text-white transition-colors"
-              aria-label="Share this concern on X (Twitter)">
+              aria-label="Share on X (Twitter)">
               <Twitter size={13} />
             </a>
             <a href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`}
               target="_blank" rel="noopener noreferrer"
               className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-nexus-text-dim hover:text-white transition-colors"
-              aria-label="Share this concern on LinkedIn">
+              aria-label="Share on LinkedIn">
               <Linkedin size={13} />
             </a>
+            <a href={`https://wa.me/?text=${encodeURIComponent(whatsappText)}`}
+              target="_blank" rel="noopener noreferrer"
+              className="p-1.5 rounded-lg bg-white/5 hover:bg-green-500/10 text-nexus-text-dim hover:text-green-400 transition-colors"
+              aria-label="Share on WhatsApp">
+              <MessageCircle size={13} />
+            </a>
+            <a href={`https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(telegramText)}`}
+              target="_blank" rel="noopener noreferrer"
+              className="p-1.5 rounded-lg bg-white/5 hover:bg-sky-500/10 text-nexus-text-dim hover:text-sky-400 transition-colors"
+              aria-label="Share on Telegram">
+              <Send size={13} />
+            </a>
+            <button onClick={copyToClipboard}
+              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-nexus-text-dim hover:text-white transition-colors"
+              aria-label={copied ? 'Copied!' : 'Copy shareable text'}>
+              {copied ? <CheckCircle2 size={13} className="text-green-400" /> : <Copy size={13} />}
+            </button>
           </div>
         </div>
       </div>
@@ -297,8 +389,10 @@ export default function GlobalPulse() {
             ))}
           </div>
 
+          <CorruptionClock />
+
           {/* Filter */}
-          <div className="flex justify-center gap-2 flex-wrap">
+          <div className="flex justify-center gap-2 flex-wrap mt-10">
             {filters.map(f => (
               <button key={f} onClick={() => setFilter(f)}
                 className={`px-4 py-1.5 rounded-full text-xs font-mono transition-all ${
