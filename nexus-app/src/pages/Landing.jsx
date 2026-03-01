@@ -401,7 +401,7 @@ export default function Landing() {
             ))}
           </div>
           <div className="mt-6 text-center">
-            <Link to="/dashboard"
+            <Link to="/pulse"
               className="inline-flex items-center gap-2 text-sm text-nexus-cyan hover:underline">
               See how NEXUS addresses each concern live
               <ExternalLink size={13} />
