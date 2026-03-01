@@ -72,6 +72,7 @@ export default function ShareProposal({ proposal }) {
         rel="noopener noreferrer"
         className="p-1.5 rounded-md bg-white/5 hover:bg-white/10 text-nexus-text-dim hover:text-white transition-colors"
         title="Share on X/Twitter"
+        aria-label="Share on X/Twitter"
       >
         <Twitter size={13} />
       </a>
@@ -81,6 +82,7 @@ export default function ShareProposal({ proposal }) {
         rel="noopener noreferrer"
         className="p-1.5 rounded-md bg-white/5 hover:bg-white/10 text-nexus-text-dim hover:text-white transition-colors"
         title="Share on LinkedIn"
+        aria-label="Share on LinkedIn"
       >
         <Linkedin size={13} />
       </a>
@@ -88,6 +90,7 @@ export default function ShareProposal({ proposal }) {
         onClick={copy}
         className="p-1.5 rounded-md bg-white/5 hover:bg-white/10 text-nexus-text-dim hover:text-white transition-colors"
         title="Copy link"
+        aria-label="Copy link"
       >
         {copied ? <CheckCircle size={13} className="text-green-400" /> : <Link2 size={13} />}
       </button>
