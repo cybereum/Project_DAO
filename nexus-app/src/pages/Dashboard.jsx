@@ -1,6 +1,6 @@
 import { useApp } from '../store/appStore';
 import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion as Motion } from 'framer-motion';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, AreaChart, Area
@@ -21,9 +21,9 @@ function StatCard({ icon: Icon, label, value, change, color, index }) {
     amber: 'from-nexus-amber/20 to-nexus-amber/5 border-nexus-amber/20 text-nexus-amber',
   };
   return (
-    <motion.div {...anim(index)} className={`rounded-xl border bg-gradient-to-br ${colorMap[color]} p-5`}>
+    <Motion.div {...anim(index)} className={`rounded-xl border bg-gradient-to-br ${colorMap[color]} p-5`}>
       <div className="flex items-center justify-between mb-3">
-        <Icon size={22} className={`text-nexus-${color}`} />
+        {Icon && <Icon size={22} className={`text-nexus-${color}`} />}
         {change && (
           <span className="flex items-center gap-1 text-xs text-nexus-green">
             <ArrowUpRight size={12} />{change}
@@ -32,7 +32,7 @@ function StatCard({ icon: Icon, label, value, change, color, index }) {
       </div>
       <div className="text-2xl font-bold text-nexus-text">{value}</div>
       <div className="text-xs text-nexus-text-dim mt-1">{label}</div>
-    </motion.div>
+    </Motion.div>
   );
 }
 
@@ -85,7 +85,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <motion.div {...anim(5)} className="lg:col-span-2 rounded-xl border border-nexus-border bg-nexus-card p-5">
+        <Motion.div {...anim(5)} className="lg:col-span-2 rounded-xl border border-nexus-border bg-nexus-card p-5">
           <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
             <Activity size={16} className="text-nexus-cyan" />
             Weekly Activity
@@ -100,9 +100,9 @@ export default function Dashboard() {
               <Bar dataKey="milestones" fill="#10b981" radius={[4,4,0,0]} />
             </BarChart>
           </ResponsiveContainer>
-        </motion.div>
+        </Motion.div>
 
-        <motion.div {...anim(6)} className="rounded-xl border border-nexus-border bg-nexus-card p-5">
+        <Motion.div {...anim(6)} className="rounded-xl border border-nexus-border bg-nexus-card p-5">
           <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
             <MilestoneIcon size={16} className="text-nexus-green" />
             Milestone Status
@@ -123,11 +123,11 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
-        </motion.div>
+        </Motion.div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <motion.div {...anim(7)} className="rounded-xl border border-nexus-border bg-nexus-card p-5">
+        <Motion.div {...anim(7)} className="rounded-xl border border-nexus-border bg-nexus-card p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold flex items-center gap-2">
               <TrendingUp size={16} className="text-nexus-amber" />
@@ -148,9 +148,9 @@ export default function Dashboard() {
               <Area type="monotone" dataKey="value" stroke="#06b6d4" fill="url(#valueGrad)" strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>
-        </motion.div>
+        </Motion.div>
 
-        <motion.div {...anim(8)} className="rounded-xl border border-nexus-border bg-nexus-card p-5">
+        <Motion.div {...anim(8)} className="rounded-xl border border-nexus-border bg-nexus-card p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold flex items-center gap-2">
               <Vote size={16} className="text-nexus-pink" />
@@ -182,10 +182,10 @@ export default function Dashboard() {
               );
             })}
           </div>
-        </motion.div>
+        </Motion.div>
       </div>
 
-      <motion.div {...anim(9)} className="rounded-xl border border-nexus-border bg-nexus-card p-5">
+      <Motion.div {...anim(9)} className="rounded-xl border border-nexus-border bg-nexus-card p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold flex items-center gap-2">
             <Shield size={16} className="text-nexus-purple" />
@@ -215,7 +215,7 @@ export default function Dashboard() {
             </div>
           ))}
         </div>
-      </motion.div>
+      </Motion.div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useApp } from '../store/appStore';
-import { motion } from 'framer-motion';
+import { motion as Motion } from 'framer-motion';
 import { ResponsiveContainer, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from 'recharts';
 import { Trophy, Star, Medal, Target, TrendingUp, Award, Crown, Zap } from 'lucide-react';
 
@@ -41,16 +41,16 @@ export default function Reputation() {
           { icon: Target, label: 'Total Tasks', value: members.reduce((s, m) => s + m.tasks, 0), color: 'purple' },
           { icon: TrendingUp, label: 'Completion Rate', value: `${members.reduce((s, m) => s + m.tasks, 0) > 0 ? Math.round(members.reduce((s, m) => s + m.completed, 0) / members.reduce((s, m) => s + m.tasks, 0) * 100) : 0}%`, color: 'green' },
         ].map((s, i) => (
-          <motion.div key={s.label} {...anim(i)} className="rounded-xl border border-nexus-border bg-nexus-card p-4">
+          <Motion.div key={s.label} {...anim(i)} className="rounded-xl border border-nexus-border bg-nexus-card p-4">
             <s.icon size={18} className={`text-nexus-${s.color} mb-2`} />
             <div className="text-xl font-bold">{s.value}</div>
             <div className="text-xs text-nexus-text-dim">{s.label}</div>
-          </motion.div>
+          </Motion.div>
         ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <motion.div {...anim(4)} className="lg:col-span-2 rounded-xl border border-nexus-border bg-nexus-card p-5">
+        <Motion.div {...anim(4)} className="lg:col-span-2 rounded-xl border border-nexus-border bg-nexus-card p-5">
           <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
             <Trophy size={16} className="text-nexus-amber" /> Rankings
           </h3>
@@ -59,7 +59,7 @@ export default function Reputation() {
               const rankStyle = RANK_STYLES[i];
               const completionRate = member.tasks > 0 ? Math.round((member.completed / member.tasks) * 100) : 0;
               return (
-                <motion.div key={member.address} {...anim(i + 5)}
+                <Motion.div key={member.address} {...anim(i + 5)}
                   className={`flex items-center gap-4 p-4 rounded-xl border transition-colors ${
                     rankStyle
                       ? `${rankStyle.bg} ${rankStyle.border} ${rankStyle.glow}`
@@ -97,14 +97,14 @@ export default function Reputation() {
                     </div>
                     <div className="text-xs text-nexus-text-dim">REP</div>
                   </div>
-                </motion.div>
+                </Motion.div>
               );
             })}
           </div>
-        </motion.div>
+        </Motion.div>
 
         <div className="space-y-6">
-          <motion.div {...anim(5)} className="rounded-xl border border-nexus-border bg-nexus-card p-5">
+          <Motion.div {...anim(5)} className="rounded-xl border border-nexus-border bg-nexus-card p-5">
             <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
               <Award size={16} className="text-nexus-purple" /> Performance Radar
             </h3>
@@ -116,9 +116,9 @@ export default function Reputation() {
                 <Radar name="Score" dataKey="A" stroke="#06b6d4" fill="#06b6d4" fillOpacity={0.2} strokeWidth={2} />
               </RadarChart>
             </ResponsiveContainer>
-          </motion.div>
+          </Motion.div>
 
-          <motion.div {...anim(6)} className="rounded-xl border border-nexus-border bg-nexus-card p-5">
+          <Motion.div {...anim(6)} className="rounded-xl border border-nexus-border bg-nexus-card p-5">
             <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
               <Star size={16} className="text-nexus-amber" /> Score Distribution
             </h3>
@@ -132,7 +132,7 @@ export default function Reputation() {
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
-          </motion.div>
+          </Motion.div>
         </div>
       </div>
     </div>

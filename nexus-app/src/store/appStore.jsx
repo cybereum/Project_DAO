@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { useState, createContext, useContext, useCallback, useMemo } from 'react';
 import { BrowserProvider, Contract, isAddress } from 'ethers';
 import { PROJECT_DAO_ABI, PROJECT_DAO_ADDRESS, hasContractConfig } from '../config/contract';

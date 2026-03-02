@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../store/appStore';
-import { motion } from 'framer-motion';
+import { motion as Motion } from 'framer-motion';
 import { Gem, ArrowRightLeft, Eye, Plus, Search, Filter, DollarSign, Layers } from 'lucide-react';
 
 const anim = (i) => ({ initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, transition: { delay: i * 0.05 } });
@@ -57,16 +57,16 @@ export default function Assets() {
           { icon: Layers, label: 'Asset Types', value: new Set(nfts.map(n => n.type)).size, color: 'purple' },
           { icon: ArrowRightLeft, label: 'Transfers', value: '47', color: 'green' },
         ].map((s, i) => (
-          <motion.div key={s.label} {...anim(i)} className="rounded-xl border border-nexus-border bg-nexus-card p-4">
+          <Motion.div key={s.label} {...anim(i)} className="rounded-xl border border-nexus-border bg-nexus-card p-4">
             <s.icon size={18} className={`text-nexus-${s.color} mb-2`} />
             <div className="text-xl font-bold">{s.value}</div>
             <div className="text-xs text-nexus-text-dim">{s.label}</div>
-          </motion.div>
+          </Motion.div>
         ))}
       </div>
 
       {showMint && (
-        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+        <Motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
           className="rounded-xl border border-nexus-border bg-nexus-card p-6">
           <h3 className="text-lg font-semibold mb-4">Mint New Asset NFT</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -100,7 +100,7 @@ export default function Assets() {
               className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-nexus-cyan to-nexus-purple text-white text-sm font-medium">Mint NFT</button>
             <button onClick={() => setShowMint(false)} className="px-5 py-2.5 rounded-lg border border-nexus-border text-nexus-text-dim text-sm hover:bg-white/5">Cancel</button>
           </div>
-        </motion.div>
+        </Motion.div>
       )}
 
       <div className="flex items-center gap-3">
@@ -117,7 +117,7 @@ export default function Assets() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filtered.map((nft, i) => (
-          <motion.div key={nft.id} {...anim(i)}
+          <Motion.div key={nft.id} {...anim(i)}
             onClick={() => setSelected(selected === nft.id ? null : nft.id)}
             className="rounded-xl border border-nexus-border bg-nexus-card overflow-hidden cursor-pointer hover:border-nexus-cyan/30 transition-all group gradient-border">
             <div className={`h-40 bg-gradient-to-br ${GRADIENTS[nft.image]} flex items-center justify-center relative overflow-hidden`}>
@@ -146,7 +146,7 @@ export default function Assets() {
                 </div>
               </div>
               {selected === nft.id && (
-                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+                <Motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
                   className="mt-3 pt-3 border-t border-nexus-border/50 flex gap-2">
                   <button className="flex-1 flex items-center justify-center gap-1 px-3 py-2 rounded-lg bg-nexus-cyan/10 border border-nexus-cyan/20 text-nexus-cyan text-xs font-medium hover:bg-nexus-cyan/20">
                     <Eye size={12} /> Details
@@ -154,10 +154,10 @@ export default function Assets() {
                   <button className="flex-1 flex items-center justify-center gap-1 px-3 py-2 rounded-lg bg-nexus-purple/10 border border-nexus-purple/20 text-nexus-purple text-xs font-medium hover:bg-nexus-purple/20">
                     <ArrowRightLeft size={12} /> Transfer
                   </button>
-                </motion.div>
+                </Motion.div>
               )}
             </div>
-          </motion.div>
+          </Motion.div>
         ))}
       </div>
     </div>

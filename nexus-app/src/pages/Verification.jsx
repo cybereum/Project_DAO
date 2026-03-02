@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../store/appStore';
-import { motion } from 'framer-motion';
+import { motion as Motion } from 'framer-motion';
 import {
   ShieldCheck, Building2, BadgeCheck, AlertCircle, Globe, Mail,
   FileCheck, Star, ChevronDown, Plus, Search
@@ -48,16 +48,16 @@ export default function Verification() {
           { icon: FileCheck, label: 'Credentials Issued', value: totalCredentials, color: 'purple' },
           { icon: Star, label: 'Avg Reliability', value: Math.round(companies.filter(c => c.reliability > 0).reduce((s, c) => s + c.reliability, 0) / verified) || 0, color: 'amber' },
         ].map((s, i) => (
-          <motion.div key={s.label} {...anim(i)} className="rounded-xl border border-nexus-border bg-nexus-card p-4">
+          <Motion.div key={s.label} {...anim(i)} className="rounded-xl border border-nexus-border bg-nexus-card p-4">
             <s.icon size={18} className={`text-nexus-${s.color} mb-2`} />
             <div className="text-xl font-bold">{s.value}</div>
             <div className="text-xs text-nexus-text-dim">{s.label}</div>
-          </motion.div>
+          </Motion.div>
         ))}
       </div>
 
       {showRegister && (
-        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+        <Motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
           className="rounded-xl border border-nexus-purple/20 bg-nexus-card p-6 glow-purple">
           <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <ShieldCheck size={20} className="text-nexus-purple" /> Company Registration
@@ -99,7 +99,7 @@ export default function Verification() {
               className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-nexus-purple to-nexus-pink text-white text-sm font-medium">Submit for Verification</button>
             <button onClick={() => setShowRegister(false)} className="px-5 py-2.5 rounded-lg border border-nexus-border text-nexus-text-dim text-sm hover:bg-white/5">Cancel</button>
           </div>
-        </motion.div>
+        </Motion.div>
       )}
 
       <div className="relative max-w-md">
@@ -113,7 +113,7 @@ export default function Verification() {
         {filtered.map((company, i) => {
           const isExpanded = expandedCompany === company.address;
           return (
-            <motion.div key={company.address} {...anim(i)}
+            <Motion.div key={company.address} {...anim(i)}
               className="rounded-xl border border-nexus-border bg-nexus-card overflow-hidden hover:border-nexus-purple/20 transition-colors">
               <div className="p-5 cursor-pointer" onClick={() => setExpandedCompany(isExpanded ? null : company.address)}>
                 <div className="flex items-center justify-between">
@@ -146,7 +146,7 @@ export default function Verification() {
               </div>
 
               {isExpanded && (
-                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
+                <Motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
                   className="border-t border-nexus-border p-5">
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                     <div className="p-3 rounded-lg bg-nexus-bg/50">
@@ -173,9 +173,9 @@ export default function Verification() {
                       <button className="px-4 py-2 rounded-lg bg-nexus-cyan/10 border border-nexus-cyan/20 text-nexus-cyan text-xs font-medium hover:bg-nexus-cyan/20">Provide Feedback</button>
                     </div>
                   )}
-                </motion.div>
+                </Motion.div>
               )}
-            </motion.div>
+            </Motion.div>
           );
         })}
       </div>

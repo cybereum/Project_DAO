@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../store/appStore';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { Vote, ThumbsUp, ThumbsDown, Clock, User, AlertTriangle, CheckCircle2, XCircle, Plus, RefreshCcw } from 'lucide-react';
 import ShareProposal from '../components/ShareProposal';
 
@@ -47,7 +47,7 @@ export default function Proposals() {
       </div>
 
       {showCreate && (
-        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+        <Motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
           className="rounded-xl border border-nexus-border bg-nexus-card p-6">
           <h3 className="text-lg font-semibold mb-4">Submit New Proposal</h3>
           <div className="space-y-4">
@@ -81,7 +81,7 @@ export default function Proposals() {
               <button onClick={() => setShowCreate(false)} className="px-5 py-2.5 rounded-lg border border-nexus-border text-nexus-text-dim text-sm hover:bg-white/5">Cancel</button>
             </div>
           </div>
-        </motion.div>
+        </Motion.div>
       )}
 
       <div className="flex items-center gap-2 flex-wrap">
@@ -106,7 +106,7 @@ export default function Proposals() {
           const isExpanded = expanded === proposal.id;
 
           return (
-            <motion.div key={proposal.id} {...anim(i)}
+            <Motion.div key={proposal.id} {...anim(i)}
               className="rounded-xl border border-nexus-border bg-nexus-card overflow-hidden hover:border-nexus-cyan/20 transition-colors">
               <div className="p-5 cursor-pointer" onClick={() => setExpanded(isExpanded ? null : proposal.id)}>
                 <div className="flex items-start justify-between gap-4 mb-3">
@@ -146,7 +146,7 @@ export default function Proposals() {
 
               <AnimatePresence>
                 {isExpanded && (
-                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                  <Motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
                     className="border-t border-nexus-border">
                     <div className="p-5">
                       <p className="text-sm text-nexus-text-dim mb-4">{proposal.description}</p>
@@ -173,10 +173,10 @@ export default function Proposals() {
                         <p className="text-xs text-nexus-amber mt-2">Connect your wallet to vote</p>
                       )}
                     </div>
-                  </motion.div>
+                  </Motion.div>
                 )}
               </AnimatePresence>
-            </motion.div>
+            </Motion.div>
           );
         })}
       </div>

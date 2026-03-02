@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../store/appStore';
-import { motion } from 'framer-motion';
+import { motion as Motion } from 'framer-motion';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from 'recharts';
 import { Milestone as MIcon, CheckCircle2, Clock, DollarSign, Users, TrendingUp } from 'lucide-react';
 
@@ -42,15 +42,15 @@ export default function Milestones() {
           { icon: DollarSign, label: 'Total Value', value: `$${totalValue.toLocaleString()}`, color: 'amber' },
           { icon: TrendingUp, label: 'Value Delivered', value: `$${completedValue.toLocaleString()}`, color: 'purple' },
         ].map((s, i) => (
-          <motion.div key={s.label} {...anim(i)} className="rounded-xl border border-nexus-border bg-nexus-card p-4">
+          <Motion.div key={s.label} {...anim(i)} className="rounded-xl border border-nexus-border bg-nexus-card p-4">
             <s.icon size={18} className={`text-nexus-${s.color} mb-2`} />
             <div className="text-xl font-bold">{s.value}</div>
             <div className="text-xs text-nexus-text-dim">{s.label}</div>
-          </motion.div>
+          </Motion.div>
         ))}
       </div>
 
-      <motion.div {...anim(4)} className="rounded-xl border border-nexus-border bg-nexus-card p-5">
+      <Motion.div {...anim(4)} className="rounded-xl border border-nexus-border bg-nexus-card p-5">
         <h3 className="text-sm font-semibold mb-4">Progress Overview</h3>
         <ResponsiveContainer width="100%" height={200}>
           <BarChart data={chartData} layout="vertical">
@@ -62,7 +62,7 @@ export default function Milestones() {
             </Bar>
           </BarChart>
         </ResponsiveContainer>
-      </motion.div>
+      </Motion.div>
 
       <div className="flex items-center gap-2">
         {['All', 'Completed', 'In Progress', 'Pending'].map(s => (
@@ -80,7 +80,7 @@ export default function Milestones() {
           const project = projects.find(p => p.id === m.projectId);
           const style = STATUS_STYLES[m.status];
           return (
-            <motion.div key={m.id} {...anim(i)}
+            <Motion.div key={m.id} {...anim(i)}
               className="rounded-xl border border-nexus-border bg-nexus-card p-5 hover:border-nexus-cyan/20 transition-colors">
               <div className="flex items-start justify-between mb-3">
                 <div>
@@ -107,7 +107,7 @@ export default function Milestones() {
                 <span className="flex items-center gap-1"><Users size={12} /> {m.contractors} contractors</span>
                 <span className="flex items-center gap-1"><MIcon size={12} /> ID: #{m.id}</span>
               </div>
-            </motion.div>
+            </Motion.div>
           );
         })}
       </div>

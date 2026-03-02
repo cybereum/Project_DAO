@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { createElement, useState } from 'react';
 import { NavLink, Link, useLocation } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { useApp } from '../store/appStore';
 import {
   LayoutDashboard, FolderKanban, Milestone, Vote, ShieldCheck,
@@ -25,12 +25,12 @@ function Sidebar({ collapsed, onToggle }) {
     <aside className={`fixed left-0 top-0 h-screen z-40 transition-all duration-300 ${collapsed ? 'w-16' : 'w-60'} bg-nexus-surface border-r border-nexus-border flex flex-col`}>
       <div className="flex items-center gap-3 px-4 h-16 border-b border-nexus-border">
         {!collapsed && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2">
+          <Motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-nexus-cyan to-nexus-purple flex items-center justify-center">
               <Zap size={18} className="text-white" />
             </div>
             <span className="font-bold text-lg tracking-tight">NEXUS</span>
-          </motion.div>
+          </Motion.div>
         )}
         {collapsed && (
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-nexus-cyan to-nexus-purple flex items-center justify-center mx-auto">
@@ -52,9 +52,9 @@ function Sidebar({ collapsed, onToggle }) {
               }`}
             >
               {isActive && (
-                <motion.div layoutId="nav-indicator" className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-nexus-cyan rounded-r" />
+                <Motion.div layoutId="nav-indicator" className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-nexus-cyan rounded-r" />
               )}
-              <Icon size={20} className={isActive ? 'text-nexus-cyan' : highlight ? 'text-amber-400' : 'group-hover:text-nexus-text'} />
+              {createElement(Icon, { size: 20, className: isActive ? 'text-nexus-cyan' : highlight ? 'text-amber-400' : 'group-hover:text-nexus-text' })}
               {!collapsed && (
                 <span className="text-sm font-medium flex items-center gap-2">
                   {label}
@@ -149,9 +149,9 @@ export default function Layout({ children }) {
         <TopBar />
         <main className="p-6">
           <AnimatePresence mode="wait">
-            <motion.div key={location.pathname} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }}>
+            <Motion.div key={location.pathname} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }}>
               {children}
-            </motion.div>
+            </Motion.div>
           </AnimatePresence>
         </main>
       </div>
