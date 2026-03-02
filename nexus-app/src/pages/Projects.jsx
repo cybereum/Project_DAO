@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp } from '../store/appStore';
-import { motion } from 'framer-motion';
+import { motion as Motion } from 'framer-motion';
 import { FolderKanban, Users, Milestone, CheckCircle2, ArrowRight, Plus, Search, Filter } from 'lucide-react';
 
 const anim = (i) => ({ initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, transition: { delay: i * 0.05 } });
@@ -44,7 +44,7 @@ export default function Projects() {
       </div>
 
       {showCreate && (
-        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+        <Motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
           className="rounded-xl border border-nexus-border bg-nexus-card p-6">
           <h3 className="text-lg font-semibold mb-4">Initialize New Project DAO</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -81,7 +81,7 @@ export default function Projects() {
               className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-nexus-cyan to-nexus-purple text-white text-sm font-medium hover:opacity-90">Deploy Contract</button>
             <button onClick={() => setShowCreate(false)} className="px-5 py-2.5 rounded-lg border border-nexus-border text-nexus-text-dim text-sm hover:bg-white/5">Cancel</button>
           </div>
-        </motion.div>
+        </Motion.div>
       )}
 
       <div className="flex items-center gap-3">
@@ -98,7 +98,7 @@ export default function Projects() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {filtered.map((project, i) => (
-          <motion.div key={project.id} {...anim(i)} >
+          <Motion.div key={project.id} {...anim(i)} >
             <Link to={`/projects/${project.id}`}
               className="block rounded-xl border border-nexus-border bg-nexus-card p-5 hover:border-nexus-cyan/30 transition-all group gradient-border">
               <div className="flex items-start justify-between mb-3">
@@ -144,7 +144,7 @@ export default function Projects() {
                 </div>
               </div>
             </Link>
-          </motion.div>
+          </Motion.div>
         ))}
       </div>
     </div>

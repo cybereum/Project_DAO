@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import {
   Zap, ShieldCheck, Vote, Trophy, Milestone, Gem, Globe, ArrowRight,
   AlertTriangle, Users, Lock, BarChart3, CheckCircle,
@@ -150,7 +150,7 @@ function ShareBar() {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       }
-    } catch (e) {
+    } catch {
       // Swallow errors to avoid breaking the UI; optionally log if needed.
     }
   };
@@ -238,11 +238,11 @@ function GlobalPulseTicker() {
       </div>
       <div className="w-px h-4 bg-white/10 flex-shrink-0" />
       <AnimatePresence mode="wait">
-        <motion.div key={index} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
+        <Motion.div key={index} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
           transition={{ duration: 0.4 }} className="flex items-center gap-2 min-w-0">
           <item.icon size={14} className={`${item.color} flex-shrink-0`} />
           <span className="text-sm text-nexus-text-dim truncate">{item.label}</span>
-        </motion.div>
+        </Motion.div>
       </AnimatePresence>
     </div>
   );
@@ -292,14 +292,14 @@ export default function Landing() {
 
         <div className="max-w-4xl mx-auto text-center relative">
           {/* Badge */}
-          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+          <Motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
             className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-nexus-cyan/30 bg-nexus-cyan/10 text-nexus-cyan text-xs font-mono mb-6">
             <span className="w-1.5 h-1.5 rounded-full bg-nexus-cyan animate-pulse" />
             OPEN PROTOCOL · ZERO PERMISSION · GLOBAL
-          </motion.div>
+          </Motion.div>
 
           {/* Headline */}
-          <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+          <Motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
             className="text-4xl sm:text-5xl lg:text-6xl font-black leading-tight mb-6">
             The World Needs{' '}
             <span className="bg-gradient-to-r from-nexus-cyan via-nexus-purple to-nexus-cyan bg-clip-text text-transparent">
@@ -307,24 +307,24 @@ export default function Landing() {
             </span>
             <br />
             We Built One.
-          </motion.h1>
+          </Motion.h1>
 
           {/* Sub */}
-          <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
+          <Motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
             className="text-lg sm:text-xl text-nexus-text-dim max-w-2xl mx-auto mb-4">
             Every city, community, company, and cause deserves transparent governance.
             NEXUS Protocol makes it structurally impossible to hide corruption, fake credentials,
             or divert funds — at zero cost to deploy.
-          </motion.p>
+          </Motion.p>
 
           {/* Ticker */}
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
+          <Motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
             className="max-w-2xl mx-auto mb-8">
             <GlobalPulseTicker />
-          </motion.div>
+          </Motion.div>
 
           {/* CTAs */}
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
+          <Motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
             className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link to="/dashboard"
               className="flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-nexus-cyan to-nexus-purple text-white font-semibold text-base hover:opacity-90 transition-opacity shadow-lg shadow-nexus-cyan/20">
@@ -336,25 +336,25 @@ export default function Landing() {
               See How It Works
               <ChevronDown size={18} />
             </button>
-          </motion.div>
+          </Motion.div>
 
           {/* Social proof */}
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.7 }}
+          <Motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.7 }}
             className="mt-8 flex flex-wrap justify-center gap-6 text-xs text-nexus-text-dim">
             <span className="flex items-center gap-1.5"><CheckCircle size={12} className="text-green-400" /> No wallet required to explore</span>
             <span className="flex items-center gap-1.5"><CheckCircle size={12} className="text-green-400" /> Open source smart contracts</span>
             <span className="flex items-center gap-1.5"><CheckCircle size={12} className="text-green-400" /> Deployable in minutes</span>
             <span className="flex items-center gap-1.5"><CheckCircle size={12} className="text-green-400" /> Built for global scale</span>
-          </motion.div>
+          </Motion.div>
         </div>
 
         {/* Scroll indicator */}
-        <motion.div animate={{ y: [0, 8, 0] }} transition={{ repeat: Infinity, duration: 2 }}
+        <Motion.div animate={{ y: [0, 8, 0] }} transition={{ repeat: Infinity, duration: 2 }}
           className="flex justify-center mt-16">
           <button onClick={scrollToFeatures} className="text-nexus-text-dim hover:text-nexus-cyan transition-colors">
             <ChevronDown size={24} />
           </button>
-        </motion.div>
+        </Motion.div>
       </section>
 
       {/* ── PROBLEM STATS ── */}
@@ -365,14 +365,14 @@ export default function Landing() {
           </p>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
             {STATS.map((s, i) => (
-              <motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }}
+              <Motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }} transition={{ delay: i * 0.1 }}
                 className="text-center">
                 <div className="text-3xl sm:text-4xl font-black bg-gradient-to-r from-nexus-cyan to-nexus-purple bg-clip-text text-transparent mb-2">
                   {s.prefix}{s.value}
                 </div>
                 <div className="text-sm text-nexus-text-dim">{s.label}</div>
-              </motion.div>
+              </Motion.div>
             ))}
           </div>
         </div>
@@ -392,12 +392,12 @@ export default function Landing() {
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {PULSE_ITEMS.map((item, i) => (
-              <motion.div key={i} initial={{ opacity: 0, scale: 0.95 }} whileInView={{ opacity: 1, scale: 1 }}
+              <Motion.div key={i} initial={{ opacity: 0, scale: 0.95 }} whileInView={{ opacity: 1, scale: 1 }}
                 viewport={{ once: true }} transition={{ delay: i * 0.07 }}
                 className="p-4 rounded-xl border border-nexus-border bg-nexus-surface/50 hover:border-nexus-cyan/30 transition-colors group">
                 <item.icon size={22} className={`${item.color} mb-3 group-hover:scale-110 transition-transform`} />
                 <p className="text-sm text-nexus-text-dim leading-relaxed">{item.label}</p>
-              </motion.div>
+              </Motion.div>
             ))}
           </div>
           <div className="mt-6 text-center">
@@ -422,7 +422,7 @@ export default function Landing() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {FEATURES.map((f, i) => (
-              <motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }}
+              <Motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }} transition={{ delay: i * 0.08 }}
                 className="p-6 rounded-2xl border border-nexus-border bg-nexus-surface/50 hover:border-nexus-cyan/30 transition-all group">
                 <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${f.color} flex items-center justify-center mb-4 group-hover:scale-105 transition-transform`}>
@@ -435,7 +435,7 @@ export default function Landing() {
                     <span key={k} className="text-xs px-2 py-0.5 rounded-full bg-white/5 text-nexus-text-dim border border-nexus-border">{k}</span>
                   ))}
                 </div>
-              </motion.div>
+              </Motion.div>
             ))}
           </div>
         </div>
@@ -453,7 +453,7 @@ export default function Landing() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {USE_CASES.map((uc, i) => (
-              <motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }}
+              <Motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }} transition={{ delay: i * 0.08 }}
                 className={`p-6 rounded-2xl border ${uc.color} transition-all hover:scale-[1.02]`}>
                 <span className={`inline-block text-xs px-2 py-0.5 rounded-full ${uc.badgeColor} mb-3`}>{uc.badge}</span>
@@ -462,7 +462,7 @@ export default function Landing() {
                   <h3 className="font-bold text-base">{uc.title}</h3>
                 </div>
                 <p className="text-sm text-nexus-text-dim leading-relaxed">{uc.desc}</p>
-              </motion.div>
+              </Motion.div>
             ))}
           </div>
         </div>
@@ -482,7 +482,7 @@ export default function Landing() {
               { step: '03', title: 'Govern transparently', desc: 'Members vote on proposals with full audit trails. Milestone gates release funds automatically. Disputes resolve by protocol.' },
               { step: '04', title: 'Prove impact globally', desc: 'Exportable ESG reports, on-chain reputation scores, and verifiable completion certificates — accepted by institutional funders worldwide.' },
             ].map((s, i) => (
-              <motion.div key={i} initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }}
+              <Motion.div key={i} initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }}
                 viewport={{ once: true }} transition={{ delay: i * 0.1 }}
                 className="flex gap-6 p-6 rounded-2xl border border-nexus-border bg-nexus-surface/50 hover:border-nexus-cyan/30 transition-colors">
                 <div className="text-3xl font-black text-nexus-cyan/20 font-mono flex-shrink-0 w-12">{s.step}</div>
@@ -490,7 +490,7 @@ export default function Landing() {
                   <h3 className="font-bold mb-1">{s.title}</h3>
                   <p className="text-sm text-nexus-text-dim">{s.desc}</p>
                 </div>
-              </motion.div>
+              </Motion.div>
             ))}
           </div>
         </div>
@@ -502,7 +502,7 @@ export default function Landing() {
           <div className="absolute inset-0 bg-gradient-to-br from-nexus-cyan/5 via-transparent to-nexus-purple/5" />
         </div>
         <div className="max-w-3xl mx-auto text-center relative">
-          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}>
+          <Motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}>
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-nexus-cyan/30 bg-nexus-cyan/10 text-nexus-cyan text-xs font-mono mb-6">
               <Lock size={11} />
               FREE · OPEN SOURCE · SELF-SOVEREIGN
@@ -525,7 +525,7 @@ export default function Landing() {
               </Link>
             </div>
             <ShareBar />
-          </motion.div>
+          </Motion.div>
         </div>
       </section>
 

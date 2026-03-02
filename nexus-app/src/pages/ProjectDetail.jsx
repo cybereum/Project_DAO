@@ -1,6 +1,6 @@
 import { useParams, Link } from 'react-router-dom';
 import { useApp } from '../store/appStore';
-import { motion } from 'framer-motion';
+import { motion as Motion } from 'framer-motion';
 import {
   ArrowLeft, Users, Milestone, CheckCircle2, Clock, AlertTriangle,
   Plus, ChevronRight, Zap
@@ -50,16 +50,16 @@ export default function ProjectDetail() {
           { icon: CheckCircle2, label: 'Tasks Done', value: `${project.completedTasks}/${project.tasks}`, color: 'cyan' },
           { icon: Zap, label: 'Budget', value: `$${project.budget}`, color: 'amber' },
         ].map((s, i) => (
-          <motion.div key={s.label} {...anim(i)} className={`rounded-xl border border-nexus-${s.color}/20 bg-nexus-${s.color}/5 p-4`}>
+          <Motion.div key={s.label} {...anim(i)} className={`rounded-xl border border-nexus-${s.color}/20 bg-nexus-${s.color}/5 p-4`}>
             <s.icon size={18} className={`text-nexus-${s.color} mb-2`} />
             <div className="text-xl font-bold">{s.value}</div>
             <div className="text-xs text-nexus-text-dim">{s.label}</div>
-          </motion.div>
+          </Motion.div>
         ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <motion.div {...anim(4)} className="lg:col-span-2 rounded-xl border border-nexus-border bg-nexus-card p-5">
+        <Motion.div {...anim(4)} className="lg:col-span-2 rounded-xl border border-nexus-border bg-nexus-card p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold flex items-center gap-2">
               <Milestone size={16} className="text-nexus-green" /> Milestones
@@ -93,10 +93,10 @@ export default function ProjectDetail() {
               </div>
             ))}
           </div>
-        </motion.div>
+        </Motion.div>
 
         <div className="space-y-6">
-          <motion.div {...anim(5)} className="rounded-xl border border-nexus-border bg-nexus-card p-5">
+          <Motion.div {...anim(5)} className="rounded-xl border border-nexus-border bg-nexus-card p-5">
             <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
               <AlertTriangle size={16} className="text-nexus-amber" /> Active Proposals
             </h3>
@@ -114,9 +114,9 @@ export default function ProjectDetail() {
                 </Link>
               ))}
             </div>
-          </motion.div>
+          </Motion.div>
 
-          <motion.div {...anim(6)} className="rounded-xl border border-nexus-border bg-nexus-card p-5">
+          <Motion.div {...anim(6)} className="rounded-xl border border-nexus-border bg-nexus-card p-5">
             <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
               <Users size={16} className="text-nexus-purple" /> Team
             </h3>
@@ -134,11 +134,11 @@ export default function ProjectDetail() {
                 </div>
               ))}
             </div>
-          </motion.div>
+          </Motion.div>
         </div>
       </div>
 
-      <motion.div {...anim(7)} className="rounded-xl border border-nexus-border bg-nexus-card p-5">
+      <Motion.div {...anim(7)} className="rounded-xl border border-nexus-border bg-nexus-card p-5">
         <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
           <CheckCircle2 size={16} className="text-nexus-cyan" /> Task Board
         </h3>
@@ -177,7 +177,7 @@ export default function ProjectDetail() {
             </tbody>
           </table>
         </div>
-      </motion.div>
+      </Motion.div>
     </div>
   );
 }
