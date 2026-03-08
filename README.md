@@ -93,6 +93,10 @@ Project_DAO now supports a universal multi-agent execution model so project part
 
 
 ## 5	AGENT TRANSACTION QUICKSTART + CYBEREUM FEE RAIL
+
+### Full implementation roadmap
+- See `FULL_IMPLEMENTATION_PLAN.md` for the complete implementation program covering protocol hardening, full agent UX, SEO/inbound growth, analytics/indexing, and release governance.
+
 To make agent usage fast and indispensable, use the implementation playbook in `AGENT_TX_QUICKSTART.md`.
 
 ### Mandatory protocol fee routing
