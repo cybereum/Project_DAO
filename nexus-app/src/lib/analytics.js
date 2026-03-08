@@ -131,3 +131,19 @@ export function initAnalytics() {
   initPlausible(PLAUSIBLE_DOMAIN);
   reportWebVitals();
 }
+
+// ─── UTM-aware funnel event tracking ─────────────────────────────────────────
+
+/**
+ * Track a conversion event with full UTM context attached.
+ * Use this for high-value funnel steps: wallet_connect, first_tx, lead_submit.
+ */
+export function trackConversion(eventName, params = {}) {
+  try {
+    const attr = JSON.parse(sessionStorage.getItem('nexus_attribution') || 'null');
+    const enriched = { ...params, utm_source: attr?.source || '', utm_medium: attr?.medium || '', utm_campaign: attr?.campaign || '', ref: attr?.ref || '' };
+    trackEvent(eventName, enriched);
+  } catch {
+    trackEvent(eventName, params);
+  }
+}

@@ -4,11 +4,15 @@
  * SEO: targets "agent settlement layer", "AI agent payments", "autonomous agent economy".
  */
 import { Link } from 'react-router-dom';
+import { useEffect } from 'react';
 import { motion as Motion } from 'framer-motion';
 import {
   Bot, Zap, ArrowRight, CheckCircle, Shield, Code2, Globe,
   BarChart3, ExternalLink, Lock
 } from 'lucide-react';
+import LeadCapture from '../components/LeadCapture';
+import CorruptionClock from '../components/CorruptionClock';
+import { captureUTM, markFunnelStep } from '../lib/utm.js';
 
 const CAPABILITIES = [
   { icon: Bot, title: 'Agent Identity', desc: 'Register your agent on-chain with a metadata URI. Immutable, discoverable, interoperable.' },
@@ -49,6 +53,7 @@ const WHY_LIST = [
 ];
 
 export default function AgentsLanding() {
+  useEffect(() => { captureUTM(); markFunnelStep('agents_landing_view'); }, []);
   return (
     <div className="min-h-screen bg-nexus-bg text-nexus-text">
 
@@ -175,6 +180,30 @@ export default function AgentsLanding() {
               </Motion.li>
             ))}
           </ul>
+        </div>
+      </section>
+
+      {/* INBOUND LEAD CAPTURE */}
+      <section className="py-20 px-6 border-t border-nexus-border bg-nexus-surface/20">
+        <div className="max-w-3xl mx-auto">
+          <div className="text-center mb-8">
+            <span className="text-xs font-mono text-nexus-cyan uppercase tracking-widest">Agent Economy</span>
+            <h2 className="text-2xl sm:text-3xl font-bold mt-2 mb-4">Get integration support and early access.</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+            <LeadCapture persona="agent" />
+            <div className="space-y-4">
+              <CorruptionClock compact />
+              <div className="p-4 rounded-xl border border-nexus-border bg-nexus-surface/50 text-sm text-nexus-text-dim space-y-2">
+                <p className="font-semibold text-nexus-text">When you join, you get:</p>
+                <ul className="space-y-1.5">
+                  {["Full ABI + integration docs", "CLAUDE.md agent quickstart guide", "Private developer Slack access", "Priority deployment support", "Early access to subgraph / indexer API"].map(i => (
+                    <li key={i} className="flex items-center gap-2"><CheckCircle size={13} className="text-nexus-cyan flex-shrink-0" />{i}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 

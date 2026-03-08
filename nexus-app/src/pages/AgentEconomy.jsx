@@ -4,8 +4,10 @@ import { parseEther, formatEther } from 'ethers';
 import {
   Bot, Wallet, ArrowUpRight, ArrowDownLeft, Send, FileText,
   CheckCircle, XCircle, Clock, Zap, Info, Copy, ExternalLink,
-  RefreshCw, Shield
+  RefreshCw, Shield, Twitter, Share2, Link2
 } from 'lucide-react';
+import { generateReferralLink, markFunnelStep } from '../lib/utm.js';
+import { trackEvent } from '../lib/analytics.js';
 import { useApp } from '../store/appStore';
 
 // ─── Fee preview helper ────────────────────────────────────────────────────
@@ -96,6 +98,52 @@ function Btn({ children, loading, variant = 'primary', disabled, ...props }) {
   );
 }
 
+
+// ─── TX Share Card ────────────────────────────────────────────────────────────
+function TxShareCard({ hash, action, walletAddress }) {
+  const [copied, setCopied] = useState(false);
+  const referralLink = walletAddress ? generateReferralLink(walletAddress) : 'https://nexusprotocol.io/agents';
+  const shareText = `I just ${action} on-chain via Project_DAO — the settlement layer for the agent economy. Non-bypassable protocol fee to cybereum.eth. Zero trust. ${referralLink}`;
+
+  const copy = () => {
+    navigator.clipboard?.writeText(referralLink).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+  };
+
+  if (!hash) return null;
+  return (
+    <div className="mt-4 p-4 rounded-xl border border-nexus-cyan/20 bg-nexus-cyan/5 space-y-3">
+      <div className="flex items-center gap-2 text-xs font-semibold text-nexus-cyan">
+        <Share2 size={13} /> Transaction proved on-chain — share your proof
+      </div>
+      <p className="text-xs text-nexus-text-dim">
+        Your agent just transacted. Every transaction builds the agent economy.
+        Share your referral link — you get attribution when others join.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <a href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`}
+          target="_blank" rel="noopener noreferrer"
+          onClick={() => trackEvent('tx_share', { platform: 'twitter', action })}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-nexus-text-dim hover:text-white transition-colors">
+          <Twitter size={12} /> Share on X
+        </a>
+        <a href={`https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent(shareText)}`}
+          target="_blank" rel="noopener noreferrer"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-sky-500/10 text-xs text-nexus-text-dim hover:text-sky-400 transition-colors">
+          <Send size={12} /> Telegram
+        </a>
+        <button onClick={copy}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-nexus-text-dim hover:text-white transition-colors">
+          {copied ? <CheckCircle size={12} className="text-green-400" /> : <Link2 size={12} />}
+          {copied ? 'Copied!' : 'Copy referral link'}
+        </button>
+      </div>
+      <div className="text-xs font-mono text-nexus-text-dim truncate bg-nexus-bg border border-nexus-border px-2 py-1 rounded">
+        {referralLink}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────
 export default function AgentEconomy() {
   const {
@@ -108,6 +156,7 @@ export default function AgentEconomy() {
   } = useApp();
 
   const [lastTx, setLastTx] = useState('');
+  const [lastTxAction, setLastTxAction] = useState('');
   const [tab, setTab] = useState('overview');
 
   // Register form
@@ -140,9 +189,14 @@ export default function AgentEconomy() {
     if (walletConnected) refresh();
   }, [walletConnected, refresh]);
 
-  const handle = (fn) => async (...args) => {
+  const handle = (fn, action = 'transacted') => async (...args) => {
     const hash = await fn(...args);
-    if (hash) setLastTx(hash);
+    if (hash) {
+      setLastTx(hash);
+      setLastTxAction(action);
+      markFunnelStep('agent_tx_complete');
+      trackEvent('agent_transaction', { action });
+    }
   };
 
   const escrowBalanceEth = agentProfile?.nativeEscrowBalance
@@ -193,7 +247,12 @@ export default function AgentEconomy() {
       {walletError && (
         <div className="p-3 rounded-lg border border-red-500/30 bg-red-500/10 text-sm text-red-400">{walletError}</div>
       )}
-      {lastTx && <TxLink hash={lastTx} />}
+      {lastTx && (
+        <div>
+          <TxLink hash={lastTx} />
+          <TxShareCard hash={lastTx} action={lastTxAction} walletAddress={walletAddress} />
+        </div>
+      )}
 
       {/* ── Tab nav ── */}
       <div className="flex gap-1 border-b border-nexus-border">
@@ -222,7 +281,7 @@ export default function AgentEconomy() {
                   value={metadataURI}
                   onChange={e => setMetadataURI(e.target.value)}
                 />
-                <Btn loading={txPending} onClick={() => handle(agentRegister)(metadataURI)}>
+                <Btn loading={txPending} onClick={() => handle(agentRegister, 'registered as agent')(metadataURI)}>
                   <Bot size={14} /> Register Agent
                 </Btn>
               </div>
@@ -288,7 +347,7 @@ export default function AgentEconomy() {
                 value={depositAmt} onChange={e => setDepositAmt(e.target.value)} />
               <FeePreview amountEth={depositAmt} feeBps={agentFeeBps} />
               <Btn loading={txPending} disabled={!walletConnected || !depositAmt}
-                onClick={() => handle(agentDepositNative)(parseEther(depositAmt || '0'))}>
+                onClick={() => handle(agentDepositNative, 'deposited ETH to escrow')(parseEther(depositAmt || '0'))}>
                 <ArrowDownLeft size={14} /> Deposit to Escrow
               </Btn>
             </div>
@@ -301,7 +360,7 @@ export default function AgentEconomy() {
                 value={withdrawAmt} onChange={e => setWithdrawAmt(e.target.value)} />
               <FeePreview amountEth={withdrawAmt} feeBps={agentFeeBps} />
               <Btn loading={txPending} disabled={!walletConnected || !withdrawAmt}
-                onClick={() => handle(agentWithdrawNative)(parseEther(withdrawAmt || '0'))}>
+                onClick={() => handle(agentWithdrawNative, 'withdrew ETH from escrow')(parseEther(withdrawAmt || '0'))}>
                 <ArrowUpRight size={14} /> Withdraw from Escrow
               </Btn>
             </div>
@@ -320,7 +379,7 @@ export default function AgentEconomy() {
               <Field label="Memo (optional)" placeholder="Payment for task #42" value={transferMemo} onChange={e => setTransferMemo(e.target.value)} />
               <FeePreview amountEth={transferAmt} feeBps={agentFeeBps} />
               <Btn loading={txPending} disabled={!walletConnected || !transferTo || !transferAmt}
-                onClick={() => handle(agentTransferNative)(transferTo, parseEther(transferAmt || '0'), transferMemo)}>
+                onClick={() => handle(agentTransferNative, 'transferred ETH to an agent')(transferTo, parseEther(transferAmt || '0'), transferMemo)}>
                 <Send size={14} /> Transfer
               </Btn>
             </div>
@@ -368,7 +427,7 @@ export default function AgentEconomy() {
                 <Field label="Amount (ETH — must match request)" type="number" step="0.001" min="0" placeholder="0.5"
                   value={withdrawAmt} onChange={e => setWithdrawAmt(e.target.value)} />
                 <Btn loading={txPending} disabled={!walletConnected || !settleId}
-                  onClick={() => handle(agentSettlePaymentRequest)(settleId, withdrawAmt ? parseEther(withdrawAmt) : undefined)}>
+                  onClick={() => handle(agentSettlePaymentRequest, 'settled a payment request')(settleId, withdrawAmt ? parseEther(withdrawAmt) : undefined)}>
                   <CheckCircle size={14} /> Settle Request
                 </Btn>
               </div>

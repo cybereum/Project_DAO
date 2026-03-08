@@ -3,11 +3,14 @@
  * SEO: "build on agent settlement layer", "DAO smart contract integration", "NEXUS Protocol developers".
  */
 import { Link } from 'react-router-dom';
+import { useEffect } from 'react';
 import { motion as Motion } from 'framer-motion';
 import {
   Code2, Zap, ArrowRight, CheckCircle, FileCode, Globe,
   Terminal, BookOpen, GitFork, Shield, ExternalLink, Lock
 } from 'lucide-react';
+import LeadCapture from '../components/LeadCapture';
+import { captureUTM, markFunnelStep } from '../lib/utm.js';
 
 const STEPS = [
   {
@@ -51,6 +54,7 @@ const RESOURCES = [
 ];
 
 export default function BuildersLanding() {
+  useEffect(() => { captureUTM(); markFunnelStep('builders_landing_view'); }, []);
   return (
     <div className="min-h-screen bg-nexus-bg text-nexus-text">
 
@@ -182,6 +186,22 @@ export default function BuildersLanding() {
                 </Link>
               </Motion.div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* BUILDER INBOUND — Demo + Dev Access */}
+      <section className="py-20 px-6 border-t border-nexus-border bg-nexus-surface/20">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-8">
+            <span className="text-xs font-mono text-nexus-purple uppercase tracking-widest">Get Started</span>
+            <h2 className="text-2xl sm:text-3xl font-bold mt-2 mb-4">Book a demo or request dev access.</h2>
+            <p className="text-nexus-text-dim max-w-xl mx-auto">We work directly with builders. Tell us what you're building and we'll get you set up fast.</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <LeadCapture persona="builder" />
+            <LeadCapture persona="enterprise"
+              overrides={{ headline: 'Book a 30-min integration demo', cta: 'Book Demo' }} />
           </div>
         </div>
       </section>
