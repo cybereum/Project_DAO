@@ -132,6 +132,8 @@ contract Project_DAO {
     bool private _paused;
 
     uint256 public constant FEE_BPS_DENOMINATOR = 10_000;
+    /// @dev Minimum fee floor: 1 bps (0.01%). Fee can never be set to zero.
+    uint256 public constant MIN_FEE_BPS = 1;
     uint256 public cybereumFeeBps = 5;
     uint256 public assetTransferFlatFeeWei = 1e12;
     address public cybereumTreasury;
@@ -316,10 +318,51 @@ contract Project_DAO {
     }
 
     function setCybereumFeeConfig(uint256 _feeBps, uint256 _assetTransferFlatFeeWei) public onlyOwner {
+        require(_feeBps >= MIN_FEE_BPS, "Fee cannot be zero: mandatory Cybereum fee floor enforced.");
         require(_feeBps <= 100, "Fee cannot exceed 1%.");
+        require(_assetTransferFlatFeeWei > 0, "Asset transfer fee must be non-zero.");
         cybereumFeeBps = _feeBps;
         assetTransferFlatFeeWei = _assetTransferFlatFeeWei;
         emit CybereumFeeConfigUpdated(_feeBps, _assetTransferFlatFeeWei);
+    }
+
+    /// @notice Preview the fee that will be charged for a given amount.
+    function previewFee(uint256 _amount) public view returns (uint256 fee, uint256 net) {
+        fee = _amount == 0 ? 0 : (_amount * cybereumFeeBps) / FEE_BPS_DENOMINATOR;
+        if (_amount > 0 && fee == 0) fee = 1;
+        net = _amount > fee ? _amount - fee : 0;
+    }
+
+    /// @notice Returns full agent profile including balances.
+    function getAgentProfile(address _agent) public view returns (
+        bool registered,
+        string memory metadataURI,
+        uint256 nativeEscrowBalance
+    ) {
+        AgentProfile storage p = agents[_agent];
+        return (p.registered, p.metadataURI, p.nativeEscrowBalance);
+    }
+
+    /// @notice Returns an agent's escrowed token balance.
+    function getAgentTokenBalance(address _agent, address _token) public view returns (uint256) {
+        return agentTokenEscrowBalances[_agent][_token];
+    }
+
+    /// @notice Returns a payment request by ID.
+    function getAgentPaymentRequest(uint256 _requestId) public view returns (
+        uint256 id,
+        address requester,
+        address payer,
+        address token,
+        uint256 amount,
+        bool isNative,
+        string memory description,
+        PaymentStatus status,
+        uint256 createdAt,
+        uint256 settledAt
+    ) {
+        AgentPaymentRequest storage r = agentPaymentRequests[_requestId];
+        return (r.id, r.requester, r.payer, r.token, r.amount, r.isNative, r.description, r.status, r.createdAt, r.settledAt);
     }
 
     function _calculateFee(uint256 _amount) internal view returns (uint256) {

@@ -4,12 +4,13 @@ import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { useApp } from '../store/appStore';
 import {
   LayoutDashboard, FolderKanban, Milestone, Vote, ShieldCheck,
-  Trophy, Gem, Menu, X, Wallet, Zap, ChevronRight, Globe,
-  AlertTriangle, ArrowLeft, Radio
+  Trophy, Gem, Wallet, Zap, ChevronRight, Globe,
+  AlertTriangle, ArrowLeft, Radio, Bot
 } from 'lucide-react';
 
 const NAV_ITEMS = [
   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/agent-economy', label: 'Agent Economy', icon: Bot, accent: true },
   { path: '/projects', label: 'Projects', icon: FolderKanban },
   { path: '/milestones', label: 'Milestones', icon: Milestone },
   { path: '/proposals', label: 'Proposals', icon: Vote },
@@ -39,26 +40,40 @@ function Sidebar({ collapsed, onToggle }) {
         )}
       </div>
       <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto">
-        {NAV_ITEMS.map(({ path, label, icon: Icon, highlight }) => {
+        {NAV_ITEMS.map(({ path, label, icon: Icon, highlight, accent }) => {
           const isActive = location.pathname === path || (path !== '/dashboard' && location.pathname.startsWith(path));
           return (
             <NavLink key={path} to={path}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group relative ${
                 isActive
-                  ? 'bg-nexus-cyan/10 text-nexus-cyan'
+                  ? accent
+                    ? 'bg-nexus-cyan/15 text-nexus-cyan border border-nexus-cyan/20'
+                    : 'bg-nexus-cyan/10 text-nexus-cyan'
                   : highlight
                   ? 'text-amber-400 hover:bg-amber-500/10'
+                  : accent
+                  ? 'text-nexus-cyan/70 hover:text-nexus-cyan hover:bg-nexus-cyan/5'
                   : 'text-nexus-text-dim hover:text-nexus-text hover:bg-white/5'
               }`}
             >
               {isActive && (
                 <Motion.div layoutId="nav-indicator" className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-nexus-cyan rounded-r" />
               )}
-              {createElement(Icon, { size: 20, className: isActive ? 'text-nexus-cyan' : highlight ? 'text-amber-400' : 'group-hover:text-nexus-text' })}
+              {createElement(Icon, {
+                size: 20,
+                className: isActive
+                  ? 'text-nexus-cyan'
+                  : highlight
+                  ? 'text-amber-400'
+                  : accent
+                  ? 'text-nexus-cyan/70 group-hover:text-nexus-cyan'
+                  : 'group-hover:text-nexus-text'
+              })}
               {!collapsed && (
                 <span className="text-sm font-medium flex items-center gap-2">
                   {label}
                   {highlight && !isActive && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />}
+                  {accent && !isActive && <span className="text-xs px-1.5 py-0.5 rounded bg-nexus-cyan/10 text-nexus-cyan font-mono leading-none">NEW</span>}
                 </span>
               )}
             </NavLink>

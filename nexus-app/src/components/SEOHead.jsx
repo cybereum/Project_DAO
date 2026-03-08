@@ -16,6 +16,21 @@ const ROUTE_SEO = {
     description: 'Real-time tracker of global governance failures, corruption hotspots, ESG greenwashing, and accountability gaps — with NEXUS Protocol structural solutions for each.',
     keywords: 'global corruption, ESG greenwashing, public spending transparency, community governance, accountability, NGO fraud, infrastructure corruption, supply chain fraud',
   },
+  '/agents': {
+    title: 'Agent Economy Settlement Layer | NEXUS Protocol — Project_DAO',
+    description: 'The on-chain settlement layer built for AI agents and autonomous systems. Register agent identity, escrow ETH, transfer between agents, settle payment requests. Every transaction routes a fee to cybereum.eth. Deploy in minutes.',
+    keywords: 'AI agent payments, agent economy, autonomous agent settlement, agent-to-agent transfer, on-chain agent identity, agent escrow, cybereum, Project_DAO, agent economy infrastructure',
+  },
+  '/builders': {
+    title: 'Build on Project_DAO | NEXUS Protocol — Agent Economy Developer Guide',
+    description: 'Integration guide for developers building on the agent economy settlement layer. Deploy Project_DAO.sol, configure the Cybereum fee rail, and wire agent transaction flows in minutes. Open source, EVM compatible.',
+    keywords: 'Project_DAO developer, build agent economy, DAO smart contract integration, agent settlement layer development, Cybereum fee rail, NEXUS Protocol builders, EVM DAO deployment',
+  },
+  '/agent-economy': {
+    title: 'Agent Economy Console | NEXUS Protocol — On-Chain Agent Transactions',
+    description: 'Live agent economy console. Register as an agent, manage escrow, transfer ETH and tokens, create and settle payment requests. All transactions route a protocol fee to cybereum.eth.',
+    keywords: 'agent economy console, agent registration, escrow management, agent payment requests, cybereum fee, on-chain agent transactions, NEXUS agent console',
+  },
   '/dashboard': {
     title: 'Command Center | NEXUS Protocol',
     description: 'Real-time overview of decentralized governance activity, project milestones, proposals, and protocol health across the NEXUS ecosystem.',
@@ -54,7 +69,6 @@ const ROUTE_SEO = {
 };
 
 const getRouteSEO = (pathname) => {
-  // Exact match from static route config
   if (ROUTE_SEO[pathname]) {
     return ROUTE_SEO[pathname];
   }
@@ -70,7 +84,6 @@ const getRouteSEO = (pathname) => {
     };
   }
 
-  // Fallback to global defaults handled later
   return {};
 };
 

@@ -12,9 +12,12 @@ import Proposals from './pages/Proposals';
 import Verification from './pages/Verification';
 import Reputation from './pages/Reputation';
 import Assets from './pages/Assets';
+import AgentEconomy from './pages/AgentEconomy';
+import AgentsLanding from './pages/AgentsLanding';
+import BuildersLanding from './pages/BuildersLanding';
 
 // Routes that render without the app shell (sidebar/topbar)
-const PUBLIC_ROUTES = ['/', '/pulse'];
+const PUBLIC_ROUTES = ['/', '/pulse', '/agents', '/builders'];
 
 function AppShell({ children }) {
   const location = useLocation();
@@ -37,9 +40,11 @@ export default function App() {
       <SEOHead />
       <AppShell>
         <Routes>
-          {/* Public landing page — no shell */}
+          {/* Public landing pages — no shell */}
           <Route path="/" element={<Landing />} />
           <Route path="/pulse" element={<GlobalPulse />} />
+          <Route path="/agents" element={<AgentsLanding />} />
+          <Route path="/builders" element={<BuildersLanding />} />
 
           {/* App shell routes */}
           <Route path="/dashboard" element={<Dashboard />} />
@@ -50,6 +55,7 @@ export default function App() {
           <Route path="/verification" element={<Verification />} />
           <Route path="/reputation" element={<Reputation />} />
           <Route path="/assets" element={<Assets />} />
+          <Route path="/agent-economy" element={<AgentEconomy />} />
         </Routes>
       </AppShell>
     </AppProvider>
