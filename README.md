@@ -67,3 +67,38 @@ The assetIdToOwner mapping is used to keep track of which address owns each NFT.
 The contract includes several modifier functions to ensure that only authorized parties are able to execute specific functions.
 The paused state variable is used to control whether the contract is active or not via functions pauseContract() and resumeContract() called by the owner of the contract in case an unexpected issue or breach occurs.
 Several events are emitted when tokens are created or transferred.
+
+
+## 4	UNIVERSAL AGENT-TO-AGENT ARCHITECTURE (NEW)
+Project_DAO now supports a universal multi-agent execution model so project participants can operate as on-chain agents, coordinate requests, and move value directly.
+
+### 4.1 Agent Identity Layer
+- Members can self-register as **agents** with metadata (`registerAgent`, `updateAgentMetadata`) to support interoperable profile/data layers.
+
+### 4.2 Native + Token Value Transfer Layer
+- Agents can escrow native assets and ERC-20 balances in-contract.
+- Agents can transfer escrowed value directly to other registered agents (`transferNativeBetweenAgents`, `transferTokenBetweenAgents`).
+- Agents can withdraw escrowed balances at any time.
+
+### 4.3 Agent Payment Rails
+- Agents can create structured payment requests (`createAgentPaymentRequest`) with native or token-denominated settlement.
+- Designated payer agents can settle requests (`settleAgentPaymentRequest`), providing auditable and programmable B2B payment execution.
+- Requesters can cancel open requests (`cancelAgentPaymentRequest`).
+
+### 4.4 Asset Transfer Rail
+- Agents can transfer tokenized assets (ERC-721 style contracts) directly to other agents (`transferAssetBetweenAgents`) for rights, deliverables, or milestone handoffs.
+
+### 4.5 Why this matters
+- Capital projects are now one major use case among many: this architecture also supports marketplaces, procurement networks, venture studios, contributor collectives, and any workflow requiring agent-to-agent governance plus value exchange.
+
+
+## 5	AGENT TRANSACTION QUICKSTART + CYBEREUM FEE RAIL
+To make agent usage fast and indispensable, use the implementation playbook in `AGENT_TX_QUICKSTART.md`.
+
+### Mandatory protocol fee routing
+- Every agent value-transfer transaction now applies a minuscule protocol fee.
+- Fee proceeds are routed to `cybereumTreasury` (intended to be the resolved address for `cybereum.eth`).
+- Owner setup sequence:
+  1. Resolve `cybereum.eth` to its wallet address.
+  2. Call `setCybereumTreasury(address)`.
+  3. Optionally tune basis points / asset flat fee using `setCybereumFeeConfig(...)`.

@@ -137,3 +137,22 @@ This is effectively a decentralized PMO + procurement + governance stack.
 **What it is today:** a polished DAO project-governance prototype with rich simulated operations.
 
 **What it intends to be:** an end-to-end decentralized operating system for managing project governance, execution, verification, and tokenized assets across real-world multi-stakeholder projects.
+
+---
+
+## Universal Multi-Agent Expansion (Updated)
+
+The core contract now includes a **universal agent transaction rail** so DAO members can be elevated into transacting agents with direct value exchange capabilities.
+
+### Added protocol primitives
+- Agent registration + metadata updates
+- Native escrow deposits/withdrawals and agent-to-agent native transfers
+- ERC-20 escrow deposits/withdrawals and agent-to-agent token transfers
+- Agent payment request lifecycle (request, settle, cancel)
+- Agent-to-agent ERC-721 style asset transfer execution
+
+### Product implication
+This moves the stack from project-governance-only into a broader **agent economy substrate**. Capital projects remain a high-value domain, but the architecture now generalizes to any domain where autonomous actors coordinate work and settle value on-chain.
+
+### Cybereum fee rail
+Every agent value transfer now applies a minuscule protocol fee that is routed to the configured `cybereumTreasury` address (intended to be the resolved destination for `cybereum.eth`).
