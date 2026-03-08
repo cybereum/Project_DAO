@@ -1,7 +1,41 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+interface IERC20 {
+    function transferFrom(address from, address to, uint256 value) external returns (bool);
+    function transfer(address to, uint256 value) external returns (bool);
+}
+
+interface IERC721Lite {
+    function transferFrom(address from, address to, uint256 tokenId) external;
+}
+
 contract Project_DAO {
+    enum PaymentStatus {
+        Requested,
+        Settled,
+        Cancelled
+    }
+
+    struct AgentProfile {
+        bool registered;
+        string metadataURI;
+        uint256 nativeEscrowBalance;
+    }
+
+    struct AgentPaymentRequest {
+        uint256 id;
+        address requester;
+        address payer;
+        address token;
+        uint256 amount;
+        bool isNative;
+        string description;
+        PaymentStatus status;
+        uint256 createdAt;
+        uint256 settledAt;
+    }
+
     struct Member {
         address memberAddress;
         uint256 votingPower;
@@ -79,6 +113,10 @@ contract Project_DAO {
 
     address public owner;
     mapping(address => Member) public members;
+    mapping(address => AgentProfile) public agents;
+    mapping(address => mapping(address => uint256)) public agentTokenEscrowBalances;
+    mapping(uint256 => AgentPaymentRequest) public agentPaymentRequests;
+    uint256 public currentAgentPaymentRequestId = 1;
     Proposal[] public proposals;
     uint256 public currentProposalId = 1;
     uint256 public votingPeriod = 7 days;
@@ -93,6 +131,11 @@ contract Project_DAO {
 
     bool private _paused;
 
+    uint256 public constant FEE_BPS_DENOMINATOR = 10_000;
+    uint256 public cybereumFeeBps = 5;
+    uint256 public assetTransferFlatFeeWei = 1e12;
+    address public cybereumTreasury;
+
     event TaskCreated(uint256 id, string description, uint256 deadline, uint256 milestoneId, address assignedMember, string status);
     event TaskUpdated(uint256 id, string description, uint256 deadline, address assignedMember, string status);
     event TaskDeleted(uint256 id);
@@ -102,12 +145,28 @@ contract Project_DAO {
     event PermissionAdded(uint256 roleId, string permission);
     event PermissionRemoved(uint256 roleId, string permission);
     event RoleAssigned(address member, uint256 roleId);
+    event AgentRegistered(address indexed agent, string metadataURI);
+    event AgentMetadataUpdated(address indexed agent, string metadataURI);
+    event AgentNativeEscrowDeposited(address indexed agent, uint256 amount);
+    event AgentNativeEscrowWithdrawn(address indexed agent, uint256 amount);
+    event AgentTokenEscrowDeposited(address indexed agent, address indexed token, uint256 amount);
+    event AgentTokenEscrowWithdrawn(address indexed agent, address indexed token, uint256 amount);
+    event AgentToAgentNativeTransfer(address indexed from, address indexed to, uint256 amount, string memo);
+    event AgentToAgentTokenTransfer(address indexed from, address indexed to, address indexed token, uint256 amount, string memo);
+    event AgentAssetTransfer(address indexed from, address indexed to, address indexed assetContract, uint256 assetId, string memo);
+    event AgentPaymentRequestCreated(uint256 indexed requestId, address indexed requester, address indexed payer, bool isNative, address token, uint256 amount, string description);
+    event AgentPaymentRequestSettled(uint256 indexed requestId, address indexed payer, address indexed requester, uint256 settledAt);
+    event AgentPaymentRequestCancelled(uint256 indexed requestId, address indexed requester);
+    event CybereumTreasuryUpdated(address indexed treasury);
+    event CybereumFeeConfigUpdated(uint256 feeBps, uint256 assetTransferFlatFeeWei);
+    event CybereumFeePaid(address indexed payer, address indexed token, uint256 amount, string context);
 
     constructor() {
         owner = msg.sender;
         members[owner].isMember = true;
         members[owner].votingPower = 100;
         memberAddresses.push(owner);
+        cybereumTreasury = owner;
 
         // Create an "Owner" role and add it to the roles array
         _createRole(bytes32("Owner"));
@@ -120,6 +179,11 @@ contract Project_DAO {
 
     modifier onlyMember() {
         require(members[msg.sender].isMember, "Only members can call this function.");
+        _;
+    }
+
+    modifier onlyRegisteredAgent() {
+        require(agents[msg.sender].registered, "Only registered agents can call this function.");
         _;
     }
 
@@ -240,6 +304,263 @@ contract Project_DAO {
 
     function resumeContract() public onlyOwner {
         _paused = false;
+    }
+
+    // --- Agent, Payments, and Asset Value Transfer ---
+
+
+    function setCybereumTreasury(address _treasury) public onlyOwner {
+        require(_treasury != address(0), "Invalid treasury address.");
+        cybereumTreasury = _treasury;
+        emit CybereumTreasuryUpdated(_treasury);
+    }
+
+    function setCybereumFeeConfig(uint256 _feeBps, uint256 _assetTransferFlatFeeWei) public onlyOwner {
+        require(_feeBps <= 100, "Fee cannot exceed 1%.");
+        cybereumFeeBps = _feeBps;
+        assetTransferFlatFeeWei = _assetTransferFlatFeeWei;
+        emit CybereumFeeConfigUpdated(_feeBps, _assetTransferFlatFeeWei);
+    }
+
+    function _calculateFee(uint256 _amount) internal view returns (uint256) {
+        if (_amount == 0 || cybereumFeeBps == 0) {
+            return 0;
+        }
+        uint256 fee = (_amount * cybereumFeeBps) / FEE_BPS_DENOMINATOR;
+        if (fee == 0) {
+            fee = 1;
+        }
+        return fee;
+    }
+
+    function _collectNativeFee(uint256 _amount, string memory _context) internal returns (uint256) {
+        require(cybereumTreasury != address(0), "Cybereum treasury not configured.");
+        uint256 fee = _calculateFee(_amount);
+        if (fee > 0) {
+            payable(cybereumTreasury).transfer(fee);
+            emit CybereumFeePaid(msg.sender, address(0), fee, _context);
+        }
+        return fee;
+    }
+
+    function _collectTokenFee(address _token, uint256 _amount, string memory _context) internal returns (uint256) {
+        require(cybereumTreasury != address(0), "Cybereum treasury not configured.");
+        uint256 fee = _calculateFee(_amount);
+        if (fee > 0) {
+            bool feeTransferSuccess = IERC20(_token).transfer(cybereumTreasury, fee);
+            require(feeTransferSuccess, "Token fee transfer failed.");
+            emit CybereumFeePaid(msg.sender, _token, fee, _context);
+        }
+        return fee;
+    }
+
+    function registerAgent(string memory _metadataURI) public onlyMember whenNotPaused {
+        AgentProfile storage profile = agents[msg.sender];
+        require(!profile.registered, "Agent already registered.");
+        profile.registered = true;
+        profile.metadataURI = _metadataURI;
+        emit AgentRegistered(msg.sender, _metadataURI);
+    }
+
+    function updateAgentMetadata(string memory _metadataURI) public onlyRegisteredAgent whenNotPaused {
+        agents[msg.sender].metadataURI = _metadataURI;
+        emit AgentMetadataUpdated(msg.sender, _metadataURI);
+    }
+
+    function depositNativeToEscrow() public payable onlyRegisteredAgent whenNotPaused {
+        require(msg.value > 0, "Deposit amount must be greater than zero.");
+        uint256 fee = _collectNativeFee(msg.value, "deposit_native_escrow");
+        uint256 netAmount = msg.value - fee;
+        require(netAmount > 0, "Amount too small after fee.");
+        agents[msg.sender].nativeEscrowBalance += netAmount;
+        emit AgentNativeEscrowDeposited(msg.sender, netAmount);
+    }
+
+    function withdrawNativeFromEscrow(uint256 _amount) public onlyRegisteredAgent whenNotPaused {
+        require(_amount > 0, "Amount must be greater than zero.");
+        require(agents[msg.sender].nativeEscrowBalance >= _amount, "Insufficient native escrow balance.");
+        require(cybereumTreasury != address(0), "Cybereum treasury not configured.");
+        uint256 fee = _calculateFee(_amount);
+        require(_amount > fee, "Amount too small after fee.");
+        uint256 netAmount = _amount - fee;
+
+        agents[msg.sender].nativeEscrowBalance -= _amount;
+        if (fee > 0) {
+            payable(cybereumTreasury).transfer(fee);
+            emit CybereumFeePaid(msg.sender, address(0), fee, "withdraw_native_escrow");
+        }
+        payable(msg.sender).transfer(netAmount);
+        emit AgentNativeEscrowWithdrawn(msg.sender, netAmount);
+    }
+
+    function transferNativeBetweenAgents(address _to, uint256 _amount, string memory _memo) public onlyRegisteredAgent whenNotPaused {
+        require(agents[_to].registered, "Recipient must be a registered agent.");
+        require(_to != msg.sender, "Cannot transfer to self.");
+        require(_amount > 0, "Amount must be greater than zero.");
+        require(agents[msg.sender].nativeEscrowBalance >= _amount, "Insufficient native escrow balance.");
+        require(cybereumTreasury != address(0), "Cybereum treasury not configured.");
+
+        uint256 fee = _calculateFee(_amount);
+        require(_amount > fee, "Amount too small after fee.");
+        uint256 netAmount = _amount - fee;
+
+        agents[msg.sender].nativeEscrowBalance -= _amount;
+        agents[_to].nativeEscrowBalance += netAmount;
+        if (fee > 0) {
+            payable(cybereumTreasury).transfer(fee);
+            emit CybereumFeePaid(msg.sender, address(0), fee, "agent_native_transfer");
+        }
+
+        emit AgentToAgentNativeTransfer(msg.sender, _to, netAmount, _memo);
+    }
+
+    function depositTokenToEscrow(address _token, uint256 _amount) public onlyRegisteredAgent whenNotPaused {
+        require(_token != address(0), "Invalid token address.");
+        require(_amount > 0, "Amount must be greater than zero.");
+        bool success = IERC20(_token).transferFrom(msg.sender, address(this), _amount);
+        require(success, "Token transfer failed.");
+
+        uint256 fee = _collectTokenFee(_token, _amount, "deposit_token_escrow");
+        uint256 netAmount = _amount - fee;
+        require(netAmount > 0, "Amount too small after fee.");
+
+        agentTokenEscrowBalances[msg.sender][_token] += netAmount;
+        emit AgentTokenEscrowDeposited(msg.sender, _token, netAmount);
+    }
+
+    function withdrawTokenFromEscrow(address _token, uint256 _amount) public onlyRegisteredAgent whenNotPaused {
+        require(_token != address(0), "Invalid token address.");
+        require(_amount > 0, "Amount must be greater than zero.");
+        require(agentTokenEscrowBalances[msg.sender][_token] >= _amount, "Insufficient token escrow balance.");
+        require(cybereumTreasury != address(0), "Cybereum treasury not configured.");
+
+        uint256 fee = _calculateFee(_amount);
+        require(_amount > fee, "Amount too small after fee.");
+        uint256 netAmount = _amount - fee;
+
+        agentTokenEscrowBalances[msg.sender][_token] -= _amount;
+        bool feeSuccess = IERC20(_token).transfer(cybereumTreasury, fee);
+        require(feeSuccess, "Token fee transfer failed.");
+        emit CybereumFeePaid(msg.sender, _token, fee, "withdraw_token_escrow");
+
+        bool success = IERC20(_token).transfer(msg.sender, netAmount);
+        require(success, "Token transfer failed.");
+        emit AgentTokenEscrowWithdrawn(msg.sender, _token, netAmount);
+    }
+
+    function transferTokenBetweenAgents(address _token, address _to, uint256 _amount, string memory _memo) public onlyRegisteredAgent whenNotPaused {
+        require(_token != address(0), "Invalid token address.");
+        require(agents[_to].registered, "Recipient must be a registered agent.");
+        require(_to != msg.sender, "Cannot transfer to self.");
+        require(_amount > 0, "Amount must be greater than zero.");
+        require(agentTokenEscrowBalances[msg.sender][_token] >= _amount, "Insufficient token escrow balance.");
+        require(cybereumTreasury != address(0), "Cybereum treasury not configured.");
+
+        uint256 fee = _calculateFee(_amount);
+        require(_amount > fee, "Amount too small after fee.");
+        uint256 netAmount = _amount - fee;
+
+        agentTokenEscrowBalances[msg.sender][_token] -= _amount;
+        agentTokenEscrowBalances[_to][_token] += netAmount;
+        if (fee > 0) {
+            bool feeTransferSuccess = IERC20(_token).transfer(cybereumTreasury, fee);
+            require(feeTransferSuccess, "Token fee transfer failed.");
+            emit CybereumFeePaid(msg.sender, _token, fee, "agent_token_transfer");
+        }
+
+        emit AgentToAgentTokenTransfer(msg.sender, _to, _token, netAmount, _memo);
+    }
+
+    function transferAssetBetweenAgents(address _assetContract, address _to, uint256 _assetId, string memory _memo)
+        public
+        payable
+        onlyRegisteredAgent
+        whenNotPaused
+    {
+        require(_assetContract != address(0), "Invalid asset contract address.");
+        require(agents[_to].registered, "Recipient must be a registered agent.");
+        require(_to != msg.sender, "Cannot transfer to self.");
+        require(msg.value == assetTransferFlatFeeWei, "Incorrect asset transfer fee.");
+        require(cybereumTreasury != address(0), "Cybereum treasury not configured.");
+
+        payable(cybereumTreasury).transfer(msg.value);
+        emit CybereumFeePaid(msg.sender, address(0), msg.value, "agent_asset_transfer");
+
+        IERC721Lite(_assetContract).transferFrom(msg.sender, _to, _assetId);
+        emit AgentAssetTransfer(msg.sender, _to, _assetContract, _assetId, _memo);
+    }
+
+    function createAgentPaymentRequest(
+        address _payer,
+        address _token,
+        uint256 _amount,
+        bool _isNative,
+        string memory _description
+    ) public onlyRegisteredAgent whenNotPaused returns (uint256) {
+        require(agents[_payer].registered, "Payer must be a registered agent.");
+        require(_payer != msg.sender, "Cannot request payment from self.");
+        require(_amount > 0, "Amount must be greater than zero.");
+        if (_isNative) {
+            require(_token == address(0), "Native request must use zero token address.");
+        } else {
+            require(_token != address(0), "Token request requires token address.");
+        }
+
+        uint256 requestId = currentAgentPaymentRequestId;
+        agentPaymentRequests[requestId] = AgentPaymentRequest({
+            id: requestId,
+            requester: msg.sender,
+            payer: _payer,
+            token: _token,
+            amount: _amount,
+            isNative: _isNative,
+            description: _description,
+            status: PaymentStatus.Requested,
+            createdAt: block.timestamp,
+            settledAt: 0
+        });
+
+        currentAgentPaymentRequestId++;
+        emit AgentPaymentRequestCreated(requestId, msg.sender, _payer, _isNative, _token, _amount, _description);
+        return requestId;
+    }
+
+    function settleAgentPaymentRequest(uint256 _requestId) public payable onlyRegisteredAgent whenNotPaused {
+        AgentPaymentRequest storage request = agentPaymentRequests[_requestId];
+        require(request.id != 0, "Payment request does not exist.");
+        require(request.status == PaymentStatus.Requested, "Payment request is not open.");
+        require(request.payer == msg.sender, "Only designated payer can settle this request.");
+
+        if (request.isNative) {
+            require(msg.value == request.amount, "Incorrect native payment amount.");
+            uint256 fee = _collectNativeFee(request.amount, "settle_payment_request_native");
+            uint256 netAmount = request.amount - fee;
+            require(netAmount > 0, "Amount too small after fee.");
+            payable(request.requester).transfer(netAmount);
+        } else {
+            require(msg.value == 0, "Do not send native value for token settlement.");
+            bool success = IERC20(request.token).transferFrom(msg.sender, address(this), request.amount);
+            require(success, "Token transfer failed.");
+            uint256 fee = _collectTokenFee(request.token, request.amount, "settle_payment_request_token");
+            uint256 netAmount = request.amount - fee;
+            require(netAmount > 0, "Amount too small after fee.");
+            bool payoutSuccess = IERC20(request.token).transfer(request.requester, netAmount);
+            require(payoutSuccess, "Token payout transfer failed.");
+        }
+
+        request.status = PaymentStatus.Settled;
+        request.settledAt = block.timestamp;
+        emit AgentPaymentRequestSettled(_requestId, msg.sender, request.requester, request.settledAt);
+    }
+
+    function cancelAgentPaymentRequest(uint256 _requestId) public onlyRegisteredAgent whenNotPaused {
+        AgentPaymentRequest storage request = agentPaymentRequests[_requestId];
+        require(request.id != 0, "Payment request does not exist.");
+        require(request.status == PaymentStatus.Requested, "Payment request is not open.");
+        require(request.requester == msg.sender, "Only requester can cancel this payment request.");
+
+        request.status = PaymentStatus.Cancelled;
+        emit AgentPaymentRequestCancelled(_requestId, msg.sender);
     }
 
     // --- Member Management ---
