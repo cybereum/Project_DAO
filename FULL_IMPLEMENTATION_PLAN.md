@@ -244,7 +244,7 @@ Remaining gaps (entire workstream):
 2. Add unit tests for fee logic on every transaction rail (native, token, asset, payment request).
 3. Add invariant test: `sum(CybereumFeePaid.amount) == cybereumTreasury.balance delta`.
 4. Add edge tests: dust amounts, `MIN_FEE_BPS` floor enforcement, unauthorized modifier paths.
-5. Fix fee collection from `.transfer()` to `.call()` and test both success and revert paths.
+5. ~~Fix fee collection from `.transfer()` to `.call()`.~~ **DONE** — all 6 native transfer sites replaced.
 6. Add GitHub Actions CI: lint (`solhint`, `eslint`) + contract tests + frontend build.
 7. Add deployment scripts for testnet and mainnet with environment variable templates.
 8. Produce security checklist and release checklist.
@@ -256,24 +256,81 @@ Remaining gaps (entire workstream):
 
 ---
 
+## WS7 — NexusAI Self-Improvement Engine
+
+> **Status: scaffold complete (server + frontend service + UI page). Requires ANTHROPIC_API_KEY and running server.**
+
+The app can now analyse its own codebase using Claude claude-opus-4-6 and surface prioritised, actionable improvement suggestions — including patch diffs that can be applied directly to files on disk.
+
+### Architecture
+
+```
+NEXUS app (/nexus-ai route)
+    └── nexusAI.js service (fetch client)
+        └── nexus-ai-server/server.js (Express + @anthropic-ai/sdk)
+            └── Claude claude-opus-4-6 (adaptive thinking)
+                └── reads live repo source files from disk
+```
+
+### Analysis modes
+
+| Mode | Files read | Output |
+|---|---|---|
+| **Protocol Health** | contract + store + AgentEconomy + config + plan | Score (0–100), prioritised suggestions with patches, plan gaps, new ideas |
+| **Security Audit** | `Project_DAO.sol` | Risk level, SWC findings, severity, recommendations, patches |
+| **UX Review** | `AgentEconomy.jsx` + `appStore.jsx` | Issue list by type/severity, accessibility gaps, missing error handling |
+| **Growth Analysis** | `Landing.jsx` + `analytics.js` + `utm.js` | Conversion score, copy/CTA/funnel suggestions |
+
+### Deliverables (complete)
+- `nexus-ai-server/server.js` — Express proxy; reads source files, calls Claude with adaptive thinking, returns structured JSON; streaming SSE endpoint for real-time token display.
+- `nexus-ai-server/package.json` — `@anthropic-ai/sdk`, `express`, `cors`.
+- `nexus-app/src/services/nexusAI.js` — frontend client with `ping`, `getModes`, `analyse`, `analyseStream`, `applySuggestion`.
+- `nexus-app/src/pages/NexusAI.jsx` — full UI: mode selector, streaming token display, score rings, collapsible suggestion cards with 1-click patch apply.
+- Route `/nexus-ai` registered in `App.jsx`.
+- NexusAI entry added to sidebar navigation (`Layout.jsx`).
+
+### Deliverables (outstanding)
+- `VITE_NEXUS_AI_URL` documented in `nexus-app/.env.example`.
+- Rate limiting on the Express server to prevent runaway Claude API spend.
+- Suggestion history — persist past analysis runs in localStorage so results survive page reload.
+- Scheduled auto-analysis — cron trigger that runs health scan nightly and emails/Slacks a diff of new findings.
+- Proposal integration — high-severity suggestions can be submitted as DAO governance proposals with one click.
+- Multi-file patch application — when a suggestion spans more than one file, apply all hunks atomically.
+
+### Newly discovered gaps (added while implementing)
+- `parseUnits` was missing from the AgentEconomy imports — now fixed.
+- `Coins` and `Image` icons were missing from lucide-react imports — now fixed.
+- The `escrow` tab label was ambiguous — renamed to `ETH Escrow` for clarity.
+- No `VITE_NEXUS_AI_URL` in `.env.example` template — outstanding.
+- `nexus-ai-server` not yet in `.gitignore` for `node_modules` — outstanding.
+
+### Acceptance criteria
+- Running `ANTHROPIC_API_KEY=sk-ant-... npm start` in `nexus-ai-server/` starts the server.
+- Setting `VITE_NEXUS_AI_URL=http://localhost:3737` and opening `/nexus-ai` shows the mode grid.
+- Clicking any mode card runs analysis, streams tokens, and renders typed suggestions.
+- Patch apply writes the updated file to disk.
+
+---
+
 ## Revised Phased Execution Plan
 
 > Phases 0–2 from the original plan are now complete or partially complete. The plan below reflects the remaining work from the current state.
 
 ## Phase A (1–2 weeks) — Testnet Readiness (WS6 priority + WS1 hardening)
 - Add Solidity test suite (unit + invariant + edge cases).
-- Fix fee collection from `.transfer()` to `.call()`.
+- ~~Fix fee collection from `.transfer()` to `.call()`.~~ **DONE.**
 - Add GitHub Actions CI pipeline.
 - Add deployment scripts and `.env.example`.
 - Deploy to testnet with all tests passing.
 
 **Exit:** testnet deployment live, all fee tests green, CI enforced on every PR.
 
-## Phase B (2–3 weeks) — Feature Parity (WS2 completion)
-- Add ERC-20 token escrow UI and store methods.
-- Add ERC-721 asset transfer UI and store method.
-- Add token balance view in agent profile.
-- Add transaction confirmation notification system.
+## Phase B (1–2 weeks) — Feature Parity (WS2 completion) — *partially done*
+- ~~Add ERC-20 token escrow UI and store methods.~~ **DONE** — Token Escrow tab live.
+- ~~Add ERC-721 asset transfer UI and store method.~~ **DONE** — NFT Transfer tab live.
+- ~~Add token balance view.~~ **DONE** — inline balance check in Token Escrow tab.
+- Add transaction notification/toast system (currently inline state only).
+- Add `parseUnits` decimal handling UX (warn if decimals don't match token).
 
 **Exit:** all four agent rails (ETH, ERC-20, ERC-721, payment requests) usable end-to-end from the UI.
 
@@ -295,10 +352,11 @@ Remaining gaps (entire workstream):
 **Exit:** all 5 persona pages live, crawlable, and conversion-instrumented.
 
 ## Phase E (Ongoing) — Mainnet Launch + Optimisation
-- Security audit of `Project_DAO.sol`.
+- Security audit of `Project_DAO.sol` (NexusAI security mode can seed the finding list).
 - Address audit findings.
 - Mainnet deployment with observability active.
 - Weekly KPI review and funnel optimisation loop.
+- Schedule NexusAI nightly health scans; route findings to DAO proposal queue.
 
 **Exit:** mainnet live with reliability and growth baseline established.
 
@@ -309,17 +367,19 @@ Remaining gaps (entire workstream):
 | Feature | Workstream | Status |
 |---|---|---|
 | Fee floor enforcement (MIN_FEE_BPS) | WS1 | **Complete** |
-| Fee collection safety (`.call()`) | WS1 | **Missing — Tier 1** |
+| Fee collection safety (`.call()`) | WS1 | **Complete** *(fixed 2026-03-09)* |
 | Treasury timelock / multisig | WS1 | **Missing — Tier 2** |
 | Custom errors + NatSpec | WS1 | **Missing — Tier 3** |
 | Agent identity (register/update) | WS2 | **Complete** |
 | Native ETH escrow + transfer | WS2 | **Complete** |
 | ERC-20 token escrow (contract) | WS2 | **Complete** |
-| ERC-20 token escrow (UI + store) | WS2 | **Missing — Tier 1** |
+| ERC-20 token escrow (UI + store) | WS2 | **Complete** *(done 2026-03-09)* |
 | ERC-721 asset transfer (contract) | WS2 | **Complete** |
-| ERC-721 asset transfer (UI + store) | WS2 | **Missing — Tier 1** |
+| ERC-721 asset transfer (UI + store) | WS2 | **Complete** *(done 2026-03-09)* |
 | Payment request lifecycle | WS2 | **Complete** |
 | Fee previews before submit | WS2 | **Complete** |
+| Transaction notification/toast system | WS2 | **Missing — Tier 2** |
+| Token decimal mismatch UX warning | WS2 | **Missing — Tier 3** |
 | Transaction history feed | WS2 | **Missing — Tier 2** |
 | Event indexing / subgraph | WS3 | **Not started — Tier 1** |
 | Protocol analytics API | WS3 | **Not started — Tier 1** |
@@ -347,6 +407,14 @@ Remaining gaps (entire workstream):
 | CI/CD pipeline | WS6 | **Not started — Tier 1** |
 | Deployment scripts + .env.example | WS6 | **Not started — Tier 1** |
 | Security audit + release checklist | WS6 | **Not started — Tier 2** |
+| NexusAI server (Claude API proxy) | WS7 | **Complete** *(done 2026-03-09)* |
+| NexusAI frontend service + page | WS7 | **Complete** *(done 2026-03-09)* |
+| NexusAI: health / security / ux / growth modes | WS7 | **Complete** *(done 2026-03-09)* |
+| NexusAI: 1-click patch apply | WS7 | **Complete** *(done 2026-03-09)* |
+| NexusAI: suggestion history (localStorage) | WS7 | **Missing — Tier 3** |
+| NexusAI: scheduled nightly scan + alerts | WS7 | **Missing — Tier 3** |
+| NexusAI: DAO proposal submission from finding | WS7 | **Missing — Tier 2** |
+| NexusAI: rate limiting on server | WS7 | **Missing — Tier 2** |
 
 **Tier 1** = mainnet blocker. **Tier 2** = should fix before production. **Tier 3** = improvement / nice-to-have.
 
@@ -377,19 +445,22 @@ Remaining gaps (entire workstream):
 
 ## Risks and Mitigations
 
-- **Silent fee loss via `.transfer()`** -> switch to `.call()` before any mainnet deployment; add test coverage.
+- **~~Silent fee loss via `.transfer()`~~** -> **FIXED** — all 6 sites now use `.call{value}()` + `require`.
 - **No test coverage on contract** -> add Foundry test suite as Phase A gate; block mainnet until green.
 - **Over-centralised owner controls** -> add timelock or multisig governance for treasury and fee config updates in Phase A/B.
 - **SPA SEO limitations** -> prerender/SSR before scaling paid or content campaigns (Phase D).
 - **Data trust gaps** -> reconcile indexer totals with on-chain event checksums once subgraph is deployed.
-- **Incomplete token/asset UI** -> users with ERC-20 or ERC-721 needs are blocked; prioritise in Phase B.
+- **~~Incomplete token/asset UI~~** -> **FIXED** — ERC-20 and ERC-721 rails now fully exposed in NEXUS UI.
+- **NexusAI API key exposure risk** -> server reads `ANTHROPIC_API_KEY` from env only; never set `VITE_ANTHROPIC_API_KEY` in the browser bundle.
+- **NexusAI runaway spend** -> add per-IP rate limiting and monthly budget cap before exposing server publicly.
+- **Token decimal mismatch** -> `parseUnits` uses user-supplied decimals field; incorrect decimals will produce wrong amounts — add on-chain decimal validation or warn prominently.
 
 ---
 
 ## Repo Implementation Checklist
 
 ### Contracts
-- [ ] Fix fee collection: `.transfer()` → `.call()` with revert on failure.
+- [x] Fix fee collection: `.transfer()` → `.call()` with revert on failure. *(done 2026-03-09)*
 - [ ] Add Foundry (or Hardhat) test suite with unit + invariant + edge tests.
 - [ ] Add deployment scripts and `.env.example`.
 - [ ] Add timelock/multisig on `setCybereumTreasury()`.
@@ -398,14 +469,27 @@ Remaining gaps (entire workstream):
 
 ### Frontend
 - [x] Agent economy UI for native ETH rail — complete.
-- [ ] ERC-20 token escrow forms + store methods.
-- [ ] ERC-721 asset transfer form + store method.
-- [ ] Token balance view in agent profile.
-- [ ] Transaction notification/toast system.
+- [x] ERC-20 token escrow forms + store methods. *(done 2026-03-09)*
+- [x] ERC-721 asset transfer form + store method. *(done 2026-03-09)*
+- [x] Token balance view (inline per-token balance check). *(done 2026-03-09)*
+- [ ] Transaction notification/toast system (currently inline state only).
+- [ ] Token decimal auto-detection (query ERC-20 `decimals()` on-chain instead of manual input).
 - [ ] `/ngo`, `/enterprise`, `/cities` persona landing pages.
 - [ ] Prerender/SSR for public routes.
 - [ ] Build-time sitemap generation.
 - [ ] CRM webhook integration.
+
+### NexusAI (self-improvement engine)
+- [x] `nexus-ai-server/server.js` — Express proxy with 4 Claude-backed analysis modes. *(done 2026-03-09)*
+- [x] `nexus-app/src/services/nexusAI.js` — frontend client. *(done 2026-03-09)*
+- [x] `nexus-app/src/pages/NexusAI.jsx` — full UI with streaming + patch apply. *(done 2026-03-09)*
+- [x] `/nexus-ai` route + sidebar nav entry. *(done 2026-03-09)*
+- [ ] `VITE_NEXUS_AI_URL` added to `nexus-app/.env.example`.
+- [ ] `node_modules` added to `nexus-ai-server/.gitignore`.
+- [ ] Rate limiting on NexusAI server.
+- [ ] Suggestion history persisted in localStorage.
+- [ ] Scheduled nightly scan with alert webhook.
+- [ ] "Submit as DAO proposal" CTA on critical findings.
 
 ### Data + Ops
 - [ ] Deploy subgraph or indexer for all agent events.
