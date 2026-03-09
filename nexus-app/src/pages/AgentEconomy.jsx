@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion as Motion } from 'framer-motion';
-import { parseEther, formatEther } from 'ethers';
+import { parseEther, formatEther, parseUnits } from 'ethers';
 import {
   Bot, Wallet, ArrowUpRight, ArrowDownLeft, Send, FileText,
   CheckCircle, XCircle, Clock, Zap, Info, Copy, ExternalLink,
-  RefreshCw, Shield, Twitter, Share2, Link2
+  RefreshCw, Shield, Twitter, Share2, Link2, Coins, Image
 } from 'lucide-react';
 import { generateReferralLink, markFunnelStep } from '../lib/utm.js';
 import { trackEvent } from '../lib/analytics.js';
@@ -150,8 +150,11 @@ export default function AgentEconomy() {
     walletConnected, walletAddress, walletError, txPending,
     connectWallet,
     agentProfile, agentFeeBps, agentFlatFeeWei,
-    loadAgentConfig, loadAgentProfile,
+    agentTokenBalances,
+    loadAgentConfig, loadAgentProfile, agentLoadTokenBalance,
     agentRegister, agentDepositNative, agentWithdrawNative, agentTransferNative,
+    agentDepositToken, agentWithdrawToken, agentTransferToken,
+    agentTransferAsset,
     agentCreatePaymentRequest, agentSettlePaymentRequest, agentCancelPaymentRequest,
   } = useApp();
 
@@ -180,6 +183,21 @@ export default function AgentEconomy() {
   const [settleId, setSettleId] = useState('');
   const [cancelId, setCancelId] = useState('');
 
+  // Token escrow forms
+  const [tokenAddr, setTokenAddr] = useState('');
+  const [tokenDecimals, setTokenDecimals] = useState('18');
+  const [tokenDepositAmt, setTokenDepositAmt] = useState('');
+  const [tokenWithdrawAmt, setTokenWithdrawAmt] = useState('');
+  const [tokenTransferTo, setTokenTransferTo] = useState('');
+  const [tokenTransferAmt, setTokenTransferAmt] = useState('');
+  const [tokenTransferMemo, setTokenTransferMemo] = useState('');
+
+  // Asset transfer form
+  const [assetContract, setAssetContract] = useState('');
+  const [assetTokenId, setAssetTokenId] = useState('');
+  const [assetRecipient, setAssetRecipient] = useState('');
+  const [assetMemo, setAssetMemo] = useState('');
+
   const refresh = useCallback(() => {
     loadAgentConfig();
     loadAgentProfile();
@@ -203,9 +221,15 @@ export default function AgentEconomy() {
     ? parseFloat(formatEther(agentProfile.nativeEscrowBalance)).toFixed(6)
     : '0.000000';
 
+  const tokenBalanceForAddr = tokenAddr
+    ? (agentTokenBalances[tokenAddr.toLowerCase()] || '0')
+    : '0';
+
   const TABS = [
     { id: 'overview', label: 'Overview' },
-    { id: 'escrow', label: 'Escrow' },
+    { id: 'escrow', label: 'ETH Escrow' },
+    { id: 'tokens', label: 'Token Escrow' },
+    { id: 'assets', label: 'NFT Transfer' },
     { id: 'transfer', label: 'Transfer' },
     { id: 'requests', label: 'Payment Requests' },
   ];
@@ -364,6 +388,147 @@ export default function AgentEconomy() {
                 <ArrowUpRight size={14} /> Withdraw from Escrow
               </Btn>
             </div>
+          </Card>
+        </div>
+      )}
+
+      {/* ── Token Escrow tab ── */}
+      {tab === 'tokens' && (
+        <div className="space-y-6">
+          {/* Token address input */}
+          <div className="p-4 rounded-xl border border-nexus-border bg-nexus-surface/50 flex flex-wrap items-end gap-3">
+            <div className="flex-1 min-w-48">
+              <label className="block text-xs text-nexus-text-dim mb-1">ERC-20 Token Address</label>
+              <input
+                className="w-full px-3 py-2 rounded-lg bg-nexus-bg border border-nexus-border text-sm text-nexus-text placeholder-nexus-text-dim focus:outline-none focus:border-nexus-cyan font-mono"
+                placeholder="0x..."
+                value={tokenAddr}
+                onChange={e => setTokenAddr(e.target.value)}
+              />
+            </div>
+            <div className="w-24">
+              <label className="block text-xs text-nexus-text-dim mb-1">Decimals</label>
+              <input
+                className="w-full px-3 py-2 rounded-lg bg-nexus-bg border border-nexus-border text-sm text-nexus-text focus:outline-none focus:border-nexus-cyan"
+                type="number" min="0" max="18" placeholder="18"
+                value={tokenDecimals}
+                onChange={e => setTokenDecimals(e.target.value)}
+              />
+            </div>
+            <Btn variant="secondary" disabled={!tokenAddr}
+              onClick={() => agentLoadTokenBalance(tokenAddr)}>
+              <RefreshCw size={13} /> Check Balance
+            </Btn>
+            {tokenAddr && (
+              <div className="text-xs font-mono text-nexus-cyan">
+                Escrow balance: {tokenBalanceForAddr}
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Card title="Deposit ERC-20 Token" icon={Coins}>
+              <div className="space-y-4">
+                <p className="text-xs text-nexus-text-dim">
+                  You must approve the contract to spend your tokens before calling deposit.
+                  Use your token&apos;s <code className="text-nexus-cyan">approve(contractAddress, amount)</code> first.
+                </p>
+                <Field label="Amount (token units)" type="number" step="any" min="0" placeholder="100"
+                  value={tokenDepositAmt} onChange={e => setTokenDepositAmt(e.target.value)} />
+                <Btn loading={txPending} disabled={!walletConnected || !tokenAddr || !tokenDepositAmt}
+                  onClick={() => handle(
+                    () => agentDepositToken(tokenAddr, parseUnits(tokenDepositAmt || '0', parseInt(tokenDecimals) || 18)),
+                    'deposited tokens to escrow'
+                  )()}>
+                  <ArrowDownLeft size={14} /> Deposit Tokens
+                </Btn>
+              </div>
+            </Card>
+
+            <Card title="Withdraw ERC-20 Token" icon={ArrowUpRight}>
+              <div className="space-y-4">
+                <div className="text-xs text-nexus-text-dim">
+                  Escrow balance: <span className="text-nexus-cyan font-mono">{tokenBalanceForAddr}</span>
+                </div>
+                <Field label="Amount (token units)" type="number" step="any" min="0" placeholder="50"
+                  value={tokenWithdrawAmt} onChange={e => setTokenWithdrawAmt(e.target.value)} />
+                <Btn loading={txPending} disabled={!walletConnected || !tokenAddr || !tokenWithdrawAmt}
+                  onClick={() => handle(
+                    () => agentWithdrawToken(tokenAddr, parseUnits(tokenWithdrawAmt || '0', parseInt(tokenDecimals) || 18)),
+                    'withdrew tokens from escrow'
+                  )()}>
+                  <ArrowUpRight size={14} /> Withdraw Tokens
+                </Btn>
+              </div>
+            </Card>
+
+            <Card title="Transfer ERC-20 to Another Agent" icon={Send} className="md:col-span-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-3">
+                  <Field label="Recipient agent address" placeholder="0x..."
+                    value={tokenTransferTo} onChange={e => setTokenTransferTo(e.target.value)} />
+                  <Field label="Amount (token units)" type="number" step="any" min="0" placeholder="25"
+                    value={tokenTransferAmt} onChange={e => setTokenTransferAmt(e.target.value)} />
+                  <Field label="Memo (optional)" placeholder="Service payment"
+                    value={tokenTransferMemo} onChange={e => setTokenTransferMemo(e.target.value)} />
+                  <Btn loading={txPending} disabled={!walletConnected || !tokenAddr || !tokenTransferTo || !tokenTransferAmt}
+                    onClick={() => handle(
+                      () => agentTransferToken(
+                        tokenAddr,
+                        tokenTransferTo,
+                        parseUnits(tokenTransferAmt || '0', parseInt(tokenDecimals) || 18),
+                        tokenTransferMemo
+                      ),
+                      'transferred tokens to an agent'
+                    )()}>
+                    <Send size={14} /> Transfer Tokens
+                  </Btn>
+                </div>
+                <div className="space-y-3 text-sm text-nexus-text-dim">
+                  <p className="flex gap-2"><CheckCircle size={14} className="text-nexus-cyan flex-shrink-0 mt-0.5" /><span>Both sender and recipient must be registered agents.</span></p>
+                  <p className="flex gap-2"><CheckCircle size={14} className="text-nexus-cyan flex-shrink-0 mt-0.5" /><span>Protocol fee (~{agentFeeBps} bps) is deducted in token units and sent to cybereum.eth treasury.</span></p>
+                  <p className="flex gap-2"><CheckCircle size={14} className="text-nexus-cyan flex-shrink-0 mt-0.5" /><span>Emits AgentToAgentTokenTransfer and CybereumFeePaid events.</span></p>
+                </div>
+              </div>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {/* ── NFT Asset Transfer tab ── */}
+      {tab === 'assets' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <Card title="Transfer ERC-721 Asset to Agent" icon={Image}>
+            <div className="space-y-4">
+              <p className="text-xs text-nexus-text-dim">
+                A flat fee of <span className="text-nexus-cyan font-mono">{(parseInt(agentFlatFeeWei) / 1e12).toFixed(0)} gwei</span> is charged in native ETH and routed to cybereum.eth. You must approve the contract to transfer the NFT first.
+              </p>
+              <Field label="NFT Contract Address" placeholder="0x..."
+                value={assetContract} onChange={e => setAssetContract(e.target.value)} />
+              <Field label="Token ID" type="number" min="0" placeholder="42"
+                value={assetTokenId} onChange={e => setAssetTokenId(e.target.value)} />
+              <Field label="Recipient Agent Address" placeholder="0x..."
+                value={assetRecipient} onChange={e => setAssetRecipient(e.target.value)} />
+              <Field label="Memo (optional)" placeholder="IP rights transfer"
+                value={assetMemo} onChange={e => setAssetMemo(e.target.value)} />
+              <Btn loading={txPending}
+                disabled={!walletConnected || !assetContract || !assetTokenId || !assetRecipient}
+                onClick={() => handle(
+                  () => agentTransferAsset(assetContract, assetRecipient, BigInt(assetTokenId || '0'), assetMemo, BigInt(agentFlatFeeWei)),
+                  'transferred an NFT asset to an agent'
+                )()}>
+                <Image size={14} /> Transfer Asset
+              </Btn>
+            </div>
+          </Card>
+
+          <Card title="Asset Transfer Rules" icon={Info}>
+            <ul className="space-y-3 text-sm text-nexus-text-dim">
+              <li className="flex gap-2"><CheckCircle size={14} className="text-nexus-cyan flex-shrink-0 mt-0.5" /><span>Both sender and recipient must be registered agents.</span></li>
+              <li className="flex gap-2"><CheckCircle size={14} className="text-nexus-cyan flex-shrink-0 mt-0.5" /><span>Flat fee of {(parseInt(agentFlatFeeWei) / 1e12).toFixed(0)} gwei is sent as ETH with the transaction — not deducted from escrow.</span></li>
+              <li className="flex gap-2"><CheckCircle size={14} className="text-nexus-cyan flex-shrink-0 mt-0.5" /><span>The contract calls transferFrom on the ERC-721. Approve the contract first via the NFT&apos;s approve() function.</span></li>
+              <li className="flex gap-2"><CheckCircle size={14} className="text-nexus-cyan flex-shrink-0 mt-0.5" /><span>Emits AgentAssetTransfer and CybereumFeePaid events on-chain.</span></li>
+            </ul>
           </Card>
         </div>
       )}

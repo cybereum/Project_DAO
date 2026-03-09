@@ -380,7 +380,8 @@ contract Project_DAO {
         require(cybereumTreasury != address(0), "Cybereum treasury not configured.");
         uint256 fee = _calculateFee(_amount);
         if (fee > 0) {
-            payable(cybereumTreasury).transfer(fee);
+            (bool ok,) = payable(cybereumTreasury).call{value: fee}("");
+            require(ok, "Native fee transfer failed.");
             emit CybereumFeePaid(msg.sender, address(0), fee, _context);
         }
         return fee;
@@ -429,10 +430,12 @@ contract Project_DAO {
 
         agents[msg.sender].nativeEscrowBalance -= _amount;
         if (fee > 0) {
-            payable(cybereumTreasury).transfer(fee);
+            (bool feeOk,) = payable(cybereumTreasury).call{value: fee}("");
+            require(feeOk, "Native fee transfer failed.");
             emit CybereumFeePaid(msg.sender, address(0), fee, "withdraw_native_escrow");
         }
-        payable(msg.sender).transfer(netAmount);
+        (bool withdrawOk,) = payable(msg.sender).call{value: netAmount}("");
+        require(withdrawOk, "Native withdrawal transfer failed.");
         emit AgentNativeEscrowWithdrawn(msg.sender, netAmount);
     }
 
@@ -450,7 +453,8 @@ contract Project_DAO {
         agents[msg.sender].nativeEscrowBalance -= _amount;
         agents[_to].nativeEscrowBalance += netAmount;
         if (fee > 0) {
-            payable(cybereumTreasury).transfer(fee);
+            (bool feeOk,) = payable(cybereumTreasury).call{value: fee}("");
+            require(feeOk, "Native fee transfer failed.");
             emit CybereumFeePaid(msg.sender, address(0), fee, "agent_native_transfer");
         }
 
@@ -526,7 +530,8 @@ contract Project_DAO {
         require(msg.value == assetTransferFlatFeeWei, "Incorrect asset transfer fee.");
         require(cybereumTreasury != address(0), "Cybereum treasury not configured.");
 
-        payable(cybereumTreasury).transfer(msg.value);
+        (bool feeOk,) = payable(cybereumTreasury).call{value: msg.value}("");
+        require(feeOk, "Native fee transfer failed.");
         emit CybereumFeePaid(msg.sender, address(0), msg.value, "agent_asset_transfer");
 
         IERC721Lite(_assetContract).transferFrom(msg.sender, _to, _assetId);
@@ -579,7 +584,8 @@ contract Project_DAO {
             uint256 fee = _collectNativeFee(request.amount, "settle_payment_request_native");
             uint256 netAmount = request.amount - fee;
             require(netAmount > 0, "Amount too small after fee.");
-            payable(request.requester).transfer(netAmount);
+            (bool payoutOk,) = payable(request.requester).call{value: netAmount}("");
+            require(payoutOk, "Native payout transfer failed.");
         } else {
             require(msg.value == 0, "Do not send native value for token settlement.");
             bool success = IERC20(request.token).transferFrom(msg.sender, address(this), request.amount);

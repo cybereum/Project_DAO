@@ -258,6 +258,8 @@ export function useAppState() {
   const [agentPaymentRequests, setAgentPaymentRequests] = useState([]);
   const [agentFeeBps, setAgentFeeBps] = useState(5);
   const [agentFlatFeeWei, setAgentFlatFeeWei] = useState('1000000000000');
+  // token address → escrow balance (BigInt string)
+  const [agentTokenBalances, setAgentTokenBalances] = useState({});
 
   const loadAgentConfig = useCallback(async () => {
     const contract = getDaoReadContract();
@@ -392,6 +394,87 @@ export function useAppState() {
     }
   }, [getDaoWriteContract]);
 
+  const agentLoadTokenBalance = useCallback(async (tokenAddress) => {
+    if (!walletAddress || !tokenAddress) return;
+    const contract = getDaoReadContract();
+    if (!contract) return;
+    try {
+      const bal = await contract.agentTokenEscrowBalances(walletAddress, tokenAddress);
+      setAgentTokenBalances(prev => ({ ...prev, [tokenAddress.toLowerCase()]: bal.toString() }));
+    } catch { /* no-op */ }
+  }, [walletAddress, getDaoReadContract]);
+
+  const agentDepositToken = useCallback(async (tokenAddress, amountWei) => {
+    setWalletError('');
+    const contract = await getDaoWriteContract();
+    if (!contract) { setWalletError('Wallet not connected or contract not configured.'); return null; }
+    try {
+      setTxPending(true);
+      const tx = await contract.depositTokenToEscrow(tokenAddress, amountWei);
+      const receipt = await tx.wait();
+      await agentLoadTokenBalance(tokenAddress);
+      return receipt.hash;
+    } catch (error) {
+      setWalletError(error?.shortMessage || error?.message || 'Token deposit failed.');
+      return null;
+    } finally {
+      setTxPending(false);
+    }
+  }, [getDaoWriteContract, agentLoadTokenBalance]);
+
+  const agentWithdrawToken = useCallback(async (tokenAddress, amountWei) => {
+    setWalletError('');
+    const contract = await getDaoWriteContract();
+    if (!contract) { setWalletError('Wallet not connected or contract not configured.'); return null; }
+    try {
+      setTxPending(true);
+      const tx = await contract.withdrawTokenFromEscrow(tokenAddress, amountWei);
+      const receipt = await tx.wait();
+      await agentLoadTokenBalance(tokenAddress);
+      return receipt.hash;
+    } catch (error) {
+      setWalletError(error?.shortMessage || error?.message || 'Token withdrawal failed.');
+      return null;
+    } finally {
+      setTxPending(false);
+    }
+  }, [getDaoWriteContract, agentLoadTokenBalance]);
+
+  const agentTransferToken = useCallback(async (tokenAddress, toAddress, amountWei, memo) => {
+    setWalletError('');
+    const contract = await getDaoWriteContract();
+    if (!contract) { setWalletError('Wallet not connected or contract not configured.'); return null; }
+    try {
+      setTxPending(true);
+      const tx = await contract.transferTokenBetweenAgents(tokenAddress, toAddress, amountWei, memo || '');
+      const receipt = await tx.wait();
+      await agentLoadTokenBalance(tokenAddress);
+      return receipt.hash;
+    } catch (error) {
+      setWalletError(error?.shortMessage || error?.message || 'Token transfer failed.');
+      return null;
+    } finally {
+      setTxPending(false);
+    }
+  }, [getDaoWriteContract, agentLoadTokenBalance]);
+
+  const agentTransferAsset = useCallback(async (assetContract, toAddress, tokenId, memo, flatFeeWei) => {
+    setWalletError('');
+    const contract = await getDaoWriteContract();
+    if (!contract) { setWalletError('Wallet not connected or contract not configured.'); return null; }
+    try {
+      setTxPending(true);
+      const tx = await contract.transferAssetBetweenAgents(assetContract, toAddress, tokenId, memo || '', { value: flatFeeWei });
+      const receipt = await tx.wait();
+      return receipt.hash;
+    } catch (error) {
+      setWalletError(error?.shortMessage || error?.message || 'Asset transfer failed.');
+      return null;
+    } finally {
+      setTxPending(false);
+    }
+  }, [getDaoWriteContract]);
+
   const agentCancelPaymentRequest = useCallback(async (requestId) => {
     setWalletError('');
     const contract = await getDaoWriteContract();
@@ -416,8 +499,11 @@ export function useAppState() {
     addProject, addProposal, addCompany, addNft,
     // agent economy
     agentProfile, agentPaymentRequests, agentFeeBps, agentFlatFeeWei,
+    agentTokenBalances,
     loadAgentConfig, loadAgentProfile, setAgentPaymentRequests,
     agentRegister, agentDepositNative, agentWithdrawNative, agentTransferNative,
+    agentDepositToken, agentWithdrawToken, agentTransferToken, agentTransferAsset,
+    agentLoadTokenBalance,
     agentCreatePaymentRequest, agentSettlePaymentRequest, agentCancelPaymentRequest,
   }), [
     projects, milestones, proposals, members, companies, nfts, tasks,
@@ -425,8 +511,11 @@ export function useAppState() {
     connectWallet, castVote, syncProposalsFromChain,
     addProject, addProposal, addCompany, addNft,
     agentProfile, agentPaymentRequests, agentFeeBps, agentFlatFeeWei,
+    agentTokenBalances,
     loadAgentConfig, loadAgentProfile, setAgentPaymentRequests,
     agentRegister, agentDepositNative, agentWithdrawNative, agentTransferNative,
+    agentDepositToken, agentWithdrawToken, agentTransferToken, agentTransferAsset,
+    agentLoadTokenBalance,
     agentCreatePaymentRequest, agentSettlePaymentRequest, agentCancelPaymentRequest,
   ]);
 
