@@ -39,8 +39,6 @@ function OnChainProjectDetail({ projectId }) {
     agentProfile,
   } = useApp();
 
-  const [contributors, setContributors]   = useState([]);
-  const [funders, setFunders]             = useState([]);
   const [loading, setLoading]             = useState(false);
   const [fundAmt, setFundAmt]             = useState('');
   const [approveAddr, setApproveAddr]     = useState('');
