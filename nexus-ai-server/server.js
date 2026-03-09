@@ -321,38 +321,49 @@ app.post('/api/analyse', async (req, res) => {
 // ─── /api/apply-suggestion — auto-apply a patch suggestion ───────────────
 
 app.post('/api/apply-suggestion', async (req, res) => {
-  const { filePath, patch } = req.body;
-  if (!filePath || !patch) {
-    return res.status(400).json({ error: 'filePath and patch are required.' });
-  }
-  if (!ALLOWED_PATHS.includes(filePath)) {
-    return res.status(403).json({ error: 'File path not in allowlist.' });
-  }
+  try {
+    const { filePath, patch } = req.body;
+    if (!filePath || !patch) {
+      return res.status(400).json({ error: 'filePath and patch are required.' });
+    }
+    if (!ALLOWED_PATHS.includes(filePath)) {
+      return res.status(403).json({ error: 'File path not in allowlist.' });
+    }
 
-  // Ask Claude to apply the patch precisely to the current file content
-  const currentContent = await fs.readFile(path.join(REPO_ROOT, filePath), 'utf-8').catch(() => null);
-  if (!currentContent) {
-    return res.status(404).json({ error: 'File not found.' });
+    // Ask Claude to apply the patch precisely to the current file content
+    const currentContent = await fs.readFile(path.join(REPO_ROOT, filePath), 'utf-8').catch(() => null);
+    if (!currentContent) {
+      return res.status(404).json({ error: 'File not found.' });
+    }
+
+    const response = await client.messages.create({
+      model: 'claude-opus-4-6',
+      max_tokens: 8192,
+      thinking: { type: 'adaptive' },
+      system: 'You are a precise code editor. Apply the provided patch to the file and return ONLY the complete updated file content with no explanation, no markdown fences, no extra text.',
+      messages: [{
+        role: 'user',
+        content: `Apply this patch to the file:
+
+PATCH:
+${patch}
+
+CURRENT FILE (${filePath}):
+${currentContent}`,
+      }],
+    });
+
+    const updatedContent = response.content.find(b => b.type === 'text')?.text || '';
+    if (!updatedContent) {
+      return res.status(500).json({ error: 'Claude returned empty content.' });
+    }
+
+    await fs.writeFile(path.join(REPO_ROOT, filePath), updatedContent, 'utf-8');
+    res.json({ success: true, filePath, message: `Applied patch to ${filePath}` });
+  } catch (err) {
+    console.error('Apply suggestion error:', err);
+    res.status(500).json({ error: err.message || 'Failed to apply suggestion.' });
   }
-
-  const response = await client.messages.create({
-    model: 'claude-opus-4-6',
-    max_tokens: 8192,
-    thinking: { type: 'adaptive' },
-    system: 'You are a precise code editor. Apply the provided patch to the file and return ONLY the complete updated file content with no explanation, no markdown fences, no extra text.',
-    messages: [{
-      role: 'user',
-      content: `Apply this patch to the file:\n\nPATCH:\n${patch}\n\nCURRENT FILE (${filePath}):\n${currentContent}`,
-    }],
-  });
-
-  const updatedContent = response.content.find(b => b.type === 'text')?.text || '';
-  if (!updatedContent) {
-    return res.status(500).json({ error: 'Claude returned empty content.' });
-  }
-
-  await fs.writeFile(path.join(REPO_ROOT, filePath), updatedContent, 'utf-8');
-  res.json({ success: true, filePath, message: `Applied patch to ${filePath}` });
 });
 
 // ─── /api/modes — list available analysis modes ───────────────────────────
