@@ -1217,8 +1217,7 @@ contract Project_DAO {
         require(msg.value >= minStakeToJoin, "Insufficient stake.");
         require(bytes(metadataURI).length > 0, "metadataURI required.");
 
-        uint256 fee = _calculateFee(msg.value);
-        _collectNativeFee(fee, "stakeAndJoin");
+        uint256 fee = _collectNativeFee(msg.value, "stakeAndJoin");
         uint256 netStake = msg.value - fee;
 
         memberStakes[msg.sender] = netStake;
@@ -1364,8 +1363,7 @@ contract Project_DAO {
         );
         require(msg.value > 0, "Must send ETH.");
 
-        uint256 fee = _calculateFee(msg.value);
-        _collectNativeFee(fee, "fundProject");
+        uint256 fee = _collectNativeFee(msg.value, "fundProject");
         uint256 net = msg.value - fee;
 
         if (projectFunderContributions[projectId][msg.sender] == 0) {
