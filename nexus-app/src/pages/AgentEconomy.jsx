@@ -60,11 +60,11 @@ function StatusBadge({ status }) {
 }
 
 // ─── Section card ─────────────────────────────────────────────────────────
-function Card({ title, icon: Icon, children, className = '' }) {
+function Card({ title, icon: CardIcon, children, className = '' }) {
   return (
     <div className={`p-6 rounded-2xl border border-nexus-border bg-nexus-surface/50 ${className}`}>
       <div className="flex items-center gap-2 mb-5">
-        <Icon size={18} className="text-nexus-cyan" />
+        <CardIcon size={18} className="text-nexus-cyan" />
         <h3 className="font-semibold text-base">{title}</h3>
       </div>
       {children}

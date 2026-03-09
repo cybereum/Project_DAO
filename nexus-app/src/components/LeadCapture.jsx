@@ -13,7 +13,7 @@
 import { useState, useEffect } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle, ArrowRight, Loader2, Share2, Copy, Twitter, Send } from 'lucide-react';
-import { submitLead, getAttribution, getLocaleHint, markFunnelStep, captureUTM } from '../lib/utm.js';
+import { submitLead, getLocaleHint, markFunnelStep, captureUTM } from '../lib/utm.js';
 import { trackEvent } from '../lib/analytics.js';
 
 // ─── Persona configurations ───────────────────────────────────────────────────
@@ -95,7 +95,7 @@ const PERSONAS = {
 
 // ─── Share confirmation card ──────────────────────────────────────────────────
 
-function ShareConfirmation({ persona, gift, onDismiss }) {
+function ShareConfirmation({ persona: _persona, gift, onDismiss }) {
   const [copied, setCopied] = useState(false);
   const url = typeof window !== 'undefined' ? window.location.href : 'https://nexusprotocol.io';
   const shareText = `I just joined the accountability movement. ${gift} from NEXUS Protocol — making corruption structurally impossible. ${url}`;
@@ -182,8 +182,8 @@ export default function LeadCapture({
 
   useEffect(() => {
     captureUTM();
-    const { country, language } = getLocaleHint();
-    if (country) setLocaleHint(country);
+    const { country } = getLocaleHint();
+    if (country) setLocaleHint(country); // eslint-disable-line react-hooks/set-state-in-effect
   }, []);
 
   const handleSubmit = async (e) => {

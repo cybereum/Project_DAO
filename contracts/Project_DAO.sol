@@ -1413,7 +1413,7 @@ contract Project_DAO {
         require(msg.sender == proj.proposer, "Only the proposer can approve contributors.");
         require(projectApplications[projectId][contributor], "Contributor has not applied.");
         require(!projectApplicationApproved[projectId][contributor], "Already approved.");
-        require(sharesBps > 0 && sharesBps <= 10000, "sharesBps must be 1–10000.");
+        require(sharesBps > 0 && sharesBps <= 10000, "sharesBps must be 1-10000.");
 
         // Ensure total shares don't exceed 100%
         uint256 totalShares = 0;

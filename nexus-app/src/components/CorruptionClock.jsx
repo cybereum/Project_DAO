@@ -12,12 +12,6 @@ import { AlertTriangle, Zap } from 'lucide-react';
 const LOSS_PER_SECOND = 82_384.81;   // $2.6T / 31,536,000 seconds
 const TICK_MS = 100;                  // update every 100ms
 
-function formatDollars(n) {
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000) return `$${Math.round(n).toLocaleString()}`;
-  return `$${n.toFixed(2)}`;
-}
-
 /**
  * Digit flip animation — each digit animates independently for a mechanical clock feel.
  */
@@ -60,9 +54,10 @@ function AnimatedNumber({ value }) {
  */
 export default function CorruptionClock({ compact = false, showSolution = true }) {
   const [elapsed, setElapsed] = useState(0);
-  const startRef = useRef(Date.now());
+  const startRef = useRef(null);
 
   useEffect(() => {
+    startRef.current = Date.now();
     const id = setInterval(() => {
       setElapsed((Date.now() - startRef.current) / 1000);
     }, TICK_MS);

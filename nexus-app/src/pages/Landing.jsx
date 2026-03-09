@@ -229,7 +229,7 @@ function ShareBar() {
   const whatsappText = `🌍 Corruption steals $82,385 every second.\n\nNEXUS Protocol makes it structurally impossible — free, open source governance for every city, community & cause.\n\n${url}`;
   const telegramText = `Corruption steals $82,385 every second. NEXUS Protocol makes it structurally impossible. Free. Open source. ${url}`;
   const copy = () => {
-    const fb = (v) => { try { const ta = document.createElement('textarea'); ta.value = v; ta.style.position='fixed'; ta.style.top='-1000px'; document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); setCopied(true); setTimeout(()=>setCopied(false),2000); } catch{} };
+    const fb = (v) => { try { const ta = document.createElement('textarea'); ta.value = v; ta.style.position='fixed'; ta.style.top='-1000px'; document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); setCopied(true); setTimeout(()=>setCopied(false),2000); } catch { /* no-op */ } };
     if (navigator?.clipboard?.writeText) { navigator.clipboard.writeText(url).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);}).catch(()=>fb(url)); } else { fb(url); }
   };
   return (

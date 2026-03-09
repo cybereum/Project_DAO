@@ -38,7 +38,7 @@ function StatCard({ icon: Icon, label, value, change, color, index }) {
 }
 
 export default function Dashboard() {
-  const { projects, milestones, proposals, members, agentProfile, featureKits, featureKitsLoading, loadFeatureKits } = useApp();
+  const { projects, milestones, proposals, members, agentProfile, featureKits } = useApp();
 
   const activityData = [
     { name: 'Mon', proposals: 4, tasks: 8, milestones: 2 },

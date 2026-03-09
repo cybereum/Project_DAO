@@ -383,7 +383,6 @@ export default function FeatureKits() {
     setTriageRunning(true);
     setTriageError('');
     setTriageResult(null);
-    setTriageStream('');
 
     const kitsPayload = hydratedKits
       .filter(k => k.status <= 1)   // only pending + validated
@@ -454,9 +453,9 @@ export default function FeatureKits() {
             { label: 'Queued',      value: kits.filter(k => k.status === 2).length,       icon: Rocket,       color: 'text-nexus-cyan' },
             { label: 'Pending',     value: kits.filter(k => k.status === 0).length,       icon: Clock,        color: 'text-amber-400'  },
             { label: 'Implemented', value: kits.filter(k => k.status === 4).length,       icon: CheckCircle2, color: 'text-nexus-green' },
-          ].map(({ label, value, icon: Icon, color }) => (
+          ].map(({ label, value, icon: StatIcon, color }) => (
             <div key={label} className="bg-nexus-surface border border-nexus-border rounded-xl p-4 flex items-center gap-3">
-              <Icon size={20} className={color} />
+              <StatIcon size={20} className={color} />
               <div>
                 <div className="text-lg font-bold text-nexus-text font-mono">{value}</div>
                 <div className="text-xs text-nexus-text-dim">{label}</div>
@@ -468,7 +467,7 @@ export default function FeatureKits() {
 
       {/* Tabs */}
       <div className="flex gap-1 p-1 bg-nexus-surface border border-nexus-border rounded-xl w-fit">
-        {TABS.map(({ id, label, icon: Icon }) => (
+        {TABS.map(({ id, label, icon: TabIcon }) => (
           <button
             key={id}
             onClick={() => setTab(id)}
@@ -478,7 +477,7 @@ export default function FeatureKits() {
                 : 'text-nexus-text-dim hover:text-nexus-text'
             }`}
           >
-            <Icon size={14} />
+            <TabIcon size={14} />
             {label}
           </button>
         ))}
