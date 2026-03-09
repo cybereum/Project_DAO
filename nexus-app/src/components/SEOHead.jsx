@@ -2,8 +2,9 @@ import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { trackPageView } from '../lib/analytics';
 
-const BASE_URL = 'https://nexusprotocol.io';
-const SITE_NAME = 'NEXUS Protocol';
+const BASE_URL = 'https://www.cybereum.io';
+const SITE_NAME = 'Cybereum';
+const OG_IMAGE = 'https://cdn.prod.website-files.com/6632a548562bd3696c947be1/66c8e5fdf48bbde6bc9ebe09_Blue_Logo_256.png';
 
 const ROUTE_SEO = {
   '/': {
@@ -25,6 +26,21 @@ const ROUTE_SEO = {
     title: 'Build on Project_DAO | NEXUS Protocol — Agent Economy Developer Guide',
     description: 'Integration guide for developers building on the agent economy settlement layer. Deploy Project_DAO.sol, configure the Cybereum fee rail, and wire agent transaction flows in minutes. Open source, EVM compatible.',
     keywords: 'Project_DAO developer, build agent economy, DAO smart contract integration, agent settlement layer development, Cybereum fee rail, NEXUS Protocol builders, EVM DAO deployment',
+  },
+  '/ngo': {
+    title: 'NGO Governance Toolkit | NEXUS Protocol — Transparent Programme Delivery',
+    description: 'Deploy transparent governance and disbursement accountability for NGOs, foundations, and impact programmes. Verify partners, track milestones, and prove outcomes on-chain.',
+    keywords: 'NGO transparency, foundation governance, donor accountability, impact programme tracking, anti-corruption tooling',
+  },
+  '/enterprise': {
+    title: 'Enterprise Governance Layer | NEXUS Protocol — Procurement & Settlement',
+    description: 'Bring procurement governance, milestone execution, and programmable settlement into one auditable on-chain operating layer for enterprise teams and supply chains.',
+    keywords: 'enterprise governance, procurement transparency, supply chain accountability, milestone settlement, on-chain operations',
+  },
+  '/cities': {
+    title: 'City Transparency Stack | NEXUS Protocol — Public Infrastructure Accountability',
+    description: 'Help cities and municipalities publish verifiable procurement, milestone progress, and disbursement records for public infrastructure and civic programmes.',
+    keywords: 'city transparency, municipal governance, public infrastructure accountability, procurement integrity, civic technology',
   },
   '/agent-economy': {
     title: 'Agent Economy Console | NEXUS Protocol — On-Chain Agent Transactions',
@@ -66,6 +82,18 @@ const ROUTE_SEO = {
     description: 'Manage tokenized project assets, intellectual property NFTs, carbon credits, and infrastructure blueprints on the NEXUS Protocol.',
     keywords: 'NFT assets, tokenized IP, carbon credit NFTs, project asset management, Web3 assets',
   },
+};
+
+
+const upsertJsonLd = (id, payload) => {
+  let el = document.getElementById(id);
+  if (!el) {
+    el = document.createElement('script');
+    el.type = 'application/ld+json';
+    el.id = id;
+    document.head.appendChild(el);
+  }
+  el.textContent = JSON.stringify(payload);
 };
 
 const getRouteSEO = (pathname) => {
@@ -115,10 +143,17 @@ export default function SEOHead({ title, description, keywords }) {
     setMeta('property', 'og:title', pageTitle);
     setMeta('property', 'og:description', pageDescription);
     setMeta('property', 'og:url', pageUrl);
+    setMeta('property', 'og:image', OG_IMAGE);
+    setMeta('property', 'og:image:alt', 'Cybereum circular logo');
+    setMeta('property', 'og:site_name', SITE_NAME);
+    setMeta('property', 'og:type', 'website');
 
     setMeta('name', 'twitter:title', pageTitle);
     setMeta('name', 'twitter:description', pageDescription);
     setMeta('name', 'twitter:url', pageUrl);
+    setMeta('name', 'twitter:card', 'summary_large_image');
+    setMeta('name', 'twitter:image', OG_IMAGE);
+    setMeta('name', 'theme-color', '#0d2137');
 
     let canonical = document.querySelector('link[rel="canonical"]');
     if (canonical) {
@@ -129,6 +164,39 @@ export default function SEOHead({ title, description, keywords }) {
       canonical.setAttribute('href', pageUrl);
       document.head.appendChild(canonical);
     }
+
+
+
+    upsertJsonLd('jsonld-org', {
+      '@context': 'https://schema.org',
+      '@type': 'Organization',
+      name: 'Cybereum',
+      url: BASE_URL,
+      logo: OG_IMAGE,
+      email: 'cybereum@cybereum.io',
+    });
+
+    upsertJsonLd('jsonld-site', {
+      '@context': 'https://schema.org',
+      '@type': 'WebSite',
+      name: 'Cybereum',
+      url: BASE_URL,
+    });
+
+    upsertJsonLd('jsonld-software', {
+      '@context': 'https://schema.org',
+      '@type': 'SoftwareApplication',
+      name: 'Cybereum',
+      applicationCategory: 'BusinessApplication',
+      operatingSystem: 'Web',
+      offers: {
+        '@type': 'Offer',
+        url: `${BASE_URL}/contact2`,
+        description: 'Request pricing via quote',
+        availability: 'https://schema.org/OnlineOnly',
+      },
+      url: BASE_URL,
+    });
 
     // Track page view for analytics
     trackPageView(location.pathname, pageTitle);

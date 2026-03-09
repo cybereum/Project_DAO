@@ -53,7 +53,7 @@ const FEATURES = [
   {
     icon: Trophy, color: 'from-green-500 to-green-700',
     title: 'Reputation Scoring',
-    desc: 'Contributors and organisations build portable, cross-project reputation scores on-chain. Proof of performance — globally visible, impossible to fake.',
+    desc: 'Contributors and organisations build portable, cross-project reputation scores on-chain. Proof of performance — globally visible and significantly harder to manipulate.',
     keywords: ['Merit-Based', 'Sybil-Resistant', 'Portable ID'],
   },
   {
@@ -74,7 +74,7 @@ const USE_CASES = [
   {
     icon: Building2, color: 'border-cyan-500/30 bg-cyan-500/5', badgeColor: 'bg-cyan-500/20 text-cyan-300',
     title: 'Public Infrastructure', badge: 'Governments & Municipalities',
-    desc: 'Road, bridge, energy, and water projects governed transparently. Citizens verify progress. Payments auto-release on completion. Corruption structurally impossible.',
+    desc: 'Road, bridge, energy, and water projects governed transparently. Citizens verify progress. Payments auto-release on completion. Corruption risks measurably reduced through transparent controls.',
     link: '/agents',
   },
   {
@@ -86,7 +86,7 @@ const USE_CASES = [
   {
     icon: HeartHandshake, color: 'border-rose-500/30 bg-rose-500/5', badgeColor: 'bg-rose-500/20 text-rose-300',
     title: 'Community Grants & Aid', badge: 'Foundations & DAOs',
-    desc: 'Humanitarian and community programs governed by beneficiary votes. Every dollar tracked on-chain. Donors see exactly where funds go, every step of the way.',
+    desc: 'Humanitarian and community programs governed by beneficiary votes. Funding flows and milestone evidence tracked on-chain so stakeholders can verify where funds go.',
     link: '/agents',
   },
   {
@@ -132,7 +132,7 @@ function CorruptionCalculator() {
 
   const fmt = (n) => n >= 1e9 ? `$${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : `$${Math.round(n).toLocaleString()}`;
 
-  const shareText = result ? `My community loses ${fmt(result.annualLoss)} per year to corruption — ${fmt(result.perPerson)} per person. NEXUS Protocol makes this structurally impossible. nexusprotocol.io` : '';
+  const shareText = result ? `My community loses ${fmt(result.annualLoss)} per year to corruption — ${fmt(result.perPerson)} per person. NEXUS Protocol helps make this significantly harder and easier to detect. www.cybereum.io` : '';
 
   return (
     <div className="p-6 rounded-2xl border border-nexus-border bg-nexus-surface/50 space-y-5">
@@ -224,10 +224,10 @@ function LiveProtocolStats() {
 // ─── Share bar ────────────────────────────────────────────────────────────────
 function ShareBar() {
   const [copied, setCopied] = useState(false);
-  const url = typeof window !== 'undefined' ? window.location.href : 'https://nexusprotocol.io';
-  const text = '🌍 Corruption steals $82,385 every second. NEXUS Protocol makes it structurally impossible — free, open source governance for every city, community & cause.';
-  const whatsappText = `🌍 Corruption steals $82,385 every second.\n\nNEXUS Protocol makes it structurally impossible — free, open source governance for every city, community & cause.\n\n${url}`;
-  const telegramText = `Corruption steals $82,385 every second. NEXUS Protocol makes it structurally impossible. Free. Open source. ${url}`;
+  const url = typeof window !== 'undefined' ? window.location.href : 'https://www.cybereum.io';
+  const text = '🌍 Corruption steals $82,385 every second. NEXUS Protocol introduces transparent controls and auditability — free, open source governance for every city, community & cause.';
+  const whatsappText = `🌍 Corruption steals $82,385 every second.\n\nNEXUS Protocol introduces transparent controls and auditability — free, open source governance for every city, community & cause.\n\n${url}`;
+  const telegramText = `Corruption steals $82,385 every second. NEXUS Protocol adds verifiable controls and transparency. Free. Open source. ${url}`;
   const copy = () => {
     const fb = (v) => { try { const ta = document.createElement('textarea'); ta.value = v; ta.style.position='fixed'; ta.style.top='-1000px'; document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); setCopied(true); setTimeout(()=>setCopied(false),2000); } catch { /* no-op */ } };
     if (navigator?.clipboard?.writeText) { navigator.clipboard.writeText(url).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);}).catch(()=>fb(url)); } else { fb(url); }
@@ -323,8 +323,8 @@ export default function Landing() {
           </Motion.h1>
           <Motion.p initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.3 }}
             className="text-lg sm:text-xl text-nexus-text-dim max-w-2xl mx-auto mb-4">
-            Every city, community, company, and agent deserves transparent governance.
-            NEXUS Protocol makes it structurally impossible to hide corruption, fake credentials,
+            Every team, institution, vendor network, and autonomous agent needs one auditable operating layer.
+            NEXUS Protocol is designed to reduce hidden corruption, fake credentials,
             or divert funds — at zero cost to deploy.
           </Motion.p>
           <Motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ delay:0.4 }} className="max-w-2xl mx-auto mb-6">
@@ -419,7 +419,7 @@ export default function Landing() {
           <div className="text-center mb-14">
             <span className="text-xs font-mono text-nexus-cyan uppercase tracking-widest">Protocol Features</span>
             <h2 className="text-3xl sm:text-4xl font-bold mt-2 mb-4">Everything governance needs.<br />Nothing it doesn't.</h2>
-            <p className="text-nexus-text-dim max-w-xl mx-auto">One open protocol. Every feature you need to verify, govern, fund, track, and prove impact — at global scale. Now with agent economy rails.</p>
+            <p className="text-nexus-text-dim max-w-xl mx-auto">One open protocol for governance, execution, trust, and settlement across public, private, nonprofit, and autonomous systems.</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {FEATURES.map((f, i) => (
@@ -491,7 +491,7 @@ export default function Landing() {
           <div className="text-center mb-10">
             <span className="text-xs font-mono text-nexus-cyan uppercase tracking-widest">Join the Movement</span>
             <h2 className="text-3xl sm:text-4xl font-bold mt-2 mb-4">Get exactly what you need,<br />for exactly who you are.</h2>
-            <p className="text-nexus-text-dim max-w-xl mx-auto">Whether you're building agents, governing a city, or deploying for an NGO — we have something specific for you.</p>
+            <p className="text-nexus-text-dim max-w-xl mx-auto">Whether you run a startup, enterprise, city program, foundation, or agent workflow — this stack is directly applicable.</p>
           </div>
           <div className="flex flex-wrap justify-center gap-3 mb-8">
             {[
@@ -534,7 +534,7 @@ export default function Landing() {
               <span className="bg-gradient-to-r from-nexus-cyan to-nexus-purple bg-clip-text text-transparent">It's infrastructure.</span>
             </h2>
             <p className="text-nexus-text-dim text-lg mb-8 max-w-xl mx-auto">
-              Join the global movement making corruption structurally impossible. Deploy NEXUS for your community, country, agent, or cause — today.
+              Join the global movement making corruption harder to hide and easier to audit. Deploy Cybereum for any project where decisions, delivery, and money must stay aligned and verifiable.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
               <Link to="/dashboard" onClick={() => markFunnelStep('cta_final_launch')}
@@ -573,7 +573,7 @@ export default function Landing() {
             <div>
               <p className="text-xs font-semibold text-nexus-text mb-3 uppercase tracking-wider">Agent Economy</p>
               <div className="space-y-2">
-                {[['For Agents', '/agents'], ['For Builders', '/builders'], ['Console', '/agent-economy'], ['Global Pulse', '/pulse']].map(([l, h]) => (
+                {[['For Agents', '/agents'], ['For Builders', '/builders'], ['Impact Programs', '/ngo'], ['For Enterprise', '/enterprise'], ['For Cities', '/cities'], ['Console', '/agent-economy'], ['Global Pulse', '/pulse']].map(([l, h]) => (
                   <Link key={h} to={h} className="block text-xs text-nexus-text-dim hover:text-nexus-text transition-colors">{l}</Link>
                 ))}
               </div>

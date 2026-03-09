@@ -97,7 +97,7 @@ const PERSONAS = {
 
 function ShareConfirmation({ persona: _persona, gift, onDismiss }) {
   const [copied, setCopied] = useState(false);
-  const url = typeof window !== 'undefined' ? window.location.href : 'https://nexusprotocol.io';
+  const url = typeof window !== 'undefined' ? window.location.href : 'https://www.cybereum.io';
   const shareText = `I just joined the accountability movement. ${gift} from NEXUS Protocol — making corruption structurally impossible. ${url}`;
 
   const copy = () => {
