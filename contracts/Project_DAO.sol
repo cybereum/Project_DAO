@@ -163,6 +163,30 @@ contract Project_DAO {
     event CybereumFeeConfigUpdated(uint256 feeBps, uint256 assetTransferFlatFeeWei);
     event CybereumFeePaid(address indexed payer, address indexed token, uint256 amount, string context);
 
+    // --- Agent Broadcast events ---
+    /// @notice Emitted when the owner or a governance action broadcasts a message to all agents.
+    event AgentBroadcast(
+        uint256 indexed broadcastId,
+        address indexed sender,
+        uint8   broadcastType,   // 0=info, 1=upgrade, 2=governance, 3=security
+        string  messageURI,      // IPFS CID pointing to full message JSON
+        uint256 timestamp
+    );
+
+    // --- Feature Kit events ---
+    /// @notice Emitted when a registered agent submits a feature request.
+    event FeatureKitSubmitted(
+        uint256 indexed kitId,
+        address indexed submitter,
+        uint8   priority,        // 0=low, 1=medium, 2=high, 3=critical
+        string  metadataURI,     // IPFS CID with { title, description, rationale, codeSketch }
+        uint256 timestamp
+    );
+    /// @notice Emitted when a member upvotes a feature kit.
+    event FeatureKitUpvoted(uint256 indexed kitId, address indexed voter, uint256 newVoteCount);
+    /// @notice Emitted when a kit status changes (e.g. validated, queued, rejected).
+    event FeatureKitStatusChanged(uint256 indexed kitId, uint8 newStatus, string reason);
+
     constructor() {
         owner = msg.sender;
         members[owner].isMember = true;
@@ -1047,5 +1071,121 @@ contract Project_DAO {
     function changeMinimumVotingPower(uint256 _newMinimumVotingPower) public onlyOwner {
         require(_newMinimumVotingPower > 0, "New minimum voting power should be greater than zero.");
         minimumVotingPower = _newMinimumVotingPower;
+    }
+
+    // ─── Agent Broadcast ──────────────────────────────────────────────────────
+
+    uint256 public currentBroadcastId = 1;
+
+    /**
+     * @notice Broadcast a protocol message to all registered agents.
+     * @param messageURI  IPFS URI pointing to a JSON file with `{ title, body, links[] }`.
+     * @param broadcastType  0=info, 1=upgrade, 2=governance, 3=security.
+     * @dev Only the owner may broadcast; governance-triggered broadcasts can be
+     *      implemented by having the executed proposal call this via an external
+     *      call pattern once on-chain governance execution is added.
+     */
+    function broadcastToAgents(
+        string calldata messageURI,
+        uint8 broadcastType
+    ) external onlyOwner whenNotPaused {
+        require(bytes(messageURI).length > 0, "messageURI required.");
+        require(broadcastType <= 3, "Invalid broadcast type.");
+        emit AgentBroadcast(currentBroadcastId++, msg.sender, broadcastType, messageURI, block.timestamp);
+    }
+
+    // ─── Feature Kit Pipeline ────────────────────────────────────────────────
+
+    struct FeatureKit {
+        uint256 id;
+        address submitter;
+        uint8   priority;      // 0=low, 1=medium, 2=high, 3=critical
+        uint8   status;        // 0=pending, 1=validated, 2=queued, 3=rejected, 4=implemented
+        string  metadataURI;   // IPFS CID → { title, description, rationale, codeSketch, effort }
+        uint256 voteCount;
+        uint256 submittedAt;
+    }
+
+    mapping(uint256 => FeatureKit) public featureKits;
+    mapping(uint256 => mapping(address => bool)) public featureKitVoted;
+    uint256 public currentFeatureKitId = 1;
+
+    /**
+     * @notice Submit a feature request as a registered agent.
+     * @param metadataURI  IPFS URI pointing to structured feature-kit JSON.
+     * @param priority     0=low, 1=medium, 2=high, 3=critical.
+     */
+    function submitFeatureKit(
+        string calldata metadataURI,
+        uint8 priority
+    ) external onlyRegisteredAgent whenNotPaused {
+        require(bytes(metadataURI).length > 0, "metadataURI required.");
+        require(priority <= 3, "Invalid priority.");
+
+        uint256 id = currentFeatureKitId++;
+        featureKits[id] = FeatureKit({
+            id:          id,
+            submitter:   msg.sender,
+            priority:    priority,
+            status:      0,
+            metadataURI: metadataURI,
+            voteCount:   0,
+            submittedAt: block.timestamp
+        });
+
+        emit FeatureKitSubmitted(id, msg.sender, priority, metadataURI, block.timestamp);
+    }
+
+    /**
+     * @notice Upvote a pending or validated feature kit. Members vote once.
+     * @param kitId  ID of the feature kit to upvote.
+     */
+    function upvoteFeatureKit(uint256 kitId) external onlyMember whenNotPaused {
+        require(kitId > 0 && kitId < currentFeatureKitId, "Invalid kit ID.");
+        require(!featureKitVoted[kitId][msg.sender], "Already voted.");
+        FeatureKit storage kit = featureKits[kitId];
+        require(kit.status == 0 || kit.status == 1, "Kit not open for voting.");
+
+        featureKitVoted[kitId][msg.sender] = true;
+        kit.voteCount++;
+
+        emit FeatureKitUpvoted(kitId, msg.sender, kit.voteCount);
+    }
+
+    /**
+     * @notice Change the status of a feature kit (owner / governance).
+     * @param kitId    ID of the feature kit.
+     * @param newStatus 0=pending,1=validated,2=queued,3=rejected,4=implemented.
+     * @param reason   Short human-readable reason stored in the event.
+     */
+    function setFeatureKitStatus(
+        uint256 kitId,
+        uint8 newStatus,
+        string calldata reason
+    ) external onlyOwner whenNotPaused {
+        require(kitId > 0 && kitId < currentFeatureKitId, "Invalid kit ID.");
+        require(newStatus <= 4, "Invalid status.");
+        featureKits[kitId].status = newStatus;
+        emit FeatureKitStatusChanged(kitId, newStatus, reason);
+    }
+
+    /**
+     * @notice Return all feature kits (paginated).
+     * @param offset  Starting index (0-based).
+     * @param limit   Maximum kits to return.
+     */
+    function getFeatureKits(uint256 offset, uint256 limit)
+        external
+        view
+        returns (FeatureKit[] memory page, uint256 total)
+    {
+        total = currentFeatureKitId - 1;
+        if (offset >= total) return (new FeatureKit[](0), total);
+        uint256 end = offset + limit;
+        if (end > total) end = total;
+        page = new FeatureKit[](end - offset);
+        for (uint256 i = 0; i < page.length; i++) {
+            page[i] = featureKits[offset + i + 1];
+        }
     }
 }

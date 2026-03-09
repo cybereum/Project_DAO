@@ -101,6 +101,19 @@ export const nexusAI = {
   },
 
   /**
+   * Run AI triage on an array of feature kits.
+   * Deduplicates, cross-checks the plan, and returns a ranked queue.
+   * @param {Array<{id, title, description, priority, voteCount}>} kits
+   * @returns {{ ranked[], summary, totalSubmitted, duplicatesCollapsed } | { error }}
+   */
+  async triage(kits = []) {
+    return safeFetch('/api/analyse', {
+      method: 'POST',
+      body: JSON.stringify({ mode: 'triage', kits }),
+    }).then(data => data?.result ?? data);
+  },
+
+  /**
    * Apply a suggestion patch to a file via the server.
    * @param {string} filePath  Repo-relative path (must be in server allowlist)
    * @param {string} patch     Unified diff string from a suggestion

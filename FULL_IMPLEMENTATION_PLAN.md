@@ -312,6 +312,88 @@ NEXUS app (/nexus-ai route)
 
 ---
 
+## WS8 — Agent Broadcast + Feature Kit Pipeline
+
+> **Status: scaffold complete** *(done 2026-03-09)*. On-chain functions, NexusAI triage mode, and full frontend pipeline are implemented. Rate-limiting and IPFS integration are outstanding.
+
+### Problem
+Agents (autonomous and human-operated) have no structured way to:
+1. **Receive** protocol updates, governance decisions, or security alerts from the DAO.
+2. **Submit** desired features back to the protocol and have them fairly evaluated and prioritised.
+
+Without these channels, the protocol evolves top-down without agent input, and critical announcements must be delivered out-of-band (Discord, email).
+
+### Architecture
+
+```
+On-chain broadcast (AgentBroadcast event)
+  └── Agents subscribe via event listener / indexer
+  └── NEXUS app surfaces latest broadcasts in sidebar badge
+
+Agent feature kit submission (submitFeatureKit tx)
+  └── FeatureKit struct stored on-chain with IPFS metadataURI
+  └── Members upvote (upvoteFeatureKit tx)
+  └── NexusAI triage engine
+      ├── reads all pending kits from chain
+      ├── cross-checks FULL_IMPLEMENTATION_PLAN.md
+      ├── deduplicates semantically equivalent kits
+      ├── scores: impact × feasibility ÷ effort
+      └── returns ranked queue → displayed in /feature-kits UI
+  └── Owner promotes top kits: setFeatureKitStatus() → "queued"
+  └── Queued kits → DAO proposal (future: auto-submit via governance tx)
+```
+
+### On-chain additions (`Project_DAO.sol`)
+
+| Function | Modifier | Description |
+|---|---|---|
+| `broadcastToAgents(messageURI, type)` | `onlyOwner whenNotPaused` | Emits `AgentBroadcast` event; agents subscribe via RPC/indexer |
+| `submitFeatureKit(metadataURI, priority)` | `onlyRegisteredAgent whenNotPaused` | Stores `FeatureKit` struct; emits `FeatureKitSubmitted` |
+| `upvoteFeatureKit(kitId)` | `onlyMember whenNotPaused` | One vote per member; emits `FeatureKitUpvoted` |
+| `setFeatureKitStatus(kitId, newStatus, reason)` | `onlyOwner whenNotPaused` | Advances lifecycle; emits `FeatureKitStatusChanged` |
+| `getFeatureKits(offset, limit)` | `view` | Paginated read of all kits |
+
+**FeatureKit lifecycle:** `Pending (0)` → `Validated (1)` → `Queued (2)` → `Implemented (4)`, with `Rejected (3)` as a terminal state.
+
+**Broadcast types:** 0=info, 1=upgrade, 2=governance, 3=security.
+
+### NexusAI triage mode (5th mode added to server)
+
+- Accepts `kits[]` array in the request body alongside source files.
+- Performs: semantic deduplication, plan cross-reference, impact/feasibility/effort scoring.
+- Composite score = `(impact × feasibility) / effortNum` where S=1, M=2, L=4, XL=8.
+- Returns typed `{ ranked[], summary, duplicatesCollapsed, totalSubmitted }` for the UI.
+
+### Frontend (`/feature-kits`)
+
+Three tabs:
+- **Queue** — filtered, upvote-sorted list of all kits with single-click upvote and status badges.
+- **AI Triage** — runs NexusAI triage on pending kits; streams Claude tokens live; renders ranked result cards with impact/feasibility/effort breakdown.
+- **Submit** — inline form; in demo mode uses `data:` URI for metadata; production uses IPFS.
+
+### Deliverables (complete)
+- `Project_DAO.sol` — `broadcastToAgents`, `submitFeatureKit`, `upvoteFeatureKit`, `setFeatureKitStatus`, `getFeatureKits`, `FeatureKit` struct, 4 new events.
+- `nexus-ai-server/server.js` — `triage` analysis mode added (5th mode).
+- `nexus-app/src/store/appStore.jsx` — `featureKits`, `featureKitsLoading`, `loadFeatureKits`, `submitFeatureKit`, `upvoteFeatureKit` state and methods.
+- `nexus-app/src/pages/FeatureKits.jsx` — full three-tab pipeline UI.
+- `/feature-kits` route registered in `App.jsx`; sidebar nav entry added to `Layout.jsx`.
+
+### Deliverables (outstanding)
+- IPFS integration for metadata — currently uses `data:` base64 URIs in demo mode; production requires Pinata/NFT.Storage/IPFS.
+- On-chain broadcast display — fetch and display latest `AgentBroadcast` events in a sidebar notification panel.
+- Auto-promote to DAO proposal — when a kit reaches "queued" status, offer a 1-click "Submit as Proposal" action that calls `createProposal()`.
+- triage mode streaming — currently falls back to batch POST with `kits` payload; streaming with `kits` injected needs dedicated endpoint.
+- Rate limiting on triage endpoint — large kit arrays can generate expensive Claude API calls.
+
+### Acceptance criteria
+- A registered agent can submit a feature kit and it appears in the on-chain queue.
+- Members can upvote kits; vote counts persist on-chain.
+- NexusAI triage returns a ranked list with composite scores when at least 1 kit is pending.
+- Owner can advance kit status and the UI reflects the change on refresh.
+- `broadcastToAgents` emits an event visible to any agent watching the chain.
+
+---
+
 ## Revised Phased Execution Plan
 
 > Phases 0–2 from the original plan are now complete or partially complete. The plan below reflects the remaining work from the current state.
@@ -415,6 +497,17 @@ NEXUS app (/nexus-ai route)
 | NexusAI: scheduled nightly scan + alerts | WS7 | **Missing — Tier 3** |
 | NexusAI: DAO proposal submission from finding | WS7 | **Missing — Tier 2** |
 | NexusAI: rate limiting on server | WS7 | **Missing — Tier 2** |
+| Agent broadcast (on-chain + event) | WS8 | **Complete** *(done 2026-03-09)* |
+| Feature kit submission (on-chain) | WS8 | **Complete** *(done 2026-03-09)* |
+| Feature kit upvoting (on-chain) | WS8 | **Complete** *(done 2026-03-09)* |
+| Feature kit status lifecycle | WS8 | **Complete** *(done 2026-03-09)* |
+| NexusAI triage mode | WS8 | **Complete** *(done 2026-03-09)* |
+| FeatureKits UI + appStore methods | WS8 | **Complete** *(done 2026-03-09)* |
+| IPFS metadata for feature kits | WS8 | **Missing — Tier 2** |
+| Broadcast notification panel in app | WS8 | **Missing — Tier 2** |
+| Auto-promote kit → DAO proposal | WS8 | **Missing — Tier 2** |
+| Triage streaming with kits payload | WS8 | **Missing — Tier 3** |
+| Rate limiting on triage endpoint | WS8 | **Missing — Tier 2** |
 
 **Tier 1** = mainnet blocker. **Tier 2** = should fix before production. **Tier 3** = improvement / nice-to-have.
 
@@ -480,16 +573,27 @@ NEXUS app (/nexus-ai route)
 - [ ] CRM webhook integration.
 
 ### NexusAI (self-improvement engine)
-- [x] `nexus-ai-server/server.js` — Express proxy with 4 Claude-backed analysis modes. *(done 2026-03-09)*
+- [x] `nexus-ai-server/server.js` — Express proxy with 5 Claude-backed analysis modes (health/security/ux/growth/triage). *(done 2026-03-09)*
 - [x] `nexus-app/src/services/nexusAI.js` — frontend client. *(done 2026-03-09)*
 - [x] `nexus-app/src/pages/NexusAI.jsx` — full UI with streaming + patch apply. *(done 2026-03-09)*
 - [x] `/nexus-ai` route + sidebar nav entry. *(done 2026-03-09)*
+- [x] Triage mode added to NexusAI server. *(done 2026-03-09)*
 - [ ] `VITE_NEXUS_AI_URL` added to `nexus-app/.env.example`.
 - [ ] `node_modules` added to `nexus-ai-server/.gitignore`.
 - [ ] Rate limiting on NexusAI server.
 - [ ] Suggestion history persisted in localStorage.
 - [ ] Scheduled nightly scan with alert webhook.
 - [ ] "Submit as DAO proposal" CTA on critical findings.
+
+### Feature Kit Pipeline (WS8)
+- [x] `Project_DAO.sol` — `broadcastToAgents`, `submitFeatureKit`, `upvoteFeatureKit`, `setFeatureKitStatus`, `getFeatureKits` + events. *(done 2026-03-09)*
+- [x] `nexus-ai-server/server.js` — triage mode (5th analysis mode). *(done 2026-03-09)*
+- [x] `nexus-app/src/store/appStore.jsx` — `featureKits` state + `loadFeatureKits`, `submitFeatureKit`, `upvoteFeatureKit` methods. *(done 2026-03-09)*
+- [x] `nexus-app/src/pages/FeatureKits.jsx` — three-tab pipeline UI. *(done 2026-03-09)*
+- [x] `/feature-kits` route + sidebar nav entry. *(done 2026-03-09)*
+- [ ] IPFS metadata pinning (Pinata/NFT.Storage) instead of data: URIs.
+- [ ] Broadcast notification panel showing latest `AgentBroadcast` events.
+- [ ] Auto-promote queued kit → DAO proposal via 1-click governance tx.
 
 ### Data + Ops
 - [ ] Deploy subgraph or indexer for all agent events.

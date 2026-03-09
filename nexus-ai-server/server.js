@@ -36,6 +36,7 @@ const ALLOWED_PATHS = [
   'contracts/Project_DAO.sol',
   'nexus-app/src/store/appStore.jsx',
   'nexus-app/src/pages/AgentEconomy.jsx',
+  'nexus-app/src/pages/FeatureKits.jsx',
   'nexus-app/src/pages/Landing.jsx',
   'nexus-app/src/pages/GlobalPulse.jsx',
   'nexus-app/src/pages/Dashboard.jsx',
@@ -157,6 +158,58 @@ Return ONLY a JSON object — no markdown.`,
 ${files.map(f => `=== ${f.path} ===\n${f.content}`).join('\n\n')}`,
   },
 
+  /**
+   * Triage — analyse agent-submitted feature kits from the chain (passed in the
+   * request body as `kits[]`) and return a ranked, de-duplicated implementation
+   * queue with AI impact/feasibility/effort scoring.
+   */
+  triage: {
+    label: 'Feature Kit Triage',
+    files: ['FULL_IMPLEMENTATION_PLAN.md', 'CLAUDE.md'],
+    systemPrompt: `You are the NexusAI triage engine for Project_DAO.
+Your job is to evaluate a list of agent-submitted feature kits and produce a ranked, de-duplicated implementation queue.
+Scoring criteria:
+  - impact:      0-10  (user / protocol value delivered)
+  - feasibility: 0-10  (ease of implementation given the existing codebase)
+  - effort:      S|M|L|XL (t-shirt size relative to the Project_DAO codebase)
+  - composite:   (impact × feasibility) / effortNum   where effortNum = S→1, M→2, L→4, XL→8
+Detect semantic duplicates and merge them into a single entry (list all submitters).
+Cross-check each kit against the implementation plan — mark it "planned" if already tracked.
+Return ONLY a JSON object — no markdown, no explanation outside the JSON.`,
+    userTemplate: (files, kits) => `You have access to the implementation plan and protocol description below.
+Evaluate these ${kits.length} agent-submitted feature kits and return JSON matching this schema exactly:
+{
+  "triageRunAt": "<ISO timestamp>",
+  "totalSubmitted": <number>,
+  "duplicatesCollapsed": <number>,
+  "ranked": [
+    {
+      "rank": <1-based integer>,
+      "ids": [<kit IDs merged into this entry>],
+      "submitters": ["<address>"],
+      "title": "<canonical title>",
+      "description": "<merged description>",
+      "priority": "critical"|"high"|"medium"|"low",
+      "impact": <0-10>,
+      "feasibility": <0-10>,
+      "effort": "S"|"M"|"L"|"XL",
+      "composite": <number, 2dp>,
+      "alreadyPlanned": <boolean>,
+      "planReference": "<section in FULL_IMPLEMENTATION_PLAN.md or null>",
+      "recommendation": "implement-now"|"queue"|"defer"|"reject",
+      "rationale": "<1-2 sentence reasoning>"
+    }
+  ],
+  "summary": "<3 sentence executive summary of the batch>"
+}
+
+Feature kits to triage:
+${JSON.stringify(kits, null, 2)}
+
+Implementation plan + protocol context:
+${files.map(f => `=== ${f.path} ===\n${f.content}`).join('\n\n')}`,
+  },
+
   /** Growth — analyse marketing pages and suggest improvements */
   growth: {
     label: 'Growth & Conversion Analysis',
@@ -189,10 +242,14 @@ ${files.map(f => `=== ${f.path} ===\n${f.content}`).join('\n\n')}`,
 // ─── /api/analyse — main analysis endpoint ───────────────────────────────
 
 app.post('/api/analyse', async (req, res) => {
-  const { mode = 'health', stream: doStream = false } = req.body;
+  const { mode = 'health', stream: doStream = false, kits = [] } = req.body;
   const modeConfig = ANALYSIS_MODES[mode];
   if (!modeConfig) {
     return res.status(400).json({ error: `Unknown mode: ${mode}. Valid: ${Object.keys(ANALYSIS_MODES).join(', ')}` });
+  }
+
+  if (mode === 'triage' && (!Array.isArray(kits) || kits.length === 0)) {
+    return res.status(400).json({ error: 'triage mode requires a non-empty kits[] array in the request body.' });
   }
 
   const files = await readSourceFiles(modeConfig.files);
@@ -200,7 +257,9 @@ app.post('/api/analyse', async (req, res) => {
     return res.status(500).json({ error: 'Could not read source files.' });
   }
 
-  const userContent = modeConfig.userTemplate(files);
+  const userContent = mode === 'triage'
+    ? modeConfig.userTemplate(files, kits)
+    : modeConfig.userTemplate(files);
 
   try {
     if (doStream) {

@@ -59,6 +59,23 @@ export const PROJECT_DAO_ABI = [
   'event AgentPaymentRequestCreated(uint256 indexed requestId, address indexed requester, address indexed payer, bool isNative, address token, uint256 amount, string description)',
   'event AgentPaymentRequestSettled(uint256 indexed requestId, address indexed payer, address indexed requester, uint256 settledAt)',
   'event AgentPaymentRequestCancelled(uint256 indexed requestId, address indexed requester)',
+
+  // ─── Agent Broadcast ─────────────────────────────────────────────────────
+  'function broadcastToAgents(string calldata messageURI, uint8 broadcastType) external',
+  'event AgentBroadcast(uint256 indexed broadcastId, address indexed sender, uint8 broadcastType, string messageURI, uint256 timestamp)',
+  'function currentBroadcastId() external view returns (uint256)',
+
+  // ─── Feature Kit Pipeline ────────────────────────────────────────────────
+  'function submitFeatureKit(string calldata metadataURI, uint8 priority) external',
+  'function upvoteFeatureKit(uint256 kitId) external',
+  'function setFeatureKitStatus(uint256 kitId, uint8 newStatus, string calldata reason) external',
+  'function getFeatureKits(uint256 offset, uint256 limit) external view returns (tuple(uint256 id, address submitter, uint8 priority, uint8 status, string metadataURI, uint256 voteCount, uint256 submittedAt)[] page, uint256 total)',
+  'function currentFeatureKitId() external view returns (uint256)',
+  'function featureKits(uint256 kitId) external view returns (uint256 id, address submitter, uint8 priority, uint8 status, string metadataURI, uint256 voteCount, uint256 submittedAt)',
+  'function featureKitVoted(uint256 kitId, address voter) external view returns (bool)',
+  'event FeatureKitSubmitted(uint256 indexed kitId, address indexed submitter, uint8 priority, string metadataURI, uint256 timestamp)',
+  'event FeatureKitUpvoted(uint256 indexed kitId, address indexed voter, uint256 newVoteCount)',
+  'event FeatureKitStatusChanged(uint256 indexed kitId, uint8 newStatus, string reason)',
 ];
 
 export function hasContractConfig() {

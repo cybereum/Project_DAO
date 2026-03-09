@@ -16,6 +16,7 @@ import AgentEconomy from './pages/AgentEconomy';
 import AgentsLanding from './pages/AgentsLanding';
 import BuildersLanding from './pages/BuildersLanding';
 import NexusAI from './pages/NexusAI';
+import FeatureKits from './pages/FeatureKits';
 
 // Routes that render without the app shell (sidebar/topbar)
 const PUBLIC_ROUTES = ['/', '/pulse', '/agents', '/builders'];
@@ -58,6 +59,7 @@ export default function App() {
           <Route path="/assets" element={<Assets />} />
           <Route path="/agent-economy" element={<AgentEconomy />} />
           <Route path="/nexus-ai" element={<NexusAI />} />
+          <Route path="/feature-kits" element={<FeatureKits />} />
         </Routes>
       </AppShell>
     </AppProvider>

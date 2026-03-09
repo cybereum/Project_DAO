@@ -7,7 +7,8 @@ import {
 } from 'recharts';
 import {
   FolderKanban, Users, Milestone as MilestoneIcon, Vote, TrendingUp,
-  ArrowUpRight, Clock, Zap, Activity, Shield
+  ArrowUpRight, Clock, Zap, Activity, Shield, Bot, Brain, Lightbulb,
+  ChevronRight, Rocket, AlertTriangle
 } from 'lucide-react';
 
 const anim = (i) => ({ initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, transition: { delay: i * 0.05 } });
@@ -37,7 +38,7 @@ function StatCard({ icon: Icon, label, value, change, color, index }) {
 }
 
 export default function Dashboard() {
-  const { projects, milestones, proposals, members } = useApp();
+  const { projects, milestones, proposals, members, agentProfile, featureKits, featureKitsLoading, loadFeatureKits } = useApp();
 
   const activityData = [
     { name: 'Mon', proposals: 4, tasks: 8, milestones: 2 },
@@ -214,6 +215,113 @@ export default function Dashboard() {
               </div>
             </div>
           ))}
+        </div>
+      </Motion.div>
+
+      {/* ── Agent Intelligence Hub ── */}
+      <Motion.div {...anim(10)} className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Agent Economy status */}
+        <div className="rounded-xl border border-nexus-border bg-gradient-to-br from-nexus-cyan/10 to-nexus-cyan/5 p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold flex items-center gap-2">
+              <Bot size={16} className="text-nexus-cyan" />
+              Agent Economy
+            </h3>
+            <Link to="/agent-economy" className="flex items-center gap-1 text-xs text-nexus-cyan hover:underline">
+              Open <ChevronRight size={12} />
+            </Link>
+          </div>
+          {agentProfile?.registered ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-nexus-green animate-pulse" />
+                <span className="text-xs text-nexus-green font-medium">Agent Registered</span>
+              </div>
+              <div className="text-xs text-nexus-text-dim">
+                Escrow: <span className="text-nexus-text font-mono">{agentProfile.nativeEscrowBalance} wei</span>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-nexus-amber" />
+                <span className="text-xs text-nexus-amber">Not registered</span>
+              </div>
+              <p className="text-xs text-nexus-text-dim">Register as an agent to access escrow, transfers, and payment requests.</p>
+              <Link to="/agent-economy" className="block text-center text-xs px-3 py-1.5 rounded-lg bg-nexus-cyan/10 border border-nexus-cyan/20 text-nexus-cyan hover:bg-nexus-cyan/20 transition-colors">
+                Register Agent →
+              </Link>
+            </div>
+          )}
+        </div>
+
+        {/* NexusAI self-improvement */}
+        <div className="rounded-xl border border-nexus-border bg-gradient-to-br from-nexus-purple/10 to-nexus-purple/5 p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold flex items-center gap-2">
+              <Brain size={16} className="text-nexus-purple" />
+              NexusAI
+            </h3>
+            <Link to="/nexus-ai" className="flex items-center gap-1 text-xs text-nexus-cyan hover:underline">
+              Open <ChevronRight size={12} />
+            </Link>
+          </div>
+          <p className="text-xs text-nexus-text-dim mb-3">
+            Claude claude-opus-4-6 analyses live source files and generates prioritised improvements for the protocol.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { label: 'Health Scan', color: 'text-nexus-green', path: '/nexus-ai' },
+              { label: 'Security Audit', color: 'text-red-400', path: '/nexus-ai' },
+              { label: 'UX Review', color: 'text-nexus-cyan', path: '/nexus-ai' },
+              { label: 'Growth Analysis', color: 'text-nexus-amber', path: '/nexus-ai' },
+            ].map(({ label, color, path }) => (
+              <Link key={label} to={path} className={`text-xs px-2 py-1.5 rounded-lg bg-white/5 border border-nexus-border hover:border-nexus-purple/30 ${color} transition-colors text-center`}>
+                {label}
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        {/* Feature Kit pipeline */}
+        <div className="rounded-xl border border-nexus-border bg-gradient-to-br from-amber-500/10 to-amber-500/5 p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold flex items-center gap-2">
+              <Lightbulb size={16} className="text-amber-400" />
+              Feature Kits
+            </h3>
+            <Link to="/feature-kits" className="flex items-center gap-1 text-xs text-nexus-cyan hover:underline">
+              Open <ChevronRight size={12} />
+            </Link>
+          </div>
+          {featureKits.length > 0 ? (
+            <div className="space-y-2">
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="bg-white/5 rounded-lg py-2">
+                  <div className="text-lg font-bold text-nexus-text font-mono">{featureKits.filter(k => k.status === 0).length}</div>
+                  <div className="text-xs text-nexus-text-dim">Pending</div>
+                </div>
+                <div className="bg-white/5 rounded-lg py-2">
+                  <div className="text-lg font-bold text-nexus-cyan font-mono">{featureKits.filter(k => k.status === 2).length}</div>
+                  <div className="text-xs text-nexus-text-dim">Queued</div>
+                </div>
+                <div className="bg-white/5 rounded-lg py-2">
+                  <div className="text-lg font-bold text-nexus-green font-mono">{featureKits.filter(k => k.status === 4).length}</div>
+                  <div className="text-xs text-nexus-text-dim">Done</div>
+                </div>
+              </div>
+              <Link to="/feature-kits" className="block text-center text-xs px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 transition-colors">
+                View Pipeline →
+              </Link>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-xs text-nexus-text-dim">No feature kits submitted yet. Agents can request protocol improvements here.</p>
+              <Link to="/feature-kits" className="block text-center text-xs px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 transition-colors">
+                Submit First Kit →
+              </Link>
+            </div>
+          )}
         </div>
       </Motion.div>
     </div>

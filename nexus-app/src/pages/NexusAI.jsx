@@ -16,10 +16,11 @@ import {
   Brain, Zap, Shield, Eye, TrendingUp, RefreshCw,
   AlertTriangle, CheckCircle, XCircle, Clock, FileText,
   ChevronDown, ChevronUp, ExternalLink, Sparkles, Server,
-  Copy, Play
+  Copy, Play, Lightbulb, SendHorizonal
 } from 'lucide-react';
 import { nexusAI } from '../services/nexusAI';
 import { trackEvent } from '../lib/analytics';
+import { useApp } from '../store/appStore';
 
 // ─── Severity / priority colours ─────────────────────────────────────────
 
@@ -103,11 +104,28 @@ function ScoreRing({ score, label }) {
   );
 }
 
-function SuggestionCard({ item, onApply, applying }) {
+function SuggestionCard({ item, onApply, applying, onSubmitKit, submittingKit }) {
   const [open, setOpen] = useState(false);
+  const [kitSubmitted, setKitSubmitted] = useState(false);
   const Icon = CATEGORY_ICONS[item.category] || CATEGORY_ICONS.default;
   const severity = item.priority || item.severity || 'low';
   const color = SEVERITY_COLORS[severity] || SEVERITY_COLORS.low;
+
+  const handleSubmitKit = async () => {
+    if (!onSubmitKit) return;
+    const metadataURI = `data:application/json;base64,${btoa(JSON.stringify({
+      title: item.title || 'NexusAI Finding',
+      description: item.description || '',
+      rationale: item.recommendation || item.fix || '',
+      source: 'nexus-ai',
+      category: item.category,
+      effort: item.effort,
+    }))}`;
+    const priorityMap = { critical: 3, high: 2, medium: 1, low: 0 };
+    const priority = priorityMap[severity] ?? 1;
+    const hash = await onSubmitKit(metadataURI, priority);
+    if (hash) setKitSubmitted(true);
+  };
 
   return (
     <div className={`rounded-xl border p-4 space-y-2 ${color}`}>
@@ -166,6 +184,27 @@ function SuggestionCard({ item, onApply, applying }) {
                   )}
                 </div>
               )}
+
+              {/* Submit to Feature Kit Pipeline */}
+              {onSubmitKit && (severity === 'critical' || severity === 'high' || severity === 'medium') && (
+                <div className="pt-1 border-t border-white/10">
+                  {kitSubmitted ? (
+                    <div className="flex items-center gap-1.5 text-xs text-nexus-green">
+                      <CheckCircle size={11} />
+                      Submitted to Feature Kit pipeline
+                    </div>
+                  ) : (
+                    <button
+                      disabled={submittingKit}
+                      onClick={handleSubmitKit}
+                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-400 transition-colors disabled:opacity-50"
+                    >
+                      <Lightbulb size={11} />
+                      Submit as Feature Kit
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </Motion.div>
         )}
@@ -177,6 +216,7 @@ function SuggestionCard({ item, onApply, applying }) {
 // ─── Main page ────────────────────────────────────────────────────────────
 
 export default function NexusAI() {
+  const { submitFeatureKit, txPending } = useApp();
   const [serverOk, setServerOk] = useState(null); // null=checking, true, false
   const [activeMode, setActiveMode] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -250,7 +290,7 @@ export default function NexusAI() {
               <Sparkles size={14} className="text-nexus-cyan" /> Suggestions ({r.suggestions.length})
             </h3>
             {r.suggestions.map(s => (
-              <SuggestionCard key={s.id || s.title} item={s} onApply={applyPatch} applying={applyingPatch} />
+              <SuggestionCard key={s.id || s.title} item={s} onApply={applyPatch} applying={applyingPatch} onSubmitKit={submitFeatureKit} submittingKit={txPending} />
             ))}
           </div>
         )}
@@ -303,7 +343,7 @@ export default function NexusAI() {
           <div className="space-y-3">
             <h3 className="text-sm font-semibold">Findings ({r.findings.length})</h3>
             {r.findings.map((f, i) => (
-              <SuggestionCard key={i} item={{ ...f, category: 'security' }} onApply={applyPatch} applying={applyingPatch} />
+              <SuggestionCard key={i} item={{ ...f, category: 'security' }} onApply={applyPatch} applying={applyingPatch} onSubmitKit={submitFeatureKit} submittingKit={txPending} />
             ))}
           </div>
         )}

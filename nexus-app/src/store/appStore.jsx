@@ -492,6 +492,68 @@ export function useAppState() {
     }
   }, [getDaoWriteContract]);
 
+  // ─── Feature Kit state ────────────────────────────────────────────────────
+  const [featureKits, setFeatureKits] = useState([]);
+  const [featureKitsLoading, setFeatureKitsLoading] = useState(false);
+
+  const loadFeatureKits = useCallback(async () => {
+    const contract = getDaoReadContract();
+    if (!contract) return;
+    setFeatureKitsLoading(true);
+    try {
+      const [page, total] = await contract.getFeatureKits(0, 100);
+      setFeatureKits(
+        page.map(k => ({
+          id:          Number(k.id),
+          submitter:   k.submitter,
+          priority:    Number(k.priority),
+          status:      Number(k.status),
+          metadataURI: k.metadataURI,
+          voteCount:   Number(k.voteCount),
+          submittedAt: Number(k.submittedAt),
+        }))
+      );
+      return Number(total);
+    } catch { /* no-op if contract not configured */ }
+    finally { setFeatureKitsLoading(false); }
+  }, [getDaoReadContract]);
+
+  const submitFeatureKit = useCallback(async (metadataURI, priority) => {
+    setWalletError('');
+    const contract = await getDaoWriteContract();
+    if (!contract) { setWalletError('Wallet not connected or contract not configured.'); return null; }
+    try {
+      setTxPending(true);
+      const tx = await contract.submitFeatureKit(metadataURI, priority);
+      const receipt = await tx.wait();
+      await loadFeatureKits();
+      return receipt.hash;
+    } catch (error) {
+      setWalletError(error?.shortMessage || error?.message || 'Feature kit submission failed.');
+      return null;
+    } finally {
+      setTxPending(false);
+    }
+  }, [getDaoWriteContract, loadFeatureKits]);
+
+  const upvoteFeatureKit = useCallback(async (kitId) => {
+    setWalletError('');
+    const contract = await getDaoWriteContract();
+    if (!contract) { setWalletError('Wallet not connected or contract not configured.'); return null; }
+    try {
+      setTxPending(true);
+      const tx = await contract.upvoteFeatureKit(kitId);
+      const receipt = await tx.wait();
+      await loadFeatureKits();
+      return receipt.hash;
+    } catch (error) {
+      setWalletError(error?.shortMessage || error?.message || 'Upvote failed.');
+      return null;
+    } finally {
+      setTxPending(false);
+    }
+  }, [getDaoWriteContract, loadFeatureKits]);
+
   const appState = useMemo(() => ({
     projects, milestones, proposals, members, companies, nfts, tasks,
     walletConnected, walletAddress, walletError, txPending, syncingProposals,
@@ -505,6 +567,9 @@ export function useAppState() {
     agentDepositToken, agentWithdrawToken, agentTransferToken, agentTransferAsset,
     agentLoadTokenBalance,
     agentCreatePaymentRequest, agentSettlePaymentRequest, agentCancelPaymentRequest,
+    // feature kits
+    featureKits, featureKitsLoading,
+    loadFeatureKits, submitFeatureKit, upvoteFeatureKit,
   }), [
     projects, milestones, proposals, members, companies, nfts, tasks,
     walletConnected, walletAddress, walletError, txPending, syncingProposals,
@@ -517,6 +582,8 @@ export function useAppState() {
     agentDepositToken, agentWithdrawToken, agentTransferToken, agentTransferAsset,
     agentLoadTokenBalance,
     agentCreatePaymentRequest, agentSettlePaymentRequest, agentCancelPaymentRequest,
+    featureKits, featureKitsLoading,
+    loadFeatureKits, submitFeatureKit, upvoteFeatureKit,
   ]);
 
   return appState;
