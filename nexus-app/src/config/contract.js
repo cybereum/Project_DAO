@@ -76,6 +76,43 @@ export const PROJECT_DAO_ABI = [
   'event FeatureKitSubmitted(uint256 indexed kitId, address indexed submitter, uint8 priority, string metadataURI, uint256 timestamp)',
   'event FeatureKitUpvoted(uint256 indexed kitId, address indexed voter, uint256 newVoteCount)',
   'event FeatureKitStatusChanged(uint256 indexed kitId, uint8 newStatus, string reason)',
+
+  // ─── Open Onboarding (Stake to Join) ─────────────────────────────────────
+  'function stakeAndJoin(string calldata metadataURI) external payable',
+  'function leaveDAO() external',
+  'function setMinStakeToJoin(uint256 _minStake) external',
+  'function minStakeToJoin() external view returns (uint256)',
+  'function memberStakes(address member) external view returns (uint256)',
+  'event MemberJoinedByStake(address indexed member, uint256 netStake)',
+  'event MemberLeftDAO(address indexed member, uint256 refundedStake)',
+
+  // ─── Economic Project Primitives ─────────────────────────────────────────
+  'function createEconomicProject(string calldata metadataURI, uint256 targetBudget, uint256 deadline) external returns (uint256)',
+  'function fundProject(uint256 projectId) external payable',
+  'function applyToProject(uint256 projectId) external',
+  'function approveContributor(uint256 projectId, address contributor, uint256 sharesBps) external',
+  'function completeProject(uint256 projectId) external',
+  'function claimProjectShare(uint256 projectId) external',
+  'function cancelProject(uint256 projectId) external',
+  'function refundProjectFunder(uint256 projectId) external',
+  'function getEconomicProject(uint256 projectId) external view returns (uint256 id, address proposer, string metadataURI, uint256 targetBudget, uint256 totalFunded, uint256 deadline, uint8 status, uint256 createdAt, uint256 contributorCount, uint256 funderCount)',
+  'function getEconomicProjects(uint256 offset, uint256 limit) external view returns (tuple(uint256 id, address proposer, string metadataURI, uint256 targetBudget, uint256 totalFunded, uint256 deadline, uint8 status, uint256 createdAt, uint256 contributorCount, uint256 funderCount)[] page, uint256 total)',
+  'function getProjectContributors(uint256 projectId) external view returns (address[])',
+  'function getProjectFunders(uint256 projectId) external view returns (address[])',
+  'function projectContributorShares(uint256 projectId, address contributor) external view returns (uint256)',
+  'function projectApplications(uint256 projectId, address applicant) external view returns (bool)',
+  'function projectApplicationApproved(uint256 projectId, address contributor) external view returns (bool)',
+  'function projectShareClaimed(uint256 projectId, address contributor) external view returns (bool)',
+  'function projectFunderContributions(uint256 projectId, address funder) external view returns (uint256)',
+  'function currentProjectId() external view returns (uint256)',
+  'event EconomicProjectCreated(uint256 indexed projectId, address indexed proposer, string metadataURI, uint256 targetBudget, uint256 deadline)',
+  'event EconomicProjectFunded(uint256 indexed projectId, address indexed funder, uint256 netAmount)',
+  'event EconomicProjectContributorApplied(uint256 indexed projectId, address indexed contributor)',
+  'event EconomicProjectContributorApproved(uint256 indexed projectId, address indexed contributor, uint256 sharesBps)',
+  'event EconomicProjectCompleted(uint256 indexed projectId)',
+  'event EconomicProjectCancelled(uint256 indexed projectId)',
+  'event EconomicProjectShareClaimed(uint256 indexed projectId, address indexed contributor, uint256 amount)',
+  'event EconomicProjectFunderRefunded(uint256 indexed projectId, address indexed funder, uint256 amount)',
 ];
 
 export function hasContractConfig() {

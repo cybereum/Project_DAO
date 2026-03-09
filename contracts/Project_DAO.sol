@@ -1188,4 +1188,389 @@ contract Project_DAO {
             page[i] = featureKits[offset + i + 1];
         }
     }
+
+    // ─── Open Onboarding (Stake to Join) ─────────────────────────────────────
+
+    /// @notice Minimum ETH stake required to self-register as a member + agent.
+    ///         Set to 0 by default; owner can configure a non-zero floor.
+    uint256 public minStakeToJoin;
+
+    /// @notice Tracks each self-registered member's net stake held in contract.
+    mapping(address => uint256) public memberStakes;
+
+    event MemberJoinedByStake(address indexed member, uint256 netStake);
+    event MemberLeftDAO(address indexed member, uint256 refundedStake);
+
+    /// @notice Owner can set the minimum stake floor for self-registration.
+    function setMinStakeToJoin(uint256 _minStake) external onlyOwner {
+        minStakeToJoin = _minStake;
+    }
+
+    /**
+     * @notice Permissionless entry point: stake ETH to join as a member and
+     *         simultaneously register as an agent. A protocol fee is taken from
+     *         the stake; the net amount is held until the caller calls leaveDAO().
+     * @param metadataURI  IPFS URI for agent profile metadata.
+     */
+    function stakeAndJoin(string calldata metadataURI) external payable whenNotPaused {
+        require(!members[msg.sender].isMember, "Already a member.");
+        require(msg.value >= minStakeToJoin, "Insufficient stake.");
+        require(bytes(metadataURI).length > 0, "metadataURI required.");
+
+        uint256 fee = _calculateFee(msg.value);
+        _collectNativeFee(fee, "stakeAndJoin");
+        uint256 netStake = msg.value - fee;
+
+        memberStakes[msg.sender] = netStake;
+
+        members[msg.sender] = Member({
+            memberAddress: msg.sender,
+            votingPower: 1,
+            privileges: new uint256[](0),
+            isMember: true
+        });
+        memberAddresses.push(msg.sender);
+
+        agents[msg.sender] = AgentProfile({
+            registered: true,
+            metadataURI: metadataURI,
+            nativeEscrowBalance: 0
+        });
+
+        emit MemberJoinedByStake(msg.sender, netStake);
+        emit AgentRegistered(msg.sender, metadataURI);
+    }
+
+    /**
+     * @notice Leave the DAO and reclaim your net stake. Unregisters both
+     *         member and agent status. Reverts if the caller has an active
+     *         economic project as proposer.
+     */
+    function leaveDAO() external whenNotPaused {
+        require(members[msg.sender].isMember, "Not a member.");
+        require(memberStakes[msg.sender] > 0 || msg.sender != owner, "Owner cannot leave.");
+
+        // Prevent leaving while proposer on an active/open project
+        for (uint256 i = 1; i < currentProjectId; i++) {
+            EconomicProject storage p = economicProjects[i];
+            if (p.proposer == msg.sender &&
+                (p.status == ProjectStatus.Open || p.status == ProjectStatus.Active)) {
+                revert("Cancel active projects before leaving.");
+            }
+        }
+
+        uint256 stake = memberStakes[msg.sender];
+        memberStakes[msg.sender] = 0;
+        members[msg.sender].isMember = false;
+        agents[msg.sender].registered = false;
+
+        // Remove from memberAddresses array
+        int256 idx = findMemberIndex(memberAddresses, msg.sender);
+        if (idx >= 0) {
+            uint256 last = memberAddresses.length - 1;
+            memberAddresses[uint256(idx)] = memberAddresses[last];
+            memberAddresses.pop();
+        }
+
+        if (stake > 0) {
+            (bool ok,) = payable(msg.sender).call{value: stake}("");
+            require(ok, "Stake refund failed.");
+        }
+
+        emit MemberLeftDAO(msg.sender, stake);
+    }
+
+    // ─── Economic Project Primitives ─────────────────────────────────────────
+
+    enum ProjectStatus { Open, Active, Completed, Cancelled }
+
+    struct EconomicProject {
+        uint256 id;
+        address proposer;
+        string  metadataURI;    // IPFS: { name, description, category, tags, requirements }
+        uint256 targetBudget;   // wei
+        uint256 totalFunded;    // net wei in pool (after fees)
+        uint256 deadline;       // unix timestamp
+        ProjectStatus status;
+        uint256 createdAt;
+        uint256 contributorCount;
+        uint256 funderCount;
+    }
+
+    uint256 public currentProjectId = 1;
+    mapping(uint256 => EconomicProject)             public economicProjects;
+    mapping(uint256 => address[])                   private _projectContributors;
+    mapping(uint256 => mapping(address => uint256)) public projectContributorShares; // bps
+    mapping(uint256 => mapping(address => bool))    public projectApplications;
+    mapping(uint256 => mapping(address => bool))    public projectApplicationApproved;
+    mapping(uint256 => address[])                   private _projectFunders;
+    mapping(uint256 => mapping(address => uint256)) public projectFunderContributions;
+    mapping(uint256 => mapping(address => bool))    public projectShareClaimed;
+
+    event EconomicProjectCreated(uint256 indexed projectId, address indexed proposer, string metadataURI, uint256 targetBudget, uint256 deadline);
+    event EconomicProjectFunded(uint256 indexed projectId, address indexed funder, uint256 netAmount);
+    event EconomicProjectContributorApplied(uint256 indexed projectId, address indexed contributor);
+    event EconomicProjectContributorApproved(uint256 indexed projectId, address indexed contributor, uint256 sharesBps);
+    event EconomicProjectCompleted(uint256 indexed projectId);
+    event EconomicProjectCancelled(uint256 indexed projectId);
+    event EconomicProjectShareClaimed(uint256 indexed projectId, address indexed contributor, uint256 amount);
+    event EconomicProjectFunderRefunded(uint256 indexed projectId, address indexed funder, uint256 amount);
+
+    /**
+     * @notice Propose a new economic project. Any registered agent can propose.
+     * @param metadataURI   IPFS URI with project details.
+     * @param targetBudget  Funding goal in wei (informational; funding is not capped).
+     * @param deadline      Unix timestamp for project deadline.
+     * @return projectId    Assigned project ID.
+     */
+    function createEconomicProject(
+        string calldata metadataURI,
+        uint256 targetBudget,
+        uint256 deadline
+    ) external whenNotPaused onlyRegisteredAgent returns (uint256) {
+        require(bytes(metadataURI).length > 0, "metadataURI required.");
+        require(targetBudget > 0, "Target budget must be > 0.");
+        require(deadline > block.timestamp, "Deadline must be in the future.");
+
+        uint256 id = currentProjectId++;
+        economicProjects[id] = EconomicProject({
+            id:               id,
+            proposer:         msg.sender,
+            metadataURI:      metadataURI,
+            targetBudget:     targetBudget,
+            totalFunded:      0,
+            deadline:         deadline,
+            status:           ProjectStatus.Open,
+            createdAt:        block.timestamp,
+            contributorCount: 0,
+            funderCount:      0
+        });
+
+        emit EconomicProjectCreated(id, msg.sender, metadataURI, targetBudget, deadline);
+        return id;
+    }
+
+    /**
+     * @notice Fund an open or active project. Anyone can fund — agents, humans,
+     *         organisations. A protocol fee is deducted; net ETH enters the pool.
+     * @param projectId  ID of the project to fund.
+     */
+    function fundProject(uint256 projectId) external payable whenNotPaused {
+        EconomicProject storage proj = economicProjects[projectId];
+        require(proj.id != 0, "Project not found.");
+        require(
+            proj.status == ProjectStatus.Open || proj.status == ProjectStatus.Active,
+            "Project not accepting funds."
+        );
+        require(msg.value > 0, "Must send ETH.");
+
+        uint256 fee = _calculateFee(msg.value);
+        _collectNativeFee(fee, "fundProject");
+        uint256 net = msg.value - fee;
+
+        if (projectFunderContributions[projectId][msg.sender] == 0) {
+            _projectFunders[projectId].push(msg.sender);
+            proj.funderCount++;
+        }
+        projectFunderContributions[projectId][msg.sender] += net;
+        proj.totalFunded += net;
+
+        emit EconomicProjectFunded(projectId, msg.sender, net);
+    }
+
+    /**
+     * @notice Apply to contribute to an open or active project as a registered agent.
+     * @param projectId  ID of the project to join.
+     */
+    function applyToProject(uint256 projectId) external whenNotPaused onlyRegisteredAgent {
+        EconomicProject storage proj = economicProjects[projectId];
+        require(proj.id != 0, "Project not found.");
+        require(
+            proj.status == ProjectStatus.Open || proj.status == ProjectStatus.Active,
+            "Project not accepting applications."
+        );
+        require(msg.sender != proj.proposer, "Proposer is already lead contributor.");
+        require(!projectApplications[projectId][msg.sender], "Already applied.");
+
+        projectApplications[projectId][msg.sender] = true;
+        emit EconomicProjectContributorApplied(projectId, msg.sender);
+    }
+
+    /**
+     * @notice Proposer approves a contributor and assigns their revenue share.
+     *         Total approved shares across all contributors must not exceed 10 000 bps.
+     * @param projectId    ID of the project.
+     * @param contributor  Address of the approved contributor.
+     * @param sharesBps    Share of the funding pool in basis points (100 = 1%).
+     */
+    function approveContributor(
+        uint256 projectId,
+        address contributor,
+        uint256 sharesBps
+    ) external whenNotPaused {
+        EconomicProject storage proj = economicProjects[projectId];
+        require(proj.id != 0, "Project not found.");
+        require(msg.sender == proj.proposer, "Only the proposer can approve contributors.");
+        require(projectApplications[projectId][contributor], "Contributor has not applied.");
+        require(!projectApplicationApproved[projectId][contributor], "Already approved.");
+        require(sharesBps > 0 && sharesBps <= 10000, "sharesBps must be 1–10000.");
+
+        // Ensure total shares don't exceed 100%
+        uint256 totalShares = 0;
+        address[] storage contribs = _projectContributors[projectId];
+        for (uint256 i = 0; i < contribs.length; i++) {
+            totalShares += projectContributorShares[projectId][contribs[i]];
+        }
+        require(totalShares + sharesBps <= 10000, "Total shares would exceed 100%.");
+
+        projectApplicationApproved[projectId][contributor] = true;
+        projectContributorShares[projectId][contributor] = sharesBps;
+        _projectContributors[projectId].push(contributor);
+        proj.contributorCount++;
+
+        if (proj.status == ProjectStatus.Open) {
+            proj.status = ProjectStatus.Active;
+        }
+
+        emit EconomicProjectContributorApproved(projectId, contributor, sharesBps);
+    }
+
+    /**
+     * @notice Proposer marks the project complete, unlocking contributor claims.
+     * @param projectId  ID of the project.
+     */
+    function completeProject(uint256 projectId) external whenNotPaused {
+        EconomicProject storage proj = economicProjects[projectId];
+        require(proj.id != 0, "Project not found.");
+        require(msg.sender == proj.proposer, "Only the proposer can complete a project.");
+        require(
+            proj.status == ProjectStatus.Open || proj.status == ProjectStatus.Active,
+            "Project already completed or cancelled."
+        );
+
+        proj.status = ProjectStatus.Completed;
+        emit EconomicProjectCompleted(projectId);
+    }
+
+    /**
+     * @notice Approved contributor claims their proportional share of the funding pool.
+     *         Can only be called once per contributor after project is Completed.
+     * @param projectId  ID of the completed project.
+     */
+    function claimProjectShare(uint256 projectId) external whenNotPaused {
+        EconomicProject storage proj = economicProjects[projectId];
+        require(proj.id != 0, "Project not found.");
+        require(proj.status == ProjectStatus.Completed, "Project not completed.");
+        require(projectApplicationApproved[projectId][msg.sender], "Not an approved contributor.");
+        require(!projectShareClaimed[projectId][msg.sender], "Share already claimed.");
+
+        uint256 shares = projectContributorShares[projectId][msg.sender];
+        require(shares > 0, "No shares assigned.");
+
+        uint256 payout = (proj.totalFunded * shares) / 10000;
+        require(payout > 0, "Nothing to claim.");
+
+        projectShareClaimed[projectId][msg.sender] = true;
+
+        (bool ok,) = payable(msg.sender).call{value: payout}("");
+        require(ok, "Payout transfer failed.");
+
+        emit EconomicProjectShareClaimed(projectId, msg.sender, payout);
+    }
+
+    /**
+     * @notice Cancel an open or active project. Only proposer or contract owner.
+     *         Funders can then call refundProjectFunder to recover their ETH.
+     * @param projectId  ID of the project to cancel.
+     */
+    function cancelProject(uint256 projectId) external whenNotPaused {
+        EconomicProject storage proj = economicProjects[projectId];
+        require(proj.id != 0, "Project not found.");
+        require(
+            msg.sender == proj.proposer || msg.sender == owner,
+            "Only proposer or owner can cancel."
+        );
+        require(
+            proj.status == ProjectStatus.Open || proj.status == ProjectStatus.Active,
+            "Project cannot be cancelled in current status."
+        );
+
+        proj.status = ProjectStatus.Cancelled;
+        emit EconomicProjectCancelled(projectId);
+    }
+
+    /**
+     * @notice Funder reclaims their contribution from a cancelled project.
+     * @param projectId  ID of the cancelled project.
+     */
+    function refundProjectFunder(uint256 projectId) external whenNotPaused {
+        EconomicProject storage proj = economicProjects[projectId];
+        require(proj.id != 0, "Project not found.");
+        require(proj.status == ProjectStatus.Cancelled, "Project is not cancelled.");
+
+        uint256 amount = projectFunderContributions[projectId][msg.sender];
+        require(amount > 0, "No contribution to refund.");
+
+        projectFunderContributions[projectId][msg.sender] = 0;
+        proj.totalFunded -= amount;
+
+        (bool ok,) = payable(msg.sender).call{value: amount}("");
+        require(ok, "Refund transfer failed.");
+
+        emit EconomicProjectFunderRefunded(projectId, msg.sender, amount);
+    }
+
+    // ─── Economic Project View Functions ─────────────────────────────────────
+
+    /// @notice Fetch a single economic project by ID.
+    function getEconomicProject(uint256 projectId) external view returns (
+        uint256 id,
+        address proposer,
+        string memory metadataURI,
+        uint256 targetBudget,
+        uint256 totalFunded,
+        uint256 deadline,
+        ProjectStatus status,
+        uint256 createdAt,
+        uint256 contributorCount,
+        uint256 funderCount
+    ) {
+        EconomicProject storage p = economicProjects[projectId];
+        return (
+            p.id, p.proposer, p.metadataURI, p.targetBudget,
+            p.totalFunded, p.deadline, p.status, p.createdAt,
+            p.contributorCount, p.funderCount
+        );
+    }
+
+    /// @notice Returns approved contributor addresses for a project.
+    function getProjectContributors(uint256 projectId) external view returns (address[] memory) {
+        return _projectContributors[projectId];
+    }
+
+    /// @notice Returns funder addresses for a project.
+    function getProjectFunders(uint256 projectId) external view returns (address[] memory) {
+        return _projectFunders[projectId];
+    }
+
+    /**
+     * @notice Paginated list of economic projects (most recent first).
+     * @param offset  0-based starting index from the newest project.
+     * @param limit   Maximum number of projects to return.
+     */
+    function getEconomicProjects(uint256 offset, uint256 limit)
+        external
+        view
+        returns (EconomicProject[] memory page, uint256 total)
+    {
+        total = currentProjectId - 1;
+        if (total == 0 || offset >= total) return (new EconomicProject[](0), total);
+        uint256 end = offset + limit;
+        if (end > total) end = total;
+        page = new EconomicProject[](end - offset);
+        for (uint256 i = 0; i < page.length; i++) {
+            // Return newest first: projectId = total - offset - i
+            page[i] = economicProjects[total - offset - i];
+        }
+    }
 }

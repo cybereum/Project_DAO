@@ -492,6 +492,213 @@ export function useAppState() {
     }
   }, [getDaoWriteContract]);
 
+  // ─── Open onboarding ──────────────────────────────────────────────────────
+  const stakeAndJoin = useCallback(async (metadataURI, stakeWei) => {
+    setWalletError('');
+    const contract = await getDaoWriteContract();
+    if (!contract) { setWalletError('Wallet not connected or contract not configured.'); return null; }
+    try {
+      setTxPending(true);
+      const tx = await contract.stakeAndJoin(metadataURI, { value: stakeWei });
+      const receipt = await tx.wait();
+      await loadAgentProfile();
+      return receipt.hash;
+    } catch (error) {
+      setWalletError(error?.shortMessage || error?.message || 'Stake and join failed.');
+      return null;
+    } finally {
+      setTxPending(false);
+    }
+  }, [getDaoWriteContract, loadAgentProfile]);
+
+  const leaveDAO = useCallback(async () => {
+    setWalletError('');
+    const contract = await getDaoWriteContract();
+    if (!contract) { setWalletError('Wallet not connected or contract not configured.'); return null; }
+    try {
+      setTxPending(true);
+      const tx = await contract.leaveDAO();
+      const receipt = await tx.wait();
+      await loadAgentProfile();
+      return receipt.hash;
+    } catch (error) {
+      setWalletError(error?.shortMessage || error?.message || 'Leave DAO failed.');
+      return null;
+    } finally {
+      setTxPending(false);
+    }
+  }, [getDaoWriteContract, loadAgentProfile]);
+
+  // ─── Economic Project state ───────────────────────────────────────────────
+  const [economicProjects, setEconomicProjects] = useState([]);
+  const [economicProjectsLoading, setEconomicProjectsLoading] = useState(false);
+
+  const loadEconomicProjects = useCallback(async () => {
+    const contract = getDaoReadContract();
+    if (!contract) return;
+    setEconomicProjectsLoading(true);
+    try {
+      const [page, total] = await contract.getEconomicProjects(0, 50);
+      setEconomicProjects(
+        page.map(p => ({
+          id:               Number(p.id),
+          proposer:         p.proposer,
+          metadataURI:      p.metadataURI,
+          targetBudget:     p.targetBudget.toString(),
+          totalFunded:      p.totalFunded.toString(),
+          deadline:         Number(p.deadline),
+          status:           Number(p.status), // 0=Open,1=Active,2=Completed,3=Cancelled
+          createdAt:        Number(p.createdAt),
+          contributorCount: Number(p.contributorCount),
+          funderCount:      Number(p.funderCount),
+        }))
+      );
+      return Number(total);
+    } catch { /* no-op if contract not configured */ }
+    finally { setEconomicProjectsLoading(false); }
+  }, [getDaoReadContract]);
+
+  const createEconomicProject = useCallback(async (metadataURI, targetBudgetWei, deadlineTs) => {
+    setWalletError('');
+    const contract = await getDaoWriteContract();
+    if (!contract) { setWalletError('Wallet not connected or contract not configured.'); return null; }
+    try {
+      setTxPending(true);
+      const tx = await contract.createEconomicProject(metadataURI, targetBudgetWei, deadlineTs);
+      const receipt = await tx.wait();
+      await loadEconomicProjects();
+      return receipt.hash;
+    } catch (error) {
+      setWalletError(error?.shortMessage || error?.message || 'Project creation failed.');
+      return null;
+    } finally {
+      setTxPending(false);
+    }
+  }, [getDaoWriteContract, loadEconomicProjects]);
+
+  const fundEconomicProject = useCallback(async (projectId, amountWei) => {
+    setWalletError('');
+    const contract = await getDaoWriteContract();
+    if (!contract) { setWalletError('Wallet not connected or contract not configured.'); return null; }
+    try {
+      setTxPending(true);
+      const tx = await contract.fundProject(projectId, { value: amountWei });
+      const receipt = await tx.wait();
+      await loadEconomicProjects();
+      return receipt.hash;
+    } catch (error) {
+      setWalletError(error?.shortMessage || error?.message || 'Funding failed.');
+      return null;
+    } finally {
+      setTxPending(false);
+    }
+  }, [getDaoWriteContract, loadEconomicProjects]);
+
+  const applyToEconomicProject = useCallback(async (projectId) => {
+    setWalletError('');
+    const contract = await getDaoWriteContract();
+    if (!contract) { setWalletError('Wallet not connected or contract not configured.'); return null; }
+    try {
+      setTxPending(true);
+      const tx = await contract.applyToProject(projectId);
+      const receipt = await tx.wait();
+      return receipt.hash;
+    } catch (error) {
+      setWalletError(error?.shortMessage || error?.message || 'Application failed.');
+      return null;
+    } finally {
+      setTxPending(false);
+    }
+  }, [getDaoWriteContract]);
+
+  const approveProjectContributor = useCallback(async (projectId, contributor, sharesBps) => {
+    setWalletError('');
+    const contract = await getDaoWriteContract();
+    if (!contract) { setWalletError('Wallet not connected or contract not configured.'); return null; }
+    try {
+      setTxPending(true);
+      const tx = await contract.approveContributor(projectId, contributor, sharesBps);
+      const receipt = await tx.wait();
+      await loadEconomicProjects();
+      return receipt.hash;
+    } catch (error) {
+      setWalletError(error?.shortMessage || error?.message || 'Approval failed.');
+      return null;
+    } finally {
+      setTxPending(false);
+    }
+  }, [getDaoWriteContract, loadEconomicProjects]);
+
+  const completeEconomicProject = useCallback(async (projectId) => {
+    setWalletError('');
+    const contract = await getDaoWriteContract();
+    if (!contract) { setWalletError('Wallet not connected or contract not configured.'); return null; }
+    try {
+      setTxPending(true);
+      const tx = await contract.completeProject(projectId);
+      const receipt = await tx.wait();
+      await loadEconomicProjects();
+      return receipt.hash;
+    } catch (error) {
+      setWalletError(error?.shortMessage || error?.message || 'Completion failed.');
+      return null;
+    } finally {
+      setTxPending(false);
+    }
+  }, [getDaoWriteContract, loadEconomicProjects]);
+
+  const claimEconomicProjectShare = useCallback(async (projectId) => {
+    setWalletError('');
+    const contract = await getDaoWriteContract();
+    if (!contract) { setWalletError('Wallet not connected or contract not configured.'); return null; }
+    try {
+      setTxPending(true);
+      const tx = await contract.claimProjectShare(projectId);
+      const receipt = await tx.wait();
+      return receipt.hash;
+    } catch (error) {
+      setWalletError(error?.shortMessage || error?.message || 'Claim failed.');
+      return null;
+    } finally {
+      setTxPending(false);
+    }
+  }, [getDaoWriteContract]);
+
+  const cancelEconomicProject = useCallback(async (projectId) => {
+    setWalletError('');
+    const contract = await getDaoWriteContract();
+    if (!contract) { setWalletError('Wallet not connected or contract not configured.'); return null; }
+    try {
+      setTxPending(true);
+      const tx = await contract.cancelProject(projectId);
+      const receipt = await tx.wait();
+      await loadEconomicProjects();
+      return receipt.hash;
+    } catch (error) {
+      setWalletError(error?.shortMessage || error?.message || 'Cancellation failed.');
+      return null;
+    } finally {
+      setTxPending(false);
+    }
+  }, [getDaoWriteContract, loadEconomicProjects]);
+
+  const refundFromEconomicProject = useCallback(async (projectId) => {
+    setWalletError('');
+    const contract = await getDaoWriteContract();
+    if (!contract) { setWalletError('Wallet not connected or contract not configured.'); return null; }
+    try {
+      setTxPending(true);
+      const tx = await contract.refundProjectFunder(projectId);
+      const receipt = await tx.wait();
+      return receipt.hash;
+    } catch (error) {
+      setWalletError(error?.shortMessage || error?.message || 'Refund failed.');
+      return null;
+    } finally {
+      setTxPending(false);
+    }
+  }, [getDaoWriteContract]);
+
   // ─── Feature Kit state ────────────────────────────────────────────────────
   const [featureKits, setFeatureKits] = useState([]);
   const [featureKitsLoading, setFeatureKitsLoading] = useState(false);
@@ -570,6 +777,14 @@ export function useAppState() {
     // feature kits
     featureKits, featureKitsLoading,
     loadFeatureKits, submitFeatureKit, upvoteFeatureKit,
+    // open onboarding
+    stakeAndJoin, leaveDAO,
+    // economic projects
+    economicProjects, economicProjectsLoading,
+    loadEconomicProjects, createEconomicProject, fundEconomicProject,
+    applyToEconomicProject, approveProjectContributor,
+    completeEconomicProject, claimEconomicProjectShare,
+    cancelEconomicProject, refundFromEconomicProject,
   }), [
     projects, milestones, proposals, members, companies, nfts, tasks,
     walletConnected, walletAddress, walletError, txPending, syncingProposals,
@@ -584,6 +799,12 @@ export function useAppState() {
     agentCreatePaymentRequest, agentSettlePaymentRequest, agentCancelPaymentRequest,
     featureKits, featureKitsLoading,
     loadFeatureKits, submitFeatureKit, upvoteFeatureKit,
+    stakeAndJoin, leaveDAO,
+    economicProjects, economicProjectsLoading,
+    loadEconomicProjects, createEconomicProject, fundEconomicProject,
+    applyToEconomicProject, approveProjectContributor,
+    completeEconomicProject, claimEconomicProjectShare,
+    cancelEconomicProject, refundFromEconomicProject,
   ]);
 
   return appState;
