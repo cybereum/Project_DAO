@@ -11,6 +11,31 @@ interface IERC721Lite {
 }
 
 contract Project_DAO {
+    // ─── Custom Errors (gas-efficient reverts) ───────────────────────────────
+    error Unauthorized();
+    error NotMember();
+    error NotRegisteredAgent();
+    error ContractPaused();
+    error ZeroAmount();
+    error InsufficientBalance();
+    error InvalidAddress();
+    error TransferFailed();
+    error AlreadyExists();
+    error NotFound();
+    error InvalidStatus();
+
+    // ─── Reentrancy Guard ────────────────────────────────────────────────────
+    uint256 private constant _NOT_ENTERED = 1;
+    uint256 private constant _ENTERED = 2;
+    uint256 private _reentrancyStatus = _NOT_ENTERED;
+
+    modifier nonReentrant() {
+        require(_reentrancyStatus != _ENTERED, "ReentrancyGuard: reentrant call");
+        _reentrancyStatus = _ENTERED;
+        _;
+        _reentrancyStatus = _NOT_ENTERED;
+    }
+
     enum PaymentStatus {
         Requested,
         Settled,
@@ -444,7 +469,7 @@ contract Project_DAO {
         emit AgentNativeEscrowDeposited(msg.sender, netAmount);
     }
 
-    function withdrawNativeFromEscrow(uint256 _amount) public onlyRegisteredAgent whenNotPaused {
+    function withdrawNativeFromEscrow(uint256 _amount) public onlyRegisteredAgent whenNotPaused nonReentrant {
         require(_amount > 0, "Amount must be greater than zero.");
         require(agents[msg.sender].nativeEscrowBalance >= _amount, "Insufficient native escrow balance.");
         require(cybereumTreasury != address(0), "Cybereum treasury not configured.");
@@ -597,7 +622,7 @@ contract Project_DAO {
         return requestId;
     }
 
-    function settleAgentPaymentRequest(uint256 _requestId) public payable onlyRegisteredAgent whenNotPaused {
+    function settleAgentPaymentRequest(uint256 _requestId) public payable onlyRegisteredAgent whenNotPaused nonReentrant {
         AgentPaymentRequest storage request = agentPaymentRequests[_requestId];
         require(request.id != 0, "Payment request does not exist.");
         require(request.status == PaymentStatus.Requested, "Payment request is not open.");
@@ -1245,7 +1270,7 @@ contract Project_DAO {
      *         member and agent status. Reverts if the caller has an active
      *         economic project as proposer.
      */
-    function leaveDAO() external whenNotPaused {
+    function leaveDAO() external whenNotPaused nonReentrant {
         require(members[msg.sender].isMember, "Not a member.");
         require(memberStakes[msg.sender] > 0 || msg.sender != owner, "Owner cannot leave.");
 
@@ -1455,7 +1480,7 @@ contract Project_DAO {
      *         Can only be called once per contributor after project is Completed.
      * @param projectId  ID of the completed project.
      */
-    function claimProjectShare(uint256 projectId) external whenNotPaused {
+    function claimProjectShare(uint256 projectId) external whenNotPaused nonReentrant {
         EconomicProject storage proj = economicProjects[projectId];
         require(proj.id != 0, "Project not found.");
         require(proj.status == ProjectStatus.Completed, "Project not completed.");
@@ -1501,7 +1526,7 @@ contract Project_DAO {
      * @notice Funder reclaims their contribution from a cancelled project.
      * @param projectId  ID of the cancelled project.
      */
-    function refundProjectFunder(uint256 projectId) external whenNotPaused {
+    function refundProjectFunder(uint256 projectId) external whenNotPaused nonReentrant {
         EconomicProject storage proj = economicProjects[projectId];
         require(proj.id != 0, "Project not found.");
         require(proj.status == ProjectStatus.Cancelled, "Project is not cancelled.");
