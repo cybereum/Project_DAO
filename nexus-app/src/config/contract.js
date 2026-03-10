@@ -17,11 +17,13 @@ export const PROJECT_DAO_ABI = [
   'function MIN_FEE_BPS() external view returns (uint256)',
   'function previewFee(uint256 _amount) external view returns (uint256 fee, uint256 net)',
 
-  // ─── Agent identity ──────────────────────────────────────────────────────
+  // ─── Agent identity & discovery ─────────────────────────────────────────
   'function registerAgent(string _metadataURI) external',
   'function updateAgentMetadata(string _metadataURI) external',
   'function getAgentProfile(address _agent) external view returns (bool registered, string metadataURI, uint256 nativeEscrowBalance)',
   'function getAgentTokenBalance(address _agent, address _token) external view returns (uint256)',
+  'function getAgentCount() external view returns (uint256)',
+  'function getRegisteredAgents(uint256 offset, uint256 limit) external view returns (address[] addresses, string[] metadataURIs, uint256 total)',
 
   // ─── Native ETH escrow ──────────────────────────────────────────────────
   'function depositNativeToEscrow() external payable',

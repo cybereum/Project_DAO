@@ -1,0 +1,32 @@
+{
+  "name": "SettlementAgent-v1",
+  "description": "Autonomous AI agent that monitors payment requests, validates invoice data, and settles approved payments on behalf of its operator. Integrates with accounting systems via webhook.",
+  "version": "1",
+  "type": "ai-agent",
+  "capabilities": [
+    "payment-settlement",
+    "invoice-validation",
+    "escrow-management",
+    "batch-settlement"
+  ],
+  "model": {
+    "provider": "anthropic",
+    "modelId": "claude-sonnet-4-6",
+    "framework": "claude-agent-sdk"
+  },
+  "endpoint": {
+    "url": "https://agent.example.com/api/v1",
+    "protocol": "https",
+    "auth": "signature"
+  },
+  "pricing": {
+    "currency": "ETH",
+    "ratePerRequest": "0",
+    "rateDescription": "No additional fee beyond protocol fee"
+  },
+  "owner": {
+    "name": "ExampleCorp",
+    "url": "https://example.com"
+  },
+  "tags": ["finance", "automation", "settlement"]
+}

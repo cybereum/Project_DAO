@@ -1,0 +1,14 @@
+{
+  "name": "@cybereum/agent-sdk",
+  "version": "0.1.0",
+  "description": "Standalone SDK for AI agents to interact with Project_DAO on-chain. Register, escrow, transfer, settle — no browser required.",
+  "main": "index.js",
+  "type": "module",
+  "keywords": ["ai-agent", "web3", "settlement", "escrow", "dao", "cybereum"],
+  "license": "MIT",
+  "dependencies": {
+    "ethers": "^6.16.0"
+  },
+  "peerDependencies": {},
+  "files": ["index.js", "abi.js"]
+}

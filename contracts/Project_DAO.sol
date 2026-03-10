@@ -139,6 +139,7 @@ contract Project_DAO {
     address public owner;
     mapping(address => Member) public members;
     mapping(address => AgentProfile) public agents;
+    address[] public agentAddresses;  // Registry for agent discovery
     mapping(address => mapping(address => uint256)) public agentTokenEscrowBalances;
     mapping(uint256 => AgentPaymentRequest) public agentPaymentRequests;
     uint256 public currentAgentPaymentRequestId = 1;
@@ -397,6 +398,37 @@ contract Project_DAO {
         return agentTokenEscrowBalances[_agent][_token];
     }
 
+    // ─── Agent Discovery ─────────────────────────────────────────────────────
+
+    /// @notice Total number of registered agents.
+    function getAgentCount() public view returns (uint256) {
+        return agentAddresses.length;
+    }
+
+    /// @notice Paginated list of registered agents for discovery by AI agents and indexers.
+    /// @param offset 0-based starting index.
+    /// @param limit  Maximum agents to return.
+    function getRegisteredAgents(uint256 offset, uint256 limit)
+        external
+        view
+        returns (address[] memory addresses, string[] memory metadataURIs, uint256 total)
+    {
+        total = agentAddresses.length;
+        if (total == 0 || offset >= total) {
+            return (new address[](0), new string[](0), total);
+        }
+        uint256 end = offset + limit;
+        if (end > total) end = total;
+        uint256 count = end - offset;
+        addresses = new address[](count);
+        metadataURIs = new string[](count);
+        for (uint256 i = 0; i < count; i++) {
+            address addr = agentAddresses[offset + i];
+            addresses[i] = addr;
+            metadataURIs[i] = agents[addr].metadataURI;
+        }
+    }
+
     /// @notice Returns a payment request by ID.
     function getAgentPaymentRequest(uint256 _requestId) public view returns (
         uint256 id,
@@ -452,6 +484,7 @@ contract Project_DAO {
         require(!profile.registered, "Agent already registered.");
         profile.registered = true;
         profile.metadataURI = _metadataURI;
+        agentAddresses.push(msg.sender);
         emit AgentRegistered(msg.sender, _metadataURI);
     }
 
@@ -1260,6 +1293,7 @@ contract Project_DAO {
             metadataURI: metadataURI,
             nativeEscrowBalance: 0
         });
+        agentAddresses.push(msg.sender);
 
         emit MemberJoinedByStake(msg.sender, netStake);
         emit AgentRegistered(msg.sender, metadataURI);
