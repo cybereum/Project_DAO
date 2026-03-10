@@ -8,7 +8,9 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "check:seo": "node scripts/validate-sitemap.mjs"
+    "check:seo": "npm run generate:sitemap && node scripts/validate-sitemap.mjs",
+    "generate:sitemap": "node scripts/generate-sitemap.mjs",
+    "check:deploy": "npm run lint && npm run check:seo && npm run build"
   },
   "dependencies": {
     "ethers": "^6.16.0",
