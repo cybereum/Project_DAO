@@ -1,25 +1,45 @@
-# React + Vite
+# NEXUS App (Project_DAO Frontend)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+NEXUS is the React/Vite frontend for `Project_DAO`.
+It includes:
 
-Currently, two official plugins are available:
+- public marketing + persona landing pages,
+- the in-app governance console,
+- and the Agent Economy transaction interface (native/token/NFT rails).
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Local development
 
-## React Compiler
+```bash
+npm install
+cp .env.example .env
+npm run dev
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
-
-## Local contract configuration
-
-To enable on-chain interactions (wallet connect + voting), create a `.env` file in `nexus-app/` using `.env.example` and set:
+## Required environment variable
 
 - `VITE_PROJECT_DAO_ADDRESS`: deployed `Project_DAO` contract address.
 
-Without this value, the UI falls back to local in-memory updates for demo flows.
+If this value is missing, the app gracefully falls back to local simulation for non-critical flows.
 
+## Deployment readiness checks
+
+Run the full frontend deployment gate:
+
+```bash
+npm run check:deploy
+```
+
+This runs:
+
+1. `npm run lint`
+2. `npm run check:seo` (generates and validates `public/sitemap.xml` from the route manifest)
+3. `npm run build`
+
+## Sitemap maintenance
+
+Sitemap entries are generated from `src/config/routeManifest.js`.
+
+```bash
+npm run generate:sitemap
+npm run check:seo
+```
