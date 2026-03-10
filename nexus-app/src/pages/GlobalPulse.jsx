@@ -7,6 +7,7 @@ import {
   Twitter, Linkedin, ShieldOff, Eye, Scale,
   MessageCircle, Send, Copy, CheckCircle2
 } from 'lucide-react';
+import { fetchLiveGovernanceMetrics } from '../lib/liveData';
 
 const CONCERNS = [
   {
@@ -17,7 +18,7 @@ const CONCERNS = [
     region: 'GLOBAL',
     headline: 'Corruption steals $2.6 trillion annually',
     body: 'The World Bank estimates corruption costs the global economy 5% of GDP each year. Infrastructure projects are the single largest vector — an estimated 10–30% of infrastructure investment is lost to corruption and mismanagement.',
-    nexusResponse: 'NEXUS milestone escrow gates make fund diversion structurally impossible. Every payment requires verified milestone completion, on-chain proof, and DAO approval. No human middlemen control release.',
+    nexusResponse: 'NEXUS milestone escrow gates reduce diversion risk by requiring verified milestone completion, on-chain proof, and DAO approval before release.',
     tags: ['Governance', 'Public Finance', 'Infrastructure'],
     source: 'World Bank 2025 Governance Report',
     impact: '$2.6T/year',
@@ -47,7 +48,7 @@ const CONCERNS = [
     region: 'GLOBAL',
     headline: '$500B+ lost to opaque infrastructure procurement',
     body: 'McKinsey Global Institute estimates $500 billion is wasted annually in infrastructure due to opaque procurement, cost overruns, and contractor non-delivery. Developing nations bear 70% of these losses.',
-    nexusResponse: 'NEXUS turns any infrastructure project into a transparent, auditable governance system. Contractors earn verified reputation scores. Milestone gates enforce delivery. Citizens can monitor progress in real time.',
+    nexusResponse: 'NEXUS helps teams run infrastructure projects in a transparent, auditable governance flow. Milestone gates tie payment release to delivery evidence, and progress can be monitored in real time.',
     tags: ['Infrastructure', 'Procurement', 'Public Spending'],
     source: 'McKinsey Global Infrastructure Initiative 2025',
     impact: '$500B/year',
@@ -62,7 +63,7 @@ const CONCERNS = [
     region: 'DEVELOPING WORLD',
     headline: 'NGO fund diversion up 31% in 3 years',
     body: 'The UN Office for the Coordination of Humanitarian Affairs documented a 31% rise in humanitarian aid diversion since 2022. Donors increasingly demand "traceability to impact" as a condition of large grants.',
-    nexusResponse: 'Every dollar of humanitarian or development aid tracked on-chain from disbursement to verified impact. Beneficiary communities can vote. Donors see real-time progress. Diversion is structurally prevented.',
+    nexusResponse: 'Humanitarian and development disbursements can be tracked on-chain from allocation to verified impact. Communities can participate in governance, and donors can monitor progress with stronger transparency.',
     tags: ['Humanitarian', 'Aid', 'NGO'],
     source: 'UNOCHA Humanitarian Finance Report 2025',
     impact: '+31% diversion',
@@ -77,7 +78,7 @@ const CONCERNS = [
     region: 'GLOBAL',
     headline: '94% of communities excluded from urban planning',
     body: 'UN Habitat reports that only 6% of urban communities have meaningful input into decisions that directly affect them. Democratic deficit at the local level is a root cause of inequality, civil unrest, and failed urban projects.',
-    nexusResponse: 'NEXUS enables any community — urban, rural, or dispersed — to govern shared resources with full member participation. No technical expertise required. One protocol, every community.',
+    nexusResponse: 'NEXUS enables communities — urban, rural, or dispersed — to govern shared resources with transparent participation and auditable records.',
     tags: ['Community', 'Democracy', 'Urban'],
     source: 'UN Habitat World Cities Report 2026',
     impact: '3.5B affected',
@@ -92,7 +93,7 @@ const CONCERNS = [
     region: 'EMERGING MARKETS',
     headline: 'Supply chain fraud growing 22% YoY',
     body: 'Interpol and the ICC estimate supply chain fraud cost global trade $4.2 trillion in 2025. Fake certifications, counterfeit credentials, and opaque sub-contractor chains are the primary attack vectors.',
-    nexusResponse: 'NEXUS provides on-chain verification for every entity in a supply chain. Credentials are immutable and publicly auditable. Fake companies cannot participate. Reputation scores eliminate unknown counterparty risk.',
+    nexusResponse: 'NEXUS provides on-chain verification across supply-chain participants. Credentials are auditable, and reputation signals help reduce unknown counterparty risk.',
     tags: ['Supply Chain', 'Trade', 'Verification'],
     source: 'ICC/Interpol Economic Crime Report 2025',
     impact: '$4.2T/year',
@@ -122,7 +123,7 @@ const CONCERNS = [
     region: 'GLOBAL',
     headline: '63 countries rated "very low" on public spending transparency',
     body: 'The Open Budget Survey 2025 found 63 countries provide inadequate public access to budget information. Citizens in these nations cannot verify where public money goes or hold governments accountable.',
-    nexusResponse: 'NEXUS can be deployed by any government, municipality, or public institution to make spending transparent by default. Citizens audit. Journalists verify. Accountability becomes automatic.',
+    nexusResponse: 'NEXUS can be deployed by governments and public institutions to improve spending transparency, making citizen and media verification far easier.',
     tags: ['Government', 'Budget', 'Transparency'],
     source: 'International Budget Partnership Open Budget Survey 2025',
     impact: '2.1B people',
@@ -149,9 +150,7 @@ const URGENCY_COLOR = {
 };
 
 // ─── Live Corruption Clock ────────────────────────────────────────────────────
-const CORRUPTION_PER_SECOND = 82385; // $2.6T/year ÷ 31,557,600 seconds
-
-function CorruptionClock() {
+function CorruptionClock({ corruptionPerSecond, sourceLabel }) {
   const startRef = useRef(null);
   const [stolen, setStolen] = useState(0);
 
@@ -159,10 +158,10 @@ function CorruptionClock() {
     const id = setInterval(() => {
       if (startRef.current === null) startRef.current = Date.now();
       const secs = Math.floor((Date.now() - startRef.current) / 1000);
-      setStolen(secs * CORRUPTION_PER_SECOND);
+      setStolen(secs * corruptionPerSecond);
     }, 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [corruptionPerSecond]);
 
   return (
     <Motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
@@ -174,9 +173,9 @@ function CorruptionClock() {
         ${stolen.toLocaleString()}
       </div>
       <p className="text-sm text-nexus-text-dim mt-2">
-        stolen by corruption — at <span className="text-red-400 font-semibold">$82,385 every second</span>
+        stolen by corruption — at <span className="text-red-400 font-semibold">{`$${Math.round(corruptionPerSecond).toLocaleString()} every second`}</span>
       </p>
-      <p className="text-xs text-nexus-text-dim mt-1">Source: World Bank 2025 Governance Report</p>
+      <p className="text-xs text-nexus-text-dim mt-1">Source: {sourceLabel}</p>
     </Motion.div>
   );
 }
@@ -185,8 +184,8 @@ function ConcernCard({ concern, index }) {
   const c = COLOR_MAP[concern.color];
   const [copied, setCopied] = useState(false);
 
-  const shareText = `${concern.headline} — and NEXUS Protocol provides a structural solution. nexusprotocol.io/pulse`;
-  const shareUrl = typeof window !== 'undefined' ? `${window.location.origin}/pulse#${concern.id}` : `https://nexusprotocol.io/pulse#${concern.id}`;
+  const shareText = `${concern.headline} — and NEXUS Protocol provides a structural solution. www.cybereum.io/pulse`;
+  const shareUrl = typeof window !== 'undefined' ? `${window.location.origin}/pulse#${concern.id}` : `https://www.cybereum.io/pulse#${concern.id}`;
   const whatsappText = `🔴 ${concern.headline}\n\n${concern.impact} across ${concern.affectedCountries} countries.\n\nNEXUS Protocol addresses this structurally: ${shareUrl}`;
   const telegramText = `${concern.headline} — ${concern.impact} across ${concern.affectedCountries} countries. NEXUS response: ${shareUrl}`;
   const copyText = `📊 ${concern.headline}\n\nImpact: ${concern.impact} | ${concern.affectedCountries} countries affected\nSource: ${concern.source}\n\nNEXUS Protocol structural solution: ${shareUrl}`;
@@ -329,7 +328,21 @@ function ConcernCard({ concern, index }) {
 
 export default function GlobalPulse() {
   const [filter, setFilter] = useState('ALL');
+  const [corruptionPerSecond, setCorruptionPerSecond] = useState(82_385);
+  const [sourceLabel, setSourceLabel] = useState('World Bank API / fallback');
   const filters = ['ALL', 'CRITICAL', 'HIGH', 'MEDIUM'];
+
+  useEffect(() => {
+    let mounted = true;
+    const loadLive = async () => {
+      const metrics = await fetchLiveGovernanceMetrics();
+      if (!mounted) return;
+      setCorruptionPerSecond(metrics.corruptionPerSecond);
+      setSourceLabel(`${metrics.source} (${metrics.gdpYear})`);
+    };
+    loadLive();
+    return () => { mounted = false; };
+  }, []);
   const filtered = filter === 'ALL' ? CONCERNS : CONCERNS.filter(c => c.urgency === filter);
 
   return (
@@ -371,8 +384,8 @@ export default function GlobalPulse() {
             </span>
           </h1>
           <p className="text-lg text-nexus-text-dim max-w-2xl mx-auto mb-8">
-            These are the systemic failures reported by international institutions in 2026.
-            NEXUS Protocol is architected to make each one structurally impossible — not just harder.
+            These are systemic failures reported by international institutions.
+            NEXUS Protocol is designed to reduce risk through stronger transparency, verification, and governance controls.
           </p>
 
           {/* Summary stats */}
@@ -381,7 +394,7 @@ export default function GlobalPulse() {
               { label: 'Active concerns', value: CONCERNS.length },
               { label: 'Critical urgency', value: CONCERNS.filter(c => c.urgency === 'CRITICAL').length },
               { label: 'Countries affected', value: '180+' },
-              { label: 'NEXUS features deployed', value: '6' },
+              { label: 'Live loss / second', value: `$${Math.round(corruptionPerSecond).toLocaleString()}` },
             ].map((s, i) => (
               <div key={i} className="p-3 rounded-xl border border-nexus-border bg-nexus-surface/50 text-center">
                 <div className="text-2xl font-black text-nexus-cyan">{s.value}</div>
@@ -390,7 +403,7 @@ export default function GlobalPulse() {
             ))}
           </div>
 
-          <CorruptionClock />
+          <CorruptionClock corruptionPerSecond={corruptionPerSecond} sourceLabel={sourceLabel} />
 
           {/* Filter */}
           <div className="flex justify-center gap-2 flex-wrap mt-10">
@@ -421,10 +434,10 @@ export default function GlobalPulse() {
       <section className="py-16 px-6 border-t border-nexus-border bg-nexus-surface/20">
         <div className="max-w-3xl mx-auto text-center">
           <h2 className="text-2xl sm:text-3xl font-bold mb-4">
-            Every one of these concerns has a NEXUS solution.
+            These concerns can be addressed with concrete NEXUS controls.
           </h2>
           <p className="text-nexus-text-dim mb-8">
-            Deploy NEXUS for your project, community, or government — free, open source, and live in minutes.
+            Deploy NEXUS for your project, community, or government — open source and practical to pilot quickly.
           </p>
           <Link to="/dashboard"
             className="inline-flex items-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-nexus-cyan to-nexus-purple text-white font-semibold hover:opacity-90 transition-opacity shadow-lg shadow-nexus-cyan/20">

@@ -15,11 +15,12 @@ import Assets from './pages/Assets';
 import AgentEconomy from './pages/AgentEconomy';
 import AgentsLanding from './pages/AgentsLanding';
 import BuildersLanding from './pages/BuildersLanding';
+import NgoLanding from './pages/NgoLanding';
+import EnterpriseLanding from './pages/EnterpriseLanding';
+import CitiesLanding from './pages/CitiesLanding';
 import NexusAI from './pages/NexusAI';
 import FeatureKits from './pages/FeatureKits';
-
-// Routes that render without the app shell (sidebar/topbar)
-const PUBLIC_ROUTES = ['/', '/pulse', '/agents', '/builders'];
+import { PUBLIC_ROUTES } from './config/routes';
 
 function AppShell({ children }) {
   const location = useLocation();
@@ -47,6 +48,9 @@ export default function App() {
           <Route path="/pulse" element={<GlobalPulse />} />
           <Route path="/agents" element={<AgentsLanding />} />
           <Route path="/builders" element={<BuildersLanding />} />
+          <Route path="/ngo" element={<NgoLanding />} />
+          <Route path="/enterprise" element={<EnterpriseLanding />} />
+          <Route path="/cities" element={<CitiesLanding />} />
 
           {/* App shell routes */}
           <Route path="/dashboard" element={<Dashboard />} />

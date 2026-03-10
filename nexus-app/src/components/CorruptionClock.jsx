@@ -8,8 +8,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { AlertTriangle, Zap } from 'lucide-react';
+import { fetchLiveGovernanceMetrics } from '../lib/liveData';
 
-const LOSS_PER_SECOND = 82_384.81;   // $2.6T / 31,536,000 seconds
+const FALLBACK_LOSS_PER_SECOND = 82_384.81;
 const TICK_MS = 100;                  // update every 100ms
 
 /**
@@ -54,17 +55,34 @@ function AnimatedNumber({ value }) {
  */
 export default function CorruptionClock({ compact = false, showSolution = true }) {
   const [elapsed, setElapsed] = useState(0);
+  const [lossPerSecond, setLossPerSecond] = useState(FALLBACK_LOSS_PER_SECOND);
+  const [sourceLabel, setSourceLabel] = useState('World Bank model estimate');
   const startRef = useRef(null);
 
   useEffect(() => {
+    let mounted = true;
+
+    const loadLiveMetric = async () => {
+      const metrics = await fetchLiveGovernanceMetrics();
+      if (!mounted) return;
+      setLossPerSecond(metrics.corruptionPerSecond);
+      setSourceLabel(`${metrics.source} (${metrics.gdpYear})`);
+    };
+
     startRef.current = Date.now();
+    loadLiveMetric();
+
     const id = setInterval(() => {
       setElapsed((Date.now() - startRef.current) / 1000);
     }, TICK_MS);
-    return () => clearInterval(id);
+
+    return () => {
+      mounted = false;
+      clearInterval(id);
+    };
   }, []);
 
-  const lost = elapsed * LOSS_PER_SECOND;
+  const lost = elapsed * lossPerSecond;
 
   if (compact) {
     return (
@@ -93,11 +111,11 @@ export default function CorruptionClock({ compact = false, showSolution = true }
       </p>
 
       <div className="flex items-center justify-center gap-4 text-xs text-nexus-text-dim pt-1 border-t border-red-500/10">
-        <span>$82,385 / second</span>
+        <span>{`$${Math.round(lossPerSecond).toLocaleString()} / second`}</span>
         <span className="w-px h-3 bg-white/10" />
-        <span>$2.6 trillion / year</span>
+        <span>{`$${(lossPerSecond * 31_536_000 / 1e12).toFixed(2)}T / year`}</span>
         <span className="w-px h-3 bg-white/10" />
-        <span>180+ countries</span>
+        <span>{sourceLabel}</span>
       </div>
 
       {showSolution && (

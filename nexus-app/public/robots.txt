@@ -11,4 +11,4 @@ Allow: /
 # /projects  - Project registry
 
 # Sitemap location
-Sitemap: https://nexusprotocol.io/sitemap.xml
+Sitemap: https://www.cybereum.io/sitemap.xml

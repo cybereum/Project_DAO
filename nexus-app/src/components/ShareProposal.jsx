@@ -8,7 +8,7 @@ import { Twitter, Linkedin, Link2, CheckCircle } from 'lucide-react';
 export default function ShareProposal({ proposal }) {
   const [copied, setCopied] = useState(false);
 
-  const base = typeof window !== 'undefined' ? window.location.origin : 'https://nexusprotocol.io';
+  const base = typeof window !== 'undefined' ? window.location.origin : 'https://www.cybereum.io';
   const url = `${base}/proposals#proposal-${proposal.id}`;
   const total = (proposal.yesVotes || 0) + (proposal.noVotes || 0);
   const pct = total > 0 ? Math.round(((proposal.yesVotes || 0) / total) * 100) : 0;

@@ -102,7 +102,7 @@ function Btn({ children, loading, variant = 'primary', disabled, ...props }) {
 // ─── TX Share Card ────────────────────────────────────────────────────────────
 function TxShareCard({ hash, action, walletAddress }) {
   const [copied, setCopied] = useState(false);
-  const referralLink = walletAddress ? generateReferralLink(walletAddress) : 'https://nexusprotocol.io/agents';
+  const referralLink = walletAddress ? generateReferralLink(walletAddress) : 'https://www.cybereum.io/agents';
   const shareText = `I just ${action} on-chain via Project_DAO — the settlement layer for the agent economy. Non-bypassable protocol fee to cybereum.eth. Zero trust. ${referralLink}`;
 
   const copy = () => {
