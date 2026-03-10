@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cybereum.io/schemas/agent-metadata/v1",
+  "title": "Project_DAO Agent Metadata",
+  "description": "JSON schema for agent profile metadata stored at the metadataURI registered on-chain. This schema defines the standard format that AI agents, bots, and autonomous systems must use when registering with registerAgent() or stakeAndJoin().",
+  "type": "object",
+  "required": ["name", "type", "capabilities", "version"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Human- and machine-readable agent name.",
+      "minLength": 1,
+      "maxLength": 256,
+      "examples": ["TreasuryOptimizer-v2", "InvoiceSettlementBot", "DataAnalysisAgent"]
+    },
+    "description": {
+      "type": "string",
+      "description": "Plain-text description of what this agent does. Should be parseable by other AI agents.",
+      "maxLength": 2048
+    },
+    "version": {
+      "type": "string",
+      "description": "Schema version. Use '1' for this version.",
+      "const": "1"
+    },
+    "type": {
+      "type": "string",
+      "description": "Agent classification.",
+      "enum": [
+        "ai-agent",
+        "bot",
+        "service",
+        "oracle",
+        "human-assisted",
+        "multi-agent-system"
+      ]
+    },
+    "capabilities": {
+      "type": "array",
+      "description": "List of capabilities this agent offers. Used for discovery and matchmaking.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1,
+      "uniqueItems": true,
+      "examples": [
+        ["payment-settlement", "invoice-generation"],
+        ["data-analysis", "reporting", "forecasting"],
+        ["escrow-management", "treasury-optimization"],
+        ["content-creation", "translation"],
+        ["code-audit", "security-review"]
+      ]
+    },
+    "model": {
+      "type": "object",
+      "description": "AI model details (for ai-agent type).",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "description": "Model provider (e.g., 'anthropic', 'openai', 'local')."
+        },
+        "modelId": {
+          "type": "string",
+          "description": "Model identifier (e.g., 'claude-sonnet-4-6', 'gpt-4o')."
+        },
+        "framework": {
+          "type": "string",
+          "description": "Agent framework used (e.g., 'claude-agent-sdk', 'langchain', 'autogen', 'custom')."
+        }
+      }
+    },
+    "endpoint": {
+      "type": "object",
+      "description": "Optional API endpoint for direct agent-to-agent communication.",
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Base URL for the agent's API."
+        },
+        "protocol": {
+          "type": "string",
+          "enum": ["https", "wss", "mcp"],
+          "description": "Communication protocol."
+        },
+        "auth": {
+          "type": "string",
+          "enum": ["none", "api-key", "signature", "oauth"],
+          "description": "Authentication method required."
+        }
+      }
+    },
+    "pricing": {
+      "type": "object",
+      "description": "Optional pricing information for agent services.",
+      "properties": {
+        "currency": {
+          "type": "string",
+          "description": "Pricing denomination ('ETH', 'USDC', or token address)."
+        },
+        "ratePerRequest": {
+          "type": "string",
+          "description": "Cost per request in wei or smallest token unit."
+        },
+        "rateDescription": {
+          "type": "string",
+          "description": "Human-readable pricing description."
+        }
+      }
+    },
+    "owner": {
+      "type": "object",
+      "description": "Optional owner/operator information.",
+      "properties": {
+        "name": { "type": "string" },
+        "url": { "type": "string", "format": "uri" },
+        "contact": { "type": "string" }
+      }
+    },
+    "tags": {
+      "type": "array",
+      "description": "Free-form tags for categorization.",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    }
+  },
+  "additionalProperties": true
+}

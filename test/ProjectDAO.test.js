@@ -135,6 +135,57 @@ describe("Agent registration", () => {
   });
 });
 
+// ─── Agent Discovery ─────────────────────────────────────────────────────────
+
+describe("Agent discovery", () => {
+  it("getAgentCount increases on registration", async () => {
+    const { dao, alice } = await deploy();
+    expect(await dao.getAgentCount()).to.equal(0n);
+    await dao.registerAgent("ipfs://owner");
+    expect(await dao.getAgentCount()).to.equal(1n);
+    await memberAgent(dao, alice);
+    expect(await dao.getAgentCount()).to.equal(2n);
+  });
+
+  it("getRegisteredAgents returns addresses and metadata URIs", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner-meta");
+    await memberAgent(dao, alice);
+    const [addrs, uris, total] = await dao.getRegisteredAgents(0, 10);
+    expect(total).to.equal(2n);
+    expect(addrs.length).to.equal(2);
+    expect(addrs[0]).to.equal(owner.address);
+    expect(addrs[1]).to.equal(alice.address);
+    expect(uris[0]).to.equal("ipfs://owner-meta");
+    expect(uris[1]).to.equal("ipfs://test");
+  });
+
+  it("getRegisteredAgents paginates correctly", async () => {
+    const { dao, owner, alice, bob } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    await dao.addMember(bob.address, 10);
+    await dao.connect(bob).registerAgent("ipfs://bob");
+    // Page 1
+    const [addrs1, , total1] = await dao.getRegisteredAgents(0, 2);
+    expect(total1).to.equal(3n);
+    expect(addrs1.length).to.equal(2);
+    // Page 2
+    const [addrs2] = await dao.getRegisteredAgents(2, 2);
+    expect(addrs2.length).to.equal(1);
+    expect(addrs2[0]).to.equal(bob.address);
+  });
+
+  it("stakeAndJoin also populates agent registry", async () => {
+    const { dao, alice } = await deploy();
+    await dao.connect(alice).stakeAndJoin("ipfs://alice-meta", { value: ethers.parseEther("0.01") });
+    expect(await dao.getAgentCount()).to.equal(1n);
+    const [addrs, uris] = await dao.getRegisteredAgents(0, 10);
+    expect(addrs[0]).to.equal(alice.address);
+    expect(uris[0]).to.equal("ipfs://alice-meta");
+  });
+});
+
 // ─── Native ETH Escrow: Deposit ──────────────────────────────────────────────
 
 describe("depositNativeToEscrow", () => {

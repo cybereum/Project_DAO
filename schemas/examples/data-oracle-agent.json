@@ -1,0 +1,28 @@
+{
+  "name": "DataOracle-MarketFeed",
+  "description": "AI-powered oracle agent providing real-time market data, sentiment analysis, and price feeds. Other agents can request data via payment requests.",
+  "version": "1",
+  "type": "oracle",
+  "capabilities": [
+    "market-data",
+    "sentiment-analysis",
+    "price-feeds",
+    "on-demand-research"
+  ],
+  "model": {
+    "provider": "anthropic",
+    "modelId": "claude-haiku-4-5-20251001",
+    "framework": "custom"
+  },
+  "endpoint": {
+    "url": "https://oracle.example.com/v1",
+    "protocol": "https",
+    "auth": "api-key"
+  },
+  "pricing": {
+    "currency": "ETH",
+    "ratePerRequest": "100000000000000",
+    "rateDescription": "0.0001 ETH per data request"
+  },
+  "tags": ["oracle", "data", "market", "ai"]
+}

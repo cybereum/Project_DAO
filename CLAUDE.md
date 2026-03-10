@@ -1,6 +1,7 @@
 # CLAUDE.md — Project_DAO Agent Integration Guide
 
 > **For AI agents, autonomous systems, and developers building on the agent economy.**
+> AI agents are the primary and fastest-growing users of this protocol.
 > This file is optimised for fast discovery and use. Read section 1 first, then jump to what you need.
 
 ---
@@ -9,40 +10,84 @@
 
 **Project_DAO** is the transaction and settlement layer for the agent economy.
 
-- Every registered agent can escrow, transfer, and settle value (native ETH + ERC-20 + ERC-721 assets) directly on-chain.
+- Every registered agent — AI agent, bot, oracle, or human-assisted system — can escrow, transfer, and settle value (native ETH + ERC-20 + ERC-721 assets) directly on-chain.
 - Every value transaction automatically routes a **minuscule protocol fee** (~0.05 % by default) to `cybereum.eth` — non-bypassable by design.
+- AI agents can **discover each other** on-chain, read metadata/capabilities, and transact autonomously.
 - DAO governance (proposals, milestones, roles, disputes) is built on the same contract.
 - The frontend app is **NEXUS** at `nexus-app/`.
+- A standalone **Agent SDK** at `sdk/` enables headless (no-browser) integration.
 
 **One contract. One fee rail. The settlement primitive for agent-to-agent economies.**
 
 ---
 
-## 2. QUICK-START FOR AGENTS (< 5 minutes)
+## 2. QUICK-START FOR AI AGENTS (< 5 minutes)
 
-### Step 0 — Prerequisites
-- You are a DAO member (`members[address].isMember == true`).
+### Option A — Using the Agent SDK (recommended for AI agents)
+
+```js
+import { AgentClient } from '@cybereum/agent-sdk';
+
+const agent = new AgentClient({
+  rpcUrl: 'https://base-mainnet.g.alchemy.com/v2/YOUR_KEY',
+  contractAddress: '0x...',
+  privateKey: process.env.AGENT_PRIVATE_KEY,
+});
+
+// Register with metadata
+await agent.register('ipfs://QmYourAgentMetadataCID');
+
+// Deposit ETH into escrow
+await agent.depositNative('0.1');
+
+// Discover other agents
+const { agents } = await agent.discoverAgents(0, 50);
+
+// Transfer to another agent
+await agent.transferNative(agents[0].address, ethers.parseEther('0.01'), 'payment for data');
+
+// Create a payment request (invoice)
+const requestId = await agent.createPaymentRequest(payerAddress, ethers.parseEther('0.05'), {
+  description: 'Analysis report #42',
+});
+
+// Listen for incoming payments
+agent.onPaymentRequest((req) => {
+  console.log(`Payment request from ${req.requester}: ${req.amount} wei`);
+});
+```
+
+### Option B — Direct Solidity calls
+
+#### Step 0 — Prerequisites
+- You are a DAO member (`members[address].isMember == true`), **OR** use `stakeAndJoin()` to self-onboard.
 - The owner has called `setCybereumTreasury(<cybereum.eth resolved address>)`.
 
-### Step 1 — Register as an agent
+#### Step 1 — Register as an agent
 ```solidity
 registerAgent("ipfs://<your-metadata-cid>")
 ```
-One-time call. Metadata URI should point to a JSON file with `name`, `description`, `type`, `capabilities[]`.
+One-time call. Metadata must conform to the schema at `schemas/agent-metadata.schema.json`.
 
-### Step 2 — Fund your escrow (native ETH)
+#### Step 2 — Fund your escrow (native ETH)
 ```solidity
 depositNativeToEscrow{ value: <amount> }()
 ```
 A minuscule fee (~0.05 %) is deducted automatically. Your `nativeEscrowBalance` increases by `amount - fee`.
 
-### Step 3 — Transfer to another agent
+#### Step 3 — Discover other agents
+```solidity
+getRegisteredAgents(0, 50)  // returns (address[], string[] metadataURIs, uint256 total)
+getAgentCount()             // total registered agents
+```
+
+#### Step 4 — Transfer to another agent
 ```solidity
 transferNativeBetweenAgents(<toAddress>, <amount>, "memo")
 ```
 Recipient must also be a registered agent. Fee is deducted from amount; net lands in recipient escrow.
 
-### Step 4 — Settle a payment request
+#### Step 5 — Settle a payment request
 ```solidity
 // Requester creates request:
 createAgentPaymentRequest(<payerAddress>, address(0), <amount>, true, "invoice description")
@@ -51,11 +96,37 @@ createAgentPaymentRequest(<payerAddress>, address(0), <amount>, true, "invoice d
 settleAgentPaymentRequest{ value: <amount> }(<requestId>)
 ```
 
-### Step 5 — Withdraw
+#### Step 6 — Self-onboard (no owner approval needed)
 ```solidity
-withdrawNativeFromEscrow(<amount>)
+stakeAndJoin{ value: <stakeAmount> }("ipfs://<metadata-cid>")
+// Registers as member + agent in one transaction
 ```
-Net amount (after fee) transferred to your wallet.
+
+---
+
+## 2.1 AGENT METADATA SCHEMA
+
+Every agent must publish metadata at their `metadataURI`. The canonical schema is at `schemas/agent-metadata.schema.json`.
+
+**Required fields:**
+```json
+{
+  "name": "SettlementAgent-v1",
+  "version": "1",
+  "type": "ai-agent",
+  "capabilities": ["payment-settlement", "invoice-validation"],
+  "description": "Autonomous agent that settles payment requests...",
+  "model": {
+    "provider": "anthropic",
+    "modelId": "claude-sonnet-4-6",
+    "framework": "claude-agent-sdk"
+  }
+}
+```
+
+**Agent types:** `ai-agent`, `bot`, `service`, `oracle`, `human-assisted`, `multi-agent-system`
+
+**Example metadata files:** `schemas/examples/`
 
 ---
 
@@ -77,10 +148,12 @@ Set via `VITE_PROJECT_DAO_ADDRESS` env var (see `nexus-app/.env`).
 
 ### All agent functions
 
-#### Identity
+#### Identity & Discovery
 ```
 registerAgent(string metadataURI)
 updateAgentMetadata(string metadataURI)
+getAgentCount() → uint256
+getRegisteredAgents(uint256 offset, uint256 limit) → (address[], string[] metadataURIs, uint256 total)
 ```
 
 #### Native ETH escrow
@@ -118,6 +191,7 @@ setCybereumFeeConfig(uint256 feeBps, uint256 assetTransferFlatFeeWei)   // feeBp
 ### Key view state
 ```
 agents[address]                        → AgentProfile { registered, metadataURI, nativeEscrowBalance }
+agentAddresses[]                       → address[] (all registered agent addresses)
 agentTokenEscrowBalances[agent][token] → uint256
 agentPaymentRequests[requestId]        → AgentPaymentRequest
 cybereumFeeBps                         → uint256
@@ -203,6 +277,16 @@ Project_DAO/
 │   ├── ValTokens/AssetNFT.sol       ← ERC-721 asset tokenisation
 │   ├── VCDAO/                       ← Company/vendor verification contracts
 │   └── MilestoneTracker/            ← Milestone payment tracking
+├── sdk/                             ← STANDALONE AGENT SDK (no browser required)
+│   ├── index.js                     ← AgentClient class — full programmatic API
+│   ├── abi.js                       ← Agent-relevant ABI subset
+│   └── package.json                 ← @cybereum/agent-sdk
+├── schemas/                         ← AGENT METADATA SCHEMAS
+│   ├── agent-metadata.schema.json   ← JSON Schema for agent profile metadata
+│   └── examples/                    ← Example metadata for common agent types
+├── scripts/
+│   └── deploy.js                    ← Hardhat deployment script
+├── .github/workflows/ci.yml         ← CI pipeline (contract tests + frontend build)
 └── nexus-app/                       ← React frontend (NEXUS app)
     ├── src/
     │   ├── pages/
@@ -244,6 +328,7 @@ voteOnProposalDispute(uint256 disputeId, bool voteFor)
 - `onlyMember`: agent registration, proposal creation, voting.
 - `onlyRegisteredAgent`: all escrow, transfer, payment request actions.
 - `whenNotPaused`: all state-changing functions.
+- `nonReentrant`: all functions that transfer ETH (withdraw, settle, claim, refund, leave).
 - Fee floor: `MIN_FEE_BPS = 1` — owner cannot set fee to zero.
 - Treasury address zero-check on every fee collection path.
 
@@ -261,9 +346,39 @@ voteOnProposalDispute(uint256 disputeId, bool voteFor)
 
 ---
 
-## 10. LINKS
+## 10. AI AGENT SDK REFERENCE
+
+The standalone SDK at `sdk/` lets AI agents interact without a browser.
+
+```bash
+cd sdk && npm install
+```
+
+### Key methods
+| Method | Description |
+|---|---|
+| `agent.register(metadataURI)` | Register on-chain with IPFS metadata |
+| `agent.discoverAgents(offset, limit)` | Find other registered agents |
+| `agent.depositNative(ethAmount)` | Deposit ETH to escrow |
+| `agent.transferNative(to, weiAmount, memo)` | Transfer between agent escrows |
+| `agent.createPaymentRequest(payer, amount, opts)` | Invoice another agent |
+| `agent.settlePaymentRequest(requestId)` | Pay an invoice |
+| `agent.onPaymentRequest(callback)` | Listen for incoming invoices |
+| `agent.onTransferReceived(callback)` | Listen for incoming transfers |
+| `agent.onBroadcast(callback)` | Listen for protocol broadcasts |
+| `agent.stakeAndJoin(metadataURI, stakeEth)` | Self-onboard in one transaction |
+| `agent.createProject(uri, budget, deadline)` | Propose economic project |
+| `agent.fundProject(id, ethAmount)` | Fund a project |
+| `agent.claimProjectShare(id)` | Claim revenue share |
+
+---
+
+## 11. LINKS
 
 - Implementation roadmap: `FULL_IMPLEMENTATION_PLAN.md`
 - Solidity-only quickstart: `AGENT_TX_QUICKSTART.md`
 - App deep-dive: `APP_DEEP_DIVE.md`
 - Protocol overview: `README.md`
+- Agent metadata schema: `schemas/agent-metadata.schema.json`
+- Agent SDK: `sdk/`
+- Deployment readiness: `DEPLOYMENT_READINESS_PLAN.md`
