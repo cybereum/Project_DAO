@@ -150,8 +150,8 @@ export default function AgentEconomy() {
     walletConnected, walletAddress, walletError, txPending,
     connectWallet,
     agentProfile, agentFeeBps, agentFlatFeeWei,
-    agentTokenBalances,
-    loadAgentConfig, loadAgentProfile, agentLoadTokenBalance,
+    agentTokenBalances, agentActivity, agentActivityLoading,
+    loadAgentConfig, loadAgentProfile, agentLoadTokenBalance, loadAgentActivity,
     agentRegister, agentDepositNative, agentWithdrawNative, agentTransferNative,
     agentDepositToken, agentWithdrawToken, agentTransferToken,
     agentTransferAsset,
@@ -198,13 +198,18 @@ export default function AgentEconomy() {
   const [assetRecipient, setAssetRecipient] = useState('');
   const [assetMemo, setAssetMemo] = useState('');
 
-  const refresh = useCallback(() => {
-    loadAgentConfig();
-    loadAgentProfile();
-  }, [loadAgentConfig, loadAgentProfile]);
+  const refresh = useCallback(async () => {
+    await Promise.all([
+      loadAgentConfig(),
+      loadAgentProfile(),
+      loadAgentActivity(),
+    ]);
+  }, [loadAgentActivity, loadAgentConfig, loadAgentProfile]);
 
   useEffect(() => {
-    if (walletConnected) refresh();
+    if (walletConnected) {
+      refresh();
+    }
   }, [walletConnected, refresh]);
 
   const handle = (fn, action = 'transacted') => async (...args) => {
@@ -212,8 +217,24 @@ export default function AgentEconomy() {
     if (hash) {
       setLastTx(hash);
       setLastTxAction(action);
+      refresh();
       markFunnelStep('agent_tx_complete');
       trackEvent('agent_transaction', { action });
+    }
+  };
+
+  const shortAddress = (value) => (value ? `${value.slice(0, 6)}...${value.slice(-4)}` : 'N/A');
+
+  const activityLabel = (item) => {
+    switch (item.name) {
+      case 'AgentNativeEscrowDeposited': return 'Native escrow deposit';
+      case 'AgentNativeEscrowWithdrawn': return 'Native escrow withdrawal';
+      case 'AgentToAgentNativeTransfer': return 'Native transfer';
+      case 'AgentToAgentTokenTransfer': return 'Token transfer';
+      case 'AgentAssetTransfer': return 'Asset transfer';
+      case 'AgentPaymentRequestCreated': return 'Payment request created';
+      case 'AgentPaymentRequestSettled': return 'Payment request settled';
+      default: return item.name;
     }
   };
 
@@ -358,6 +379,39 @@ export default function AgentEconomy() {
                 </div>
               ))}
             </div>
+          </Card>
+
+          <Card title="Recent On-Chain Activity" icon={Clock} className="md:col-span-2">
+            {agentActivityLoading ? (
+              <p className="text-sm text-nexus-text-dim">Loading recent activity…</p>
+            ) : agentActivity.length === 0 ? (
+              <p className="text-sm text-nexus-text-dim">No recent events found for this agent in the current query window.</p>
+            ) : (
+              <div className="space-y-2 max-h-80 overflow-auto pr-1">
+                {agentActivity.map((item) => (
+                  <div key={item.key} className="p-3 rounded-lg border border-nexus-border bg-nexus-bg/50 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-nexus-text">{activityLabel(item)}</span>
+                      <a
+                        href={`https://etherscan.io/tx/${item.txHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-nexus-cyan hover:underline font-mono"
+                      >
+                        {shortAddress(item.txHash)}
+                      </a>
+                    </div>
+                    <div className="text-nexus-text-dim mt-1 font-mono break-all">
+                      {item.from && <span>from {shortAddress(item.from)} </span>}
+                      {item.to && <span>→ {shortAddress(item.to)} </span>}
+                      {item.amount && <span>· amount {item.amount} </span>}
+                      {item.assetId && <span>· asset #{item.assetId} </span>}
+                      {item.requestId && <span>· request #{item.requestId}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </Card>
         </div>
       )}
