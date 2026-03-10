@@ -8,7 +8,7 @@ import {
 import {
   FolderKanban, Users, Milestone as MilestoneIcon, Vote, TrendingUp,
   ArrowUpRight, Clock, Zap, Activity, Shield, Bot, Brain, Lightbulb,
-  ChevronRight, Rocket, AlertTriangle
+  ChevronRight, Rocket, AlertTriangle, ClipboardCheck
 } from 'lucide-react';
 
 const anim = (i) => ({ initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, transition: { delay: i * 0.05 } });
@@ -219,7 +219,7 @@ export default function Dashboard() {
       </Motion.div>
 
       {/* ── Agent Intelligence Hub ── */}
-      <Motion.div {...anim(10)} className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <Motion.div {...anim(10)} className="grid grid-cols-1 lg:grid-cols-4 gap-4">
         {/* Agent Economy status */}
         <div className="rounded-xl border border-nexus-border bg-gradient-to-br from-nexus-cyan/10 to-nexus-cyan/5 p-5">
           <div className="flex items-center justify-between mb-3">
@@ -281,6 +281,27 @@ export default function Dashboard() {
               </Link>
             ))}
           </div>
+        </div>
+
+
+
+        {/* Agent readiness audit */}
+        <div className="rounded-xl border border-nexus-border bg-gradient-to-br from-nexus-green/10 to-nexus-green/5 p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold flex items-center gap-2">
+              <ClipboardCheck size={16} className="text-nexus-green" />
+              Agent Audit
+            </h3>
+            <Link to="/agent-readiness" className="flex items-center gap-1 text-xs text-nexus-cyan hover:underline">
+              Open <ChevronRight size={12} />
+            </Link>
+          </div>
+          <p className="text-xs text-nexus-text-dim mb-3">
+            Run a structured readiness audit against the 10 AI-agent collaboration and settlement magnets.
+          </p>
+          <Link to="/agent-readiness" className="block text-center text-xs px-3 py-1.5 rounded-lg bg-nexus-green/10 border border-nexus-green/20 text-nexus-green hover:bg-nexus-green/20 transition-colors">
+            Run Gap Audit →
+          </Link>
         </div>
 
         {/* Feature Kit pipeline */}

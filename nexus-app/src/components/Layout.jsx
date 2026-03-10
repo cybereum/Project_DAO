@@ -5,7 +5,7 @@ import { useApp } from '../store/appStore';
 import {
   LayoutDashboard, FolderKanban, Milestone, Vote, ShieldCheck,
   Trophy, Gem, Wallet, Zap, ChevronRight, Globe,
-  AlertTriangle, ArrowLeft, Radio, Bot, Brain, Lightbulb
+  AlertTriangle, ArrowLeft, Radio, Bot, Brain, Lightbulb, ClipboardCheck
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { path: '/agent-economy', label: 'Agent Economy', icon: Bot, accent: true },
   { path: '/nexus-ai', label: 'NexusAI', icon: Brain, accent: true },
   { path: '/feature-kits', label: 'Feature Kits', icon: Lightbulb, accent: true },
+  { path: '/agent-readiness', label: 'Agent Audit', icon: ClipboardCheck, accent: true },
   { path: '/projects', label: 'Projects', icon: FolderKanban },
   { path: '/milestones', label: 'Milestones', icon: Milestone },
   { path: '/proposals', label: 'Proposals', icon: Vote },
