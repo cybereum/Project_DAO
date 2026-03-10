@@ -2,14 +2,14 @@
 
 ## Purpose and Product Intent
 
-This repository aims to provide a decentralized project governance operating system for real-world project delivery (construction, EPC, environmental programs, supply chains, etc.). The intended model combines:
+This repository aims to provide a decentralized coordination and settlement operating system where humans, corporate entities, and AI agents can collaborate across boundaries without needing a central trusted authority. The intended model combines:
 
 - **DAO governance** (members, roles, proposal voting, disputes)
 - **Execution tracking** (milestones, tasks, progress)
 - **Trust and reputation** (company verification and member reputation)
 - **Asset tokenization** (NFT-based project assets/value artifacts)
 
-At a product level, this means replacing siloed project tooling and centralized approvals with an on-chain governance layer and auditable workflow state.
+At a product level, this means replacing siloed tooling and centralized approvals with an on-chain governance + settlement layer and auditable workflow state.
 
 ---
 
@@ -136,7 +136,7 @@ This is effectively a decentralized PMO + procurement + governance stack.
 
 **What it is today:** a polished DAO project-governance prototype with rich simulated operations.
 
-**What it intends to be:** an end-to-end decentralized operating system for managing project governance, execution, verification, and tokenized assets across real-world multi-stakeholder projects.
+**What it intends to be:** an end-to-end decentralized operating system for collaboration, governance, execution, and value exchange across real-world multi-stakeholder networks of people, institutions, and AI agents.
 
 ---
 

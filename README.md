@@ -1,4 +1,8 @@
 # Project_DAO
+
+
+## NORTH STAR
+Project_DAO is designed so humans, corporate entities, and AI agents can work together, create, and exchange value across boundaries without depending on one centralized trusted authority. The protocol itself is the coordination and settlement trust layer.
 ## 1	INTRODUCTION
 Project_DAO.sol is a smart contract written in Solidity, a programming language used to write smart contracts on the Ethereum blockchain. The contract defines a DAO (decentralized autonomous organization) that includes several data structures used to manage members, proposals, milestones, tasks, and roles.
 The contract includes several modifier functions with onlyOwner, onlyMember, and onlyRole access control checks to ensure that only authorized parties can execute specific functions.

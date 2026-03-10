@@ -2,7 +2,7 @@
  * LeadCapture — universal inbound + outbound form component.
  *
  * Features:
- * - Persona-aware messaging (agent, builder, ngo, government, enterprise)
+ * - Persona-aware messaging (agent, builder, ngo/program, government, enterprise)
  * - Full UTM attribution baked into every submission
  * - Geo-locale personalisation (country hint from browser Intl API)
  * - Configurable via props — renders as inline section or modal
@@ -44,12 +44,12 @@ const PERSONAS = {
     badgeColor: 'text-nexus-purple bg-nexus-purple/10',
   },
   ngo: {
-    badge: 'NGOs & Foundations',
-    headline: 'Deploy transparent governance for your programmes',
-    subhead: 'Get a free deployment consultation and the NGO Accountability Toolkit — no technical knowledge needed.',
+    badge: 'Programme Operators',
+    headline: 'Deploy transparent governance for your programs',
+    subhead: 'Get a free deployment consultation and the Program Governance Toolkit — no technical knowledge needed.',
     cta: 'Get Free Consultation',
     placeholder: 'director@yourorg.org',
-    gift: 'NGO Governance Toolkit',
+    gift: 'Program Governance Toolkit',
     color: 'from-green-500 to-cyan-500',
     borderColor: 'border-green-500/30',
     bgColor: 'bg-green-500/5',

@@ -15,11 +15,11 @@ import { trackEvent } from '../lib/analytics.js';
 
 const PULSE_ITEMS = [
   { icon: AlertTriangle, color: 'text-amber-400', label: 'Global corruption costs $2.6T annually — untraceable by design' },
-  { icon: Leaf, color: 'text-green-400', label: 'ESG greenwashing hits record levels — 78% of claims unverified' },
+  { icon: Leaf, color: 'text-green-400', label: 'Compliance reporting gaps leave critical project outcomes unverified' },
   { icon: Building2, color: 'text-cyan-400', label: '$500B+ in public infrastructure lost to opaque procurement' },
   { icon: Globe, color: 'text-purple-400', label: 'Cross-border project disputes take avg. 4.7 years to resolve' },
   { icon: Users, color: 'text-rose-400', label: 'Community governance shut out of 94% of urban planning decisions' },
-  { icon: HeartHandshake, color: 'text-amber-400', label: 'NGO fund diversion up 31% — donors have no visibility' },
+  { icon: HeartHandshake, color: 'text-amber-400', label: 'Multi-party funds still move through opaque pipelines with limited visibility' },
   { icon: Landmark, color: 'text-cyan-400', label: 'Public spending transparency: 63 countries rated "very low"' },
   { icon: Cpu, color: 'text-green-400', label: 'Supply chain fraud growing 22% YoY across emerging markets' },
 ];
@@ -35,8 +35,8 @@ const FEATURES = [
   {
     icon: ShieldCheck, color: 'from-cyan-500 to-cyan-700',
     title: 'On-Chain Verification',
-    desc: 'Companies, NGOs, contractors, and governments earn verifiable credentials anchored to immutable on-chain records — no more self-certified claims.',
-    keywords: ['KYC/AML', 'ESG Proof', 'Credential Trust'],
+    desc: 'Organizations, contributors, vendors, and institutions earn verifiable credentials anchored to immutable on-chain records — no more self-certified claims.',
+    keywords: ['KYC/AML', 'Credential Proof', 'Credential Trust'],
   },
   {
     icon: Vote, color: 'from-purple-500 to-purple-700',
@@ -58,9 +58,9 @@ const FEATURES = [
   },
   {
     icon: BarChart3, color: 'from-rose-500 to-rose-700',
-    title: 'Impact Tracking',
-    desc: 'Real-time ESG metrics, social impact data, and carbon accounting — fully auditable, shareable, and accepted by institutional funders.',
-    keywords: ['ESG', 'Carbon', 'SDG Alignment'],
+    title: 'Operational Intelligence',
+    desc: 'Real-time delivery metrics, risk signals, and completion evidence — auditable, shareable, and ready for stakeholders across sectors.',
+    keywords: ['Performance', 'Risk', 'Outcome Evidence'],
   },
   {
     icon: Bot, color: 'from-sky-500 to-sky-700',
@@ -79,14 +79,14 @@ const USE_CASES = [
   },
   {
     icon: Leaf, color: 'border-green-500/30 bg-green-500/5', badgeColor: 'bg-green-500/20 text-green-300',
-    title: 'Climate & Environmental', badge: 'NGOs & Impact Investors',
-    desc: 'Reforestation, renewable energy, and conservation projects with verifiable outcomes. Carbon credits minted only when milestones complete. ESG claims proven, not promised.',
+    title: 'Ecosystem Programs', badge: 'Networks & Program Operators',
+    desc: 'Cross-organization programs with verifiable outcomes. Milestone-gated execution and proof-backed reporting keep delivery measurable, not narrative-driven.',
     link: '/agents',
   },
   {
     icon: HeartHandshake, color: 'border-rose-500/30 bg-rose-500/5', badgeColor: 'bg-rose-500/20 text-rose-300',
-    title: 'Community Grants & Aid', badge: 'Foundations & DAOs',
-    desc: 'Humanitarian and community programs governed by beneficiary votes. Funding flows and milestone evidence tracked on-chain so stakeholders can verify where funds go.',
+    title: 'Grants & Public Programs', badge: 'DAOs, Funds & Institutions',
+    desc: 'Grant and program portfolios governed transparently. Funding flows and milestone evidence are tracked on-chain so every stakeholder can verify outcomes.',
     link: '/agents',
   },
   {
@@ -225,9 +225,9 @@ function LiveProtocolStats() {
 function ShareBar() {
   const [copied, setCopied] = useState(false);
   const url = typeof window !== 'undefined' ? window.location.href : 'https://www.cybereum.io';
-  const text = '🌍 Corruption steals $82,385 every second. NEXUS Protocol introduces transparent controls and auditability — free, open source governance for every city, community & cause.';
-  const whatsappText = `🌍 Corruption steals $82,385 every second.\n\nNEXUS Protocol introduces transparent controls and auditability — free, open source governance for every city, community & cause.\n\n${url}`;
-  const telegramText = `Corruption steals $82,385 every second. NEXUS Protocol adds verifiable controls and transparency. Free. Open source. ${url}`;
+  const text = '🌍 NEXUS Protocol helps humans, organizations, and AI agents coordinate and settle value without a central gatekeeper.';
+  const whatsappText = `🌍 NEXUS Protocol helps humans, organizations, and AI agents coordinate and settle value without a central gatekeeper.\n\nOpen, auditable, and borderless collaboration infrastructure.\n\n${url}`;
+  const telegramText = `NEXUS Protocol enables humans, organizations, and AI agents to coordinate and exchange value without centralized trust. ${url}`;
   const copy = () => {
     const fb = (v) => { try { const ta = document.createElement('textarea'); ta.value = v; ta.style.position='fixed'; ta.style.top='-1000px'; document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); setCopied(true); setTimeout(()=>setCopied(false),2000); } catch { /* no-op */ } };
     if (navigator?.clipboard?.writeText) { navigator.clipboard.writeText(url).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);}).catch(()=>fb(url)); } else { fb(url); }
@@ -315,17 +315,16 @@ export default function Landing() {
           </Motion.div>
           <Motion.h1 initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.2 }}
             className="text-4xl sm:text-5xl lg:text-6xl font-black leading-tight mb-6">
-            The World Needs{' '}
+            Humans, Corporations, and{' '}
             <span className="bg-gradient-to-r from-nexus-cyan via-nexus-purple to-nexus-cyan bg-clip-text text-transparent">
-              Accountable Systems.
+              AI Agents Can Coordinate as One.
             </span>
-            <br />We Built One.
+            <br />Without a Central Gatekeeper.
           </Motion.h1>
           <Motion.p initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.3 }}
             className="text-lg sm:text-xl text-nexus-text-dim max-w-2xl mx-auto mb-4">
-            Every team, institution, vendor network, and autonomous agent needs one auditable operating layer.
-            NEXUS Protocol is designed to reduce hidden corruption, fake credentials,
-            or divert funds — at zero cost to deploy.
+            One programmable coordination layer for humans, companies, and autonomous agents to collaborate, create, and settle value across borders.
+            Trust the protocol state machine — not a single authority.
           </Motion.p>
           <Motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ delay:0.4 }} className="max-w-2xl mx-auto mb-6">
             <GlobalPulseTicker />
@@ -362,7 +361,7 @@ export default function Landing() {
             <span className="text-xs font-mono text-red-400 uppercase tracking-widest">The Scale Is Incomprehensible</span>
             <h2 className="text-2xl sm:text-3xl font-bold mt-2 mb-3">Until you see it in real time.</h2>
             <p className="text-nexus-text-dim max-w-xl mx-auto text-sm">
-              This is not a statistic. It's a live loss counter. Every second without accountability infrastructure is money stolen from communities.
+              This is not just a statistic. It shows what opaque coordination systems cost over time when execution and money flows cannot be independently verified.
             </p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -445,7 +444,7 @@ export default function Landing() {
           <div className="text-center mb-14">
             <span className="text-xs font-mono text-nexus-purple uppercase tracking-widest">Who It's For</span>
             <h2 className="text-3xl sm:text-4xl font-bold mt-2 mb-4">Built for every sector<br />that needs accountability.</h2>
-            <p className="text-nexus-text-dim max-w-xl mx-auto">Not just for capital projects. NEXUS is infrastructure for any human endeavour — or autonomous agent — that requires trust.</p>
+            <p className="text-nexus-text-dim max-w-xl mx-auto">Not just for capital projects. NEXUS is infrastructure for any human endeavour — or autonomous agent — that needs coordination without centralized trust.</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {USE_CASES.map((uc, i) => (
@@ -471,9 +470,9 @@ export default function Landing() {
           <div className="space-y-6">
             {[
               { step: '01', title: 'Define your project or programme', desc: 'Set scope, budget, milestones, and stakeholder roles. Structure is enforced by smart contract — not policy documents.' },
-              { step: '02', title: 'Verify participants on-chain', desc: 'Companies, contractors, NGOs, and government bodies submit credentials. Verification is immutable and globally accessible.' },
+              { step: '02', title: 'Verify participants on-chain', desc: 'Organizations, contributors, and vendors submit credentials. Verification is immutable and globally accessible.' },
               { step: '03', title: 'Govern transparently', desc: 'Members vote on proposals with full audit trails. Milestone gates release funds automatically. Disputes resolve by protocol.' },
-              { step: '04', title: 'Prove impact globally', desc: 'Exportable ESG reports, on-chain reputation scores, and verifiable completion certificates — accepted by institutional funders worldwide.' },
+              { step: '04', title: 'Prove outcomes globally', desc: 'Exportable reports, on-chain reputation scores, and verifiable completion certificates provide trusted evidence for any stakeholder.' },
             ].map((s, i) => (
               <Motion.div key={i} initial={{ opacity:0, x:-20 }} whileInView={{ opacity:1, x:0 }} viewport={{ once:true }} transition={{ delay: i*0.1 }}
                 className="flex gap-6 p-6 rounded-2xl border border-nexus-border bg-nexus-surface/50 hover:border-nexus-cyan/30 transition-colors">
@@ -491,14 +490,14 @@ export default function Landing() {
           <div className="text-center mb-10">
             <span className="text-xs font-mono text-nexus-cyan uppercase tracking-widest">Join the Movement</span>
             <h2 className="text-3xl sm:text-4xl font-bold mt-2 mb-4">Get exactly what you need,<br />for exactly who you are.</h2>
-            <p className="text-nexus-text-dim max-w-xl mx-auto">Whether you run a startup, enterprise, city program, foundation, or agent workflow — this stack is directly applicable.</p>
+            <p className="text-nexus-text-dim max-w-xl mx-auto">Whether you run a startup, enterprise program, public initiative, or agent workflow — this stack is directly applicable.</p>
           </div>
           <div className="flex flex-wrap justify-center gap-3 mb-8">
             {[
               { key: 'agent', label: '🤖 Agent Builder' },
               { key: 'builder', label: '🛠 Developer' },
               { key: 'government', label: '🏛 Government' },
-              { key: 'ngo', label: '🌿 NGO / Foundation' },
+              { key: 'ngo', label: '🌿 Program Operator' },
               { key: 'enterprise', label: '🏢 Enterprise' },
             ].map(p => (
               <button key={p.key} onClick={() => setSelectedPersona(p.key)}
@@ -534,7 +533,7 @@ export default function Landing() {
               <span className="bg-gradient-to-r from-nexus-cyan to-nexus-purple bg-clip-text text-transparent">It's infrastructure.</span>
             </h2>
             <p className="text-nexus-text-dim text-lg mb-8 max-w-xl mx-auto">
-              Join the global movement making corruption harder to hide and easier to audit. Deploy Cybereum for any project where decisions, delivery, and money must stay aligned and verifiable.
+              Deploy Cybereum for any network where humans, corporate entities, and AI agents must coordinate work and exchange value without relying on a single trusted authority.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
               <Link to="/dashboard" onClick={() => markFunnelStep('cta_final_launch')}
@@ -581,7 +580,7 @@ export default function Landing() {
             <div>
               <p className="text-xs font-semibold text-nexus-text mb-3 uppercase tracking-wider">Share NEXUS</p>
               <ShareBar />
-              <p className="text-xs text-nexus-text-dim mt-3">Help us end corruption. Share with someone who needs accountable governance.</p>
+              <p className="text-xs text-nexus-text-dim mt-3">Share with someone building cross-boundary collaboration and programmable trust.</p>
             </div>
           </div>
           <div className="border-t border-nexus-border pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-nexus-text-dim">

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useApp } from '../store/appStore';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { Vote, ThumbsUp, ThumbsDown, Clock, User, AlertTriangle, CheckCircle2, XCircle, Plus, RefreshCcw } from 'lucide-react';
@@ -15,13 +15,22 @@ const STATUS_CONFIG = {
 
 export default function Proposals() {
   const {
-    proposals, projects, castVote, walletConnected, addProposal,
+    proposals, projects, castVote, walletConnected, walletError, txPending, addProposal,
     syncProposalsFromChain, syncingProposals,
   } = useApp();
   const [filter, setFilter] = useState('All');
   const [expanded, setExpanded] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
   const [newProposal, setNewProposal] = useState({ title: '', description: '', projectId: projects[0]?.id || 1, votingDays: 7 });
+
+  const [txFeedback, setTxFeedback] = useState(null);
+
+  const txFeedbackTone = useMemo(() => {
+    if (!txFeedback) return null;
+    if (txFeedback.type === 'error') return 'border-nexus-red/30 bg-nexus-red/10 text-nexus-red';
+    if (txFeedback.type === 'success') return 'border-nexus-green/30 bg-nexus-green/10 text-nexus-green';
+    return 'border-nexus-cyan/30 bg-nexus-cyan/10 text-nexus-cyan';
+  }, [txFeedback]);
 
   const filtered = filter === 'All' ? proposals : proposals.filter(p => p.status === filter);
 
@@ -45,6 +54,22 @@ export default function Proposals() {
           </button>
         </div>
       </div>
+
+
+      {(txPending || walletError || txFeedback) && (
+        <div className={`rounded-xl border px-4 py-3 text-sm ${walletError ? 'border-nexus-red/30 bg-nexus-red/10 text-nexus-red' : txFeedbackTone || 'border-nexus-border bg-nexus-card text-nexus-text-dim'}`}>
+          {txPending && <p>Transaction pending in wallet / chain confirmation…</p>}
+          {!txPending && walletError && <p>{walletError}</p>}
+          {!txPending && !walletError && txFeedback && (
+            <div className="space-y-1">
+              <p>{txFeedback.message}</p>
+              {txFeedback.txHash && (
+                <p className="text-xs opacity-80 font-mono break-all">tx: {txFeedback.txHash}</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {showCreate && (
         <Motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
@@ -76,7 +101,15 @@ export default function Proposals() {
               </div>
             </div>
             <div className="flex gap-3">
-              <button onClick={() => { if (newProposal.title.trim()) { const deadline = new Date(); deadline.setDate(deadline.getDate() + newProposal.votingDays); addProposal({ ...newProposal, deadline: deadline.toISOString().split('T')[0] }); setNewProposal({ title: '', description: '', projectId: projects[0]?.id || 1, votingDays: 7 }); setShowCreate(false); } }}
+              <button onClick={() => {
+                if (!newProposal.title.trim()) return;
+                const deadline = new Date();
+                deadline.setDate(deadline.getDate() + newProposal.votingDays);
+                addProposal({ ...newProposal, deadline: deadline.toISOString().split('T')[0] });
+                setTxFeedback({ type: 'info', message: 'Proposal submitted to local workspace state. On-chain proposal creation endpoint is not wired yet.' });
+                setNewProposal({ title: '', description: '', projectId: projects[0]?.id || 1, votingDays: 7 });
+                setShowCreate(false);
+              }}
                 className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-nexus-cyan to-nexus-purple text-white text-sm font-medium">Submit Proposal</button>
               <button onClick={() => setShowCreate(false)} className="px-5 py-2.5 rounded-lg border border-nexus-border text-nexus-text-dim text-sm hover:bg-white/5">Cancel</button>
             </div>
@@ -152,13 +185,13 @@ export default function Proposals() {
                       <p className="text-sm text-nexus-text-dim mb-4">{proposal.description}</p>
                       {proposal.status === 'Active' && (
                         <div className="flex gap-3">
-                          <button onClick={(e) => { e.stopPropagation(); castVote(proposal.id, true); }}
-                            disabled={!walletConnected}
+                          <button onClick={async (e) => { e.stopPropagation(); const result = await castVote(proposal.id, true); if (result?.ok) { setTxFeedback({ type: 'success', message: result.onChain ? 'Vote recorded on-chain.' : 'Vote recorded locally (demo mode).', txHash: result.txHash || null }); } else { setTxFeedback({ type: 'error', message: 'Vote failed. See error above.', txHash: null }); } }}
+                            disabled={!walletConnected || txPending}
                             className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-nexus-green/10 border border-nexus-green/20 text-nexus-green text-sm font-medium hover:bg-nexus-green/20 transition-colors disabled:opacity-50">
                             <ThumbsUp size={16} /> Vote Yes
                           </button>
-                          <button onClick={(e) => { e.stopPropagation(); castVote(proposal.id, false); }}
-                            disabled={!walletConnected}
+                          <button onClick={async (e) => { e.stopPropagation(); const result = await castVote(proposal.id, false); if (result?.ok) { setTxFeedback({ type: 'success', message: result.onChain ? 'Vote recorded on-chain.' : 'Vote recorded locally (demo mode).', txHash: result.txHash || null }); } else { setTxFeedback({ type: 'error', message: 'Vote failed. See error above.', txHash: null }); } }}
+                            disabled={!walletConnected || txPending}
                             className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-nexus-red/10 border border-nexus-red/20 text-nexus-red text-sm font-medium hover:bg-nexus-red/20 transition-colors disabled:opacity-50">
                             <ThumbsDown size={16} /> Vote No
                           </button>

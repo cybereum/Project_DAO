@@ -149,11 +149,13 @@ export function useAppState() {
     setWalletError('');
     const contract = await getDaoWriteContract();
     let voteCommittedOnChain = false;
+    let txHash = null;
 
     if (contract) {
       try {
         setTxPending(true);
         const tx = await contract.vote(proposalId, vote);
+        txHash = tx.hash;
         await tx.wait();
         voteCommittedOnChain = true;
       } catch (error) {
@@ -172,7 +174,19 @@ export function useAppState() {
         }
         return p;
       }));
+
+      return {
+        ok: true,
+        onChain: Boolean(contract),
+        txHash,
+      };
     }
+
+    return {
+      ok: false,
+      onChain: true,
+      txHash: null,
+    };
   }, [getDaoWriteContract]);
 
   const syncProposalsFromChain = useCallback(async () => {
