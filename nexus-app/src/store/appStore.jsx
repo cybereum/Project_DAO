@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { useState, createContext, useContext, useCallback, useMemo } from 'react';
+import { useState, useRef, createContext, useContext, useCallback, useMemo } from 'react';
 import { BrowserProvider, Contract, isAddress } from 'ethers';
 import { PROJECT_DAO_ABI, PROJECT_DAO_ADDRESS, hasContractConfig } from '../config/contract';
 
@@ -274,6 +274,10 @@ export function useAppState() {
   const [agentFlatFeeWei, setAgentFlatFeeWei] = useState('1000000000000');
   // token address → escrow balance (BigInt string)
   const [agentTokenBalances, setAgentTokenBalances] = useState({});
+  const [agentActivity, setAgentActivity] = useState([]);
+  const [agentActivityLoading, setAgentActivityLoading] = useState(false);
+  const lastAgentActivityBlockRef = useRef(0);
+  const lastAgentActivityWalletRef = useRef('');
 
   const loadAgentConfig = useCallback(async () => {
     const contract = getDaoReadContract();
@@ -417,6 +421,80 @@ export function useAppState() {
       setAgentTokenBalances(prev => ({ ...prev, [tokenAddress.toLowerCase()]: bal.toString() }));
     } catch { /* no-op */ }
   }, [walletAddress, getDaoReadContract]);
+
+  const loadAgentActivity = useCallback(async ({ forceFull = false } = {}) => {
+    if (!walletAddress) return;
+    const contract = getDaoReadContract();
+    if (!contract?.runner?.provider) return;
+
+    setAgentActivityLoading(true);
+    try {
+      const provider = contract.runner.provider;
+      const latestBlock = await provider.getBlockNumber();
+      const walletChanged = lastAgentActivityWalletRef.current !== walletAddress;
+      const shouldFullSync = forceFull || walletChanged || lastAgentActivityBlockRef.current === 0;
+      const baseFromBlock = shouldFullSync
+        ? (latestBlock > 8000 ? latestBlock - 8000 : 0)
+        : Math.max(lastAgentActivityBlockRef.current - 2, 0);
+
+      const activityResults = await Promise.allSettled([
+        contract.queryFilter(contract.filters.AgentNativeEscrowDeposited(walletAddress), baseFromBlock, latestBlock),
+        contract.queryFilter(contract.filters.AgentNativeEscrowWithdrawn(walletAddress), baseFromBlock, latestBlock),
+        contract.queryFilter(contract.filters.AgentToAgentNativeTransfer(walletAddress, null), baseFromBlock, latestBlock),
+        contract.queryFilter(contract.filters.AgentToAgentNativeTransfer(null, walletAddress), baseFromBlock, latestBlock),
+        contract.queryFilter(contract.filters.AgentToAgentTokenTransfer(walletAddress, null, null), baseFromBlock, latestBlock),
+        contract.queryFilter(contract.filters.AgentToAgentTokenTransfer(null, walletAddress, null), baseFromBlock, latestBlock),
+        contract.queryFilter(contract.filters.AgentAssetTransfer(walletAddress, null, null), baseFromBlock, latestBlock),
+        contract.queryFilter(contract.filters.AgentAssetTransfer(null, walletAddress, null), baseFromBlock, latestBlock),
+        contract.queryFilter(contract.filters.AgentPaymentRequestCreated(null, walletAddress, null), baseFromBlock, latestBlock),
+        contract.queryFilter(contract.filters.AgentPaymentRequestCreated(null, null, walletAddress), baseFromBlock, latestBlock),
+        contract.queryFilter(contract.filters.AgentPaymentRequestSettled(null, walletAddress, null), baseFromBlock, latestBlock),
+        contract.queryFilter(contract.filters.AgentPaymentRequestSettled(null, null, walletAddress), baseFromBlock, latestBlock),
+      ]);
+
+      const activityChunks = activityResults
+        .filter((result) => result.status === 'fulfilled')
+        .map((result) => result.value);
+
+      const previous = shouldFullSync ? [] : agentActivity;
+
+      const parsed = activityChunks
+        .flat()
+        .map((ev) => {
+          const args = ev.args || [];
+          return {
+            key: `${ev.transactionHash}-${ev.index}`,
+            name: ev.fragment?.name || 'UnknownEvent',
+            blockNumber: ev.blockNumber,
+            txHash: ev.transactionHash,
+            from: args.from || args.agent || args.requester || args.payer || null,
+            to: args.to || args.payer || args.requester || null,
+            token: args.token || null,
+            amount: args.amount?.toString?.() || null,
+            requestId: args.requestId?.toString?.() || null,
+            assetId: args.assetId?.toString?.() || null,
+            memo: args.memo || args.description || null,
+            logIndex: ev.index || 0,
+          };
+        })
+        .sort((a, b) => (b.blockNumber - a.blockNumber) || (b.logIndex - a.logIndex));
+
+      const seen = new Set();
+      const deduped = [...parsed, ...previous].filter((item) => {
+        if (seen.has(item.key)) return false;
+        seen.add(item.key);
+        return true;
+      });
+
+      setAgentActivity(deduped.slice(0, 40));
+      lastAgentActivityBlockRef.current = latestBlock;
+      lastAgentActivityWalletRef.current = walletAddress;
+    } catch {
+      setAgentActivity([]);
+    } finally {
+      setAgentActivityLoading(false);
+    }
+  }, [walletAddress, getDaoReadContract, agentActivity]);
 
   const agentDepositToken = useCallback(async (tokenAddress, amountWei) => {
     setWalletError('');
@@ -782,11 +860,11 @@ export function useAppState() {
     addProject, addProposal, addCompany, addNft,
     // agent economy
     agentProfile, agentPaymentRequests, agentFeeBps, agentFlatFeeWei,
-    agentTokenBalances,
+    agentTokenBalances, agentActivity, agentActivityLoading,
     loadAgentConfig, loadAgentProfile, setAgentPaymentRequests,
     agentRegister, agentDepositNative, agentWithdrawNative, agentTransferNative,
     agentDepositToken, agentWithdrawToken, agentTransferToken, agentTransferAsset,
-    agentLoadTokenBalance,
+    agentLoadTokenBalance, loadAgentActivity,
     agentCreatePaymentRequest, agentSettlePaymentRequest, agentCancelPaymentRequest,
     // feature kits
     featureKits, featureKitsLoading,
@@ -805,11 +883,11 @@ export function useAppState() {
     connectWallet, castVote, syncProposalsFromChain,
     addProject, addProposal, addCompany, addNft,
     agentProfile, agentPaymentRequests, agentFeeBps, agentFlatFeeWei,
-    agentTokenBalances,
+    agentTokenBalances, agentActivity, agentActivityLoading,
     loadAgentConfig, loadAgentProfile, setAgentPaymentRequests,
     agentRegister, agentDepositNative, agentWithdrawNative, agentTransferNative,
     agentDepositToken, agentWithdrawToken, agentTransferToken, agentTransferAsset,
-    agentLoadTokenBalance,
+    agentLoadTokenBalance, loadAgentActivity,
     agentCreatePaymentRequest, agentSettlePaymentRequest, agentCancelPaymentRequest,
     featureKits, featureKitsLoading,
     loadFeatureKits, submitFeatureKit, upvoteFeatureKit,
