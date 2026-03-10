@@ -54,6 +54,7 @@ Pages and module intent:
 - **Verification**: company verification/reliability surfaces
 - **Reputation**: contributor leaderboard and score visualizations
 - **Assets**: NFT-style asset vault and mint flow
+- **Agent Readiness Audit**: ten-magnet gap scoring, world-model export, and deterministic settlement policy simulation
 
 Navigation and page routing are centralized in `App.jsx` + `Layout.jsx`.
 
@@ -79,6 +80,7 @@ So today, the app functions as a **high-fidelity product prototype / simulation 
 3. Eligible participants vote with weighted voting power.
 4. Owner executes proposal outcomes after voting deadlines.
 5. If conflicts arise, milestone-specific disputes are raised and resolved.
+5.5. Ops teams can run the Agent Readiness Audit to identify and close gaps across interoperability, permissions, settlement, and traceability.
 6. Approved work becomes tracked tasks with progress updates.
 7. Verified companies participate as trusted vendors/contractors.
 8. Deliverables or rights are represented as tokenized assets (NFTs).
