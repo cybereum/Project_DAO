@@ -752,6 +752,11 @@ cd sdk && npm install
 - Solidity-only quickstart: `AGENT_TX_QUICKSTART.md`
 - App deep-dive: `APP_DEEP_DIVE.md`
 - Protocol overview: `README.md`
+- Product guide: `PRODUCT_GUIDE.md`
+- Operations runbook: `OPERATIONS_RUNBOOK.md`
+- Testing guide: `TESTING_GUIDE.md`
+- Security model: `SECURITY.md`
+- Changelog: `CHANGELOG.md`
 - Agent metadata schema: `schemas/agent-metadata.schema.json`
 - Agent SDK: `sdk/`
 - Deployment readiness: `DEPLOYMENT_READINESS_PLAN.md`
