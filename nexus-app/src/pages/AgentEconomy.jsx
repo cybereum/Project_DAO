@@ -156,6 +156,7 @@ export default function AgentEconomy() {
     agentDepositToken, agentWithdrawToken, agentTransferToken,
     agentTransferAsset,
     agentCreatePaymentRequest, agentSettlePaymentRequest, agentCancelPaymentRequest,
+    protocolMetrics, loadProtocolMetrics,
   } = useApp();
 
   const [lastTx, setLastTx] = useState('');
@@ -203,8 +204,9 @@ export default function AgentEconomy() {
       loadAgentConfig(),
       loadAgentProfile(),
       loadAgentActivity(),
+      loadProtocolMetrics(),
     ]);
-  }, [loadAgentActivity, loadAgentConfig, loadAgentProfile]);
+  }, [loadAgentActivity, loadAgentConfig, loadAgentProfile, loadProtocolMetrics]);
 
   useEffect(() => {
     if (walletConnected) {
@@ -359,6 +361,24 @@ export default function AgentEconomy() {
                   <span className="font-mono text-nexus-text">{value}</span>
                 </div>
               ))}
+            </div>
+          </Card>
+
+          <Card title="Protocol Velocity" icon={Zap}>
+            <div className="space-y-3">
+              {protocolMetrics ? [
+                { label: 'Total transactions', value: protocolMetrics.totalTxCount.toLocaleString() },
+                { label: 'Total native fees', value: `${(parseFloat(protocolMetrics.totalNativeFees) / 1e18).toFixed(6)} ETH` },
+                { label: 'Registered agents', value: protocolMetrics.agentCount.toLocaleString() },
+                { label: 'Active subscriptions', value: protocolMetrics.activeSubs.toLocaleString() },
+              ].map(({ label, value }) => (
+                <div key={label} className="flex justify-between text-sm border-b border-nexus-border pb-2 last:border-0 last:pb-0">
+                  <span className="text-nexus-text-dim">{label}</span>
+                  <span className="font-mono text-nexus-text">{value}</span>
+                </div>
+              )) : (
+                <div className="text-sm text-nexus-text-dim">Connect wallet to load metrics</div>
+              )}
             </div>
           </Card>
 

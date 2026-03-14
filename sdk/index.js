@@ -119,6 +119,33 @@ export class AgentClient {
     return nativeEscrowBalance;
   }
 
+  // ─── Batch Transfers ──────────────────────────────────────────────────
+
+  /**
+   * Transfer native ETH from escrow to multiple agents in one transaction.
+   * @param {Array<{address: string, amountWei: bigint, memo: string}>} recipients
+   */
+  async batchTransferNative(recipients) {
+    const addresses = recipients.map(r => r.address);
+    const amounts = recipients.map(r => r.amountWei);
+    const memos = recipients.map(r => r.memo || '');
+    const tx = await this.contract.batchTransferNativeBetweenAgents(addresses, amounts, memos);
+    return tx.wait();
+  }
+
+  /**
+   * Transfer ERC-20 tokens from escrow to multiple agents in one transaction.
+   * @param {string} tokenAddress
+   * @param {Array<{address: string, amountWei: bigint, memo: string}>} recipients
+   */
+  async batchTransferToken(tokenAddress, recipients) {
+    const addresses = recipients.map(r => r.address);
+    const amounts = recipients.map(r => r.amountWei);
+    const memos = recipients.map(r => r.memo || '');
+    const tx = await this.contract.batchTransferTokenBetweenAgents(tokenAddress, addresses, amounts, memos);
+    return tx.wait();
+  }
+
   // ─── ERC-20 Token Escrow ───────────────────────────────────────────────
 
   /** Deposit ERC-20 tokens (must approve contract first). */
@@ -242,6 +269,53 @@ export class AgentClient {
     return tx.wait();
   }
 
+  // ─── Subscriptions ───────────────────────────────────────────────────
+
+  /** Create a recurring payment subscription to another agent. Returns subscriptionId. */
+  async createSubscription(providerAddress, amountWei, { isNative = true, tokenAddress = ethers.ZeroAddress, intervalSeconds = 86400, totalPayments = 0 } = {}) {
+    const tx = await this.contract.createAgentSubscription(providerAddress, tokenAddress, amountWei, isNative, intervalSeconds, totalPayments);
+    const receipt = await tx.wait();
+    const event = receipt.logs.find(l => {
+      try { return this.contract.interface.parseLog(l)?.name === 'AgentSubscriptionCreated'; } catch { return false; }
+    });
+    if (event) {
+      return this.contract.interface.parseLog(event).args.subscriptionId;
+    }
+    return receipt;
+  }
+
+  /** Execute a due subscription payment. Permissionless — any agent can crank. */
+  async executeSubscription(subscriptionId) {
+    const tx = await this.contract.executeSubscriptionPayment(subscriptionId);
+    return tx.wait();
+  }
+
+  /** Cancel a subscription you created. */
+  async cancelSubscription(subscriptionId) {
+    const tx = await this.contract.cancelAgentSubscription(subscriptionId);
+    return tx.wait();
+  }
+
+  /** Get subscription details. */
+  async getSubscription(subscriptionId) {
+    const s = await this.contract.getAgentSubscription(subscriptionId);
+    const p = await this.contract.getAgentSubscriptionProgress(subscriptionId);
+    return {
+      id: s.id, subscriber: s.subscriber, provider: s.provider,
+      amount: s.amount, isNative: s.isNative, interval: s.interval,
+      nextPaymentDue: s.nextPaymentDue, active: s.active,
+      token: p.token, totalPayments: p.totalPayments, paymentsMade: p.paymentsMade,
+    };
+  }
+
+  // ─── Protocol Metrics ───────────────────────────────────────────────
+
+  /** Get protocol velocity metrics (total fees, tx count, agent count, active subs). */
+  async getProtocolMetrics() {
+    const [totalNativeFees, totalTxCount, agentCount, activeSubs] = await this.contract.getProtocolMetrics();
+    return { totalNativeFees, totalTxCount, agentCount, activeSubs };
+  }
+
   // ─── Event Listening ───────────────────────────────────────────────────
 
   /** Listen for incoming payment requests addressed to this agent. */
@@ -257,6 +331,14 @@ export class AgentClient {
     const filter = this.contract.filters.AgentToAgentNativeTransfer(null, this.address);
     this.contract.on(filter, (from, to, amount, memo) => {
       callback({ from, to, amount, memo });
+    });
+  }
+
+  /** Listen for incoming subscription payments to this agent (as provider). */
+  onSubscriptionPayment(callback) {
+    const filter = this.contract.filters.AgentSubscriptionPaymentExecuted(null, null, this.address);
+    this.contract.on(filter, (subscriptionId, subscriber, provider, netAmount, paymentNumber) => {
+      callback({ subscriptionId, subscriber, provider, netAmount, paymentNumber });
     });
   }
 

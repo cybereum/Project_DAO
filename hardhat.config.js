@@ -17,7 +17,16 @@ module.exports = {
   solidity: {
     version: "0.8.26",
     settings: {
-      optimizer: { enabled: true, runs: 1 },
+      optimizer: {
+        enabled: true,
+        runs: 1,
+        details: {
+          yul: true,
+          yulDetails: {
+            optimizerSteps: "dhfoDgvulfnTUtnIf[xa[r]EscLMcCTUtTOntnfDIulLculVcul[j]Tpeulxa[rul]xa[r]cLgvifCTUca[r]LSsTOtfDnca[r]Iulc]jmul[jul]VcTOculjmul:fDnTOcmu",
+          },
+        },
+      },
       viaIR: true,
     },
   },

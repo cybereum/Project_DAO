@@ -61,6 +61,20 @@ contract Project_DAO {
         uint256 settledAt;
     }
 
+    struct AgentSubscription {
+        uint256 id;
+        address subscriber;
+        address provider;
+        address token;         // address(0) for native ETH
+        uint256 amount;
+        uint256 interval;      // seconds between payments
+        uint256 nextPaymentDue;
+        uint256 totalPayments; // 0 = unlimited
+        uint256 paymentsMade;
+        bool active;
+        bool isNative;
+    }
+
     struct Member {
         address memberAddress;
         uint256 votingPower;
@@ -143,6 +157,16 @@ contract Project_DAO {
     mapping(address => mapping(address => uint256)) public agentTokenEscrowBalances;
     mapping(uint256 => AgentPaymentRequest) public agentPaymentRequests;
     uint256 public currentAgentPaymentRequestId = 1;
+
+    // ─── Protocol Velocity Metrics ─────────────────────────────────────────────
+    uint256 public totalNativeFeesCollected;
+    uint256 public totalTransactionCount;
+
+    // ─── Subscription State ──────────────────────────────────────────────────
+    mapping(uint256 => AgentSubscription) private _agentSubscriptions;
+    uint256 public currentAgentSubscriptionId = 1;
+    uint256 public activeSubscriptionCount;
+
     Proposal[] public proposals;
     uint256 public currentProposalId = 1;
     uint256 public votingPeriod = 7 days;
@@ -188,6 +212,15 @@ contract Project_DAO {
     event CybereumTreasuryUpdated(address indexed treasury);
     event CybereumFeeConfigUpdated(uint256 feeBps, uint256 assetTransferFlatFeeWei);
     event CybereumFeePaid(address indexed payer, address indexed token, uint256 amount, string context);
+
+    // --- Batch Transfer events ---
+    event AgentBatchNativeTransfer(address indexed from, uint256 recipientCount, uint256 totalAmount, uint256 totalFees);
+    event AgentBatchTokenTransfer(address indexed from, address indexed token, uint256 recipientCount, uint256 totalAmount, uint256 totalFees);
+
+    // --- Subscription events ---
+    event AgentSubscriptionCreated(uint256 indexed subscriptionId, address indexed subscriber, address indexed provider, uint256 amount, uint256 interval);
+    event AgentSubscriptionPaymentExecuted(uint256 indexed subscriptionId, address indexed subscriber, address indexed provider, uint256 netAmount, uint256 paymentNumber);
+    event AgentSubscriptionCancelled(uint256 indexed subscriptionId);
 
     // --- Agent Broadcast events ---
     /// @notice Emitted when the owner or a governance action broadcasts a message to all agents.
@@ -463,8 +496,10 @@ contract Project_DAO {
         if (fee > 0) {
             (bool ok,) = payable(cybereumTreasury).call{value: fee}("");
             require(ok, "Native fee transfer failed.");
+            totalNativeFeesCollected += fee;
             emit CybereumFeePaid(msg.sender, address(0), fee, _context);
         }
+        totalTransactionCount++;
         return fee;
     }
 
@@ -476,6 +511,7 @@ contract Project_DAO {
             require(feeTransferSuccess, "Token fee transfer failed.");
             emit CybereumFeePaid(msg.sender, _token, fee, _context);
         }
+        totalTransactionCount++;
         return fee;
     }
 
@@ -514,8 +550,10 @@ contract Project_DAO {
         if (fee > 0) {
             (bool feeOk,) = payable(cybereumTreasury).call{value: fee}("");
             require(feeOk, "Native fee transfer failed.");
+            totalNativeFeesCollected += fee;
             emit CybereumFeePaid(msg.sender, address(0), fee, "withdraw_native_escrow");
         }
+        totalTransactionCount++;
         (bool withdrawOk,) = payable(msg.sender).call{value: netAmount}("");
         require(withdrawOk, "Native withdrawal transfer failed.");
         emit AgentNativeEscrowWithdrawn(msg.sender, netAmount);
@@ -537,8 +575,10 @@ contract Project_DAO {
         if (fee > 0) {
             (bool feeOk,) = payable(cybereumTreasury).call{value: fee}("");
             require(feeOk, "Native fee transfer failed.");
+            totalNativeFeesCollected += fee;
             emit CybereumFeePaid(msg.sender, address(0), fee, "agent_native_transfer");
         }
+        totalTransactionCount++;
 
         emit AgentToAgentNativeTransfer(msg.sender, _to, netAmount, _memo);
     }
@@ -570,6 +610,7 @@ contract Project_DAO {
         agentTokenEscrowBalances[msg.sender][_token] -= _amount;
         bool feeSuccess = IERC20(_token).transfer(cybereumTreasury, fee);
         require(feeSuccess, "Token fee transfer failed.");
+        totalTransactionCount++;
         emit CybereumFeePaid(msg.sender, _token, fee, "withdraw_token_escrow");
 
         bool success = IERC20(_token).transfer(msg.sender, netAmount);
@@ -596,6 +637,7 @@ contract Project_DAO {
             require(feeTransferSuccess, "Token fee transfer failed.");
             emit CybereumFeePaid(msg.sender, _token, fee, "agent_token_transfer");
         }
+        totalTransactionCount++;
 
         emit AgentToAgentTokenTransfer(msg.sender, _to, _token, netAmount, _memo);
     }
@@ -614,6 +656,8 @@ contract Project_DAO {
 
         (bool feeOk,) = payable(cybereumTreasury).call{value: msg.value}("");
         require(feeOk, "Native fee transfer failed.");
+        totalNativeFeesCollected += msg.value;
+        totalTransactionCount++;
         emit CybereumFeePaid(msg.sender, address(0), msg.value, "agent_asset_transfer");
 
         IERC721Lite(_assetContract).transferFrom(msg.sender, _to, _assetId);
@@ -692,6 +736,202 @@ contract Project_DAO {
 
         request.status = PaymentStatus.Cancelled;
         emit AgentPaymentRequestCancelled(_requestId, msg.sender);
+    }
+
+    // --- Batch Transfers (Velocity Maximizers) ---
+
+    /// @dev Internal: single native transfer within a batch.
+    function _batchNativeOne(address _from, address _to, uint256 _amount, string calldata _memo) internal returns (uint256) {
+        require(agents[_to].registered, "Recipient not registered.");
+        require(_to != _from, "Cannot transfer to self.");
+        require(_amount > 0, "Zero amount.");
+        uint256 fee = _calculateFee(_amount);
+        require(_amount > fee, "Too small after fee.");
+        agents[_from].nativeEscrowBalance -= _amount;
+        agents[_to].nativeEscrowBalance += (_amount - fee);
+        if (fee > 0) {
+            (bool ok,) = payable(cybereumTreasury).call{value: fee}("");
+            require(ok, "Fee failed.");
+            totalNativeFeesCollected += fee;
+        }
+        totalTransactionCount++;
+        emit AgentToAgentNativeTransfer(_from, _to, _amount - fee, _memo);
+        return fee;
+    }
+
+    /// @notice Transfer native ETH from escrow to multiple agents in one tx. Each transfer pays the standard fee.
+    function batchTransferNativeBetweenAgents(
+        address[] calldata _recipients,
+        uint256[] calldata _amounts,
+        string[] calldata _memos
+    ) external onlyRegisteredAgent whenNotPaused {
+        uint256 len = _recipients.length;
+        require(len == _amounts.length && len == _memos.length, "Array length mismatch.");
+        require(len > 0 && len <= 50, "Invalid batch size.");
+        require(cybereumTreasury != address(0), "Treasury not configured.");
+        uint256 totalFees;
+        uint256 totalAmount;
+        for (uint256 i; i < len;) {
+            totalFees += _batchNativeOne(msg.sender, _recipients[i], _amounts[i], _memos[i]);
+            totalAmount += _amounts[i];
+            unchecked { ++i; }
+        }
+        emit AgentBatchNativeTransfer(msg.sender, len, totalAmount, totalFees);
+    }
+
+    /// @dev Internal: single token transfer within a batch.
+    function _batchTokenOne(address _token, address _from, address _to, uint256 _amount, string calldata _memo) internal returns (uint256) {
+        require(agents[_to].registered, "Recipient not registered.");
+        require(_to != _from, "Cannot transfer to self.");
+        require(_amount > 0, "Zero amount.");
+        uint256 fee = _calculateFee(_amount);
+        require(_amount > fee, "Too small after fee.");
+        agentTokenEscrowBalances[_from][_token] -= _amount;
+        agentTokenEscrowBalances[_to][_token] += (_amount - fee);
+        if (fee > 0) {
+            bool ok = IERC20(_token).transfer(cybereumTreasury, fee);
+            require(ok, "Fee failed.");
+        }
+        totalTransactionCount++;
+        emit AgentToAgentTokenTransfer(_from, _to, _token, _amount - fee, _memo);
+        return fee;
+    }
+
+    /// @notice Transfer ERC-20 tokens from escrow to multiple agents in one tx.
+    function batchTransferTokenBetweenAgents(
+        address _token,
+        address[] calldata _recipients,
+        uint256[] calldata _amounts,
+        string[] calldata _memos
+    ) external onlyRegisteredAgent whenNotPaused {
+        require(_token != address(0), "Invalid token.");
+        uint256 len = _recipients.length;
+        require(len == _amounts.length && len == _memos.length, "Array length mismatch.");
+        require(len > 0 && len <= 50, "Invalid batch size.");
+        require(cybereumTreasury != address(0), "Treasury not configured.");
+        uint256 totalFees;
+        uint256 totalAmount;
+        for (uint256 i; i < len;) {
+            totalFees += _batchTokenOne(_token, msg.sender, _recipients[i], _amounts[i], _memos[i]);
+            totalAmount += _amounts[i];
+            unchecked { ++i; }
+        }
+        emit AgentBatchTokenTransfer(msg.sender, _token, len, totalAmount, totalFees);
+    }
+
+    // --- Agent Subscriptions (Recurring Payment Rails) ---
+
+    /// @notice Create a recurring payment subscription from subscriber to provider.
+    function createAgentSubscription(
+        address _provider,
+        address _token,
+        uint256 _amount,
+        bool _isNative,
+        uint256 _interval,
+        uint256 _totalPayments
+    ) external onlyRegisteredAgent whenNotPaused returns (uint256) {
+        require(agents[_provider].registered, "Provider not registered.");
+        require(_provider != msg.sender, "Cannot subscribe to self.");
+        require(_amount > 0, "Zero amount.");
+        require(_interval >= 60, "Interval must be >= 60s.");
+        if (_isNative) {
+            require(_token == address(0), "Native: use zero token.");
+        } else {
+            require(_token != address(0), "Token: provide address.");
+        }
+        uint256 subId = currentAgentSubscriptionId++;
+        _agentSubscriptions[subId] = AgentSubscription({
+            id: subId,
+            subscriber: msg.sender,
+            provider: _provider,
+            token: _token,
+            amount: _amount,
+            interval: _interval,
+            nextPaymentDue: block.timestamp,
+            totalPayments: _totalPayments,
+            paymentsMade: 0,
+            active: true,
+            isNative: _isNative
+        });
+        activeSubscriptionCount++;
+        emit AgentSubscriptionCreated(subId, msg.sender, _provider, _amount, _interval);
+        return subId;
+    }
+
+    /// @notice Execute a due subscription payment. Permissionless — anyone can crank.
+    function executeSubscriptionPayment(uint256 _subId) external whenNotPaused {
+        AgentSubscription storage sub = _agentSubscriptions[_subId];
+        require(sub.id != 0, "Sub not found.");
+        require(sub.active, "Sub inactive.");
+        require(block.timestamp >= sub.nextPaymentDue, "Not yet due.");
+        if (sub.totalPayments > 0) {
+            require(sub.paymentsMade < sub.totalPayments, "All paid.");
+        }
+        require(cybereumTreasury != address(0), "Treasury not configured.");
+        uint256 fee = _calculateFee(sub.amount);
+        require(sub.amount > fee, "Too small after fee.");
+        uint256 net = sub.amount - fee;
+        if (sub.isNative) {
+            require(agents[sub.subscriber].nativeEscrowBalance >= sub.amount, "Insufficient balance.");
+            agents[sub.subscriber].nativeEscrowBalance -= sub.amount;
+            agents[sub.provider].nativeEscrowBalance += net;
+            if (fee > 0) {
+                (bool ok,) = payable(cybereumTreasury).call{value: fee}("");
+                require(ok, "Fee failed.");
+                totalNativeFeesCollected += fee;
+            }
+        } else {
+            require(agentTokenEscrowBalances[sub.subscriber][sub.token] >= sub.amount, "Insufficient balance.");
+            agentTokenEscrowBalances[sub.subscriber][sub.token] -= sub.amount;
+            agentTokenEscrowBalances[sub.provider][sub.token] += net;
+            if (fee > 0) {
+                bool ok = IERC20(sub.token).transfer(cybereumTreasury, fee);
+                require(ok, "Fee failed.");
+            }
+        }
+        totalTransactionCount++;
+        sub.paymentsMade++;
+        sub.nextPaymentDue = block.timestamp + sub.interval;
+        if (sub.totalPayments > 0 && sub.paymentsMade >= sub.totalPayments) {
+            sub.active = false;
+            activeSubscriptionCount--;
+        }
+        emit AgentSubscriptionPaymentExecuted(_subId, sub.subscriber, sub.provider, net, sub.paymentsMade);
+    }
+
+    /// @notice Cancel a subscription. Only the subscriber can cancel.
+    function cancelAgentSubscription(uint256 _subId) external whenNotPaused {
+        AgentSubscription storage sub = _agentSubscriptions[_subId];
+        require(sub.id != 0, "Sub not found.");
+        require(sub.active, "Already cancelled.");
+        require(sub.subscriber == msg.sender, "Only subscriber.");
+        sub.active = false;
+        activeSubscriptionCount--;
+        emit AgentSubscriptionCancelled(_subId);
+    }
+
+    /// @notice Fetch a subscription by ID.
+    function getAgentSubscription(uint256 _subId) external view returns (
+        uint256 id, address subscriber, address provider, uint256 amount,
+        bool isNative, uint256 interval, uint256 nextPaymentDue, bool active
+    ) {
+        AgentSubscription storage s = _agentSubscriptions[_subId];
+        return (s.id, s.subscriber, s.provider, s.amount, s.isNative, s.interval, s.nextPaymentDue, s.active);
+    }
+
+    /// @notice Fetch subscription payment progress.
+    function getAgentSubscriptionProgress(uint256 _subId) external view returns (
+        address token, uint256 totalPayments, uint256 paymentsMade
+    ) {
+        AgentSubscription storage s = _agentSubscriptions[_subId];
+        return (s.token, s.totalPayments, s.paymentsMade);
+    }
+
+    /// @notice Get protocol velocity metrics.
+    function getProtocolMetrics() external view returns (
+        uint256 totalNativeFees, uint256 totalTxCount, uint256 agentCount, uint256 activeSubs
+    ) {
+        return (totalNativeFeesCollected, totalTransactionCount, agentAddresses.length, activeSubscriptionCount);
     }
 
     // --- Member Management ---

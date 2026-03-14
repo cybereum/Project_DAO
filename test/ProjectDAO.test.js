@@ -787,3 +787,265 @@ describe("System integration: full agent lifecycle", () => {
     expect(aliceWallet1 - aliceWallet0).to.equal(amount - fee);
   });
 });
+
+// ─── Batch Transfers ─────────────────────────────────────────────────────────
+
+describe("Batch native transfers", () => {
+  it("transfers to multiple agents in one tx with per-transfer fees", async () => {
+    const { dao, owner, alice, bob, treasury } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+
+    // Owner deposits
+    const deposit = ethers.parseEther("10");
+    await dao.depositNativeToEscrow({ value: deposit });
+
+    const amt1 = ethers.parseEther("1");
+    const amt2 = ethers.parseEther("2");
+    const fee1 = amt1 * 5n / 10000n;
+    const fee2 = amt2 * 5n / 10000n;
+
+    await dao.batchTransferNativeBetweenAgents(
+      [alice.address, bob.address],
+      [amt1, amt2],
+      ["pay alice", "pay bob"]
+    );
+
+    const [, , aliceBal] = await dao.getAgentProfile(alice.address);
+    const [, , bobBal] = await dao.getAgentProfile(bob.address);
+    expect(aliceBal).to.equal(amt1 - fee1);
+    expect(bobBal).to.equal(amt2 - fee2);
+  });
+
+  it("emits AgentBatchNativeTransfer event", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("5") });
+
+    const amt = ethers.parseEther("1");
+    await expect(
+      dao.batchTransferNativeBetweenAgents([alice.address], [amt], ["memo"])
+    ).to.emit(dao, "AgentBatchNativeTransfer");
+  });
+
+  it("reverts on array length mismatch", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("5") });
+
+    await expect(
+      dao.batchTransferNativeBetweenAgents(
+        [alice.address], [ethers.parseEther("1"), ethers.parseEther("2")], ["memo"]
+      )
+    ).to.be.revertedWith("Array length mismatch.");
+  });
+
+  it("reverts on empty batch", async () => {
+    const { dao } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await expect(
+      dao.batchTransferNativeBetweenAgents([], [], [])
+    ).to.be.revertedWith("Invalid batch size.");
+  });
+
+  it("reverts on self-transfer within batch", async () => {
+    const { dao, owner } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("5") });
+
+    await expect(
+      dao.batchTransferNativeBetweenAgents(
+        [owner.address], [ethers.parseEther("1")], ["self"]
+      )
+    ).to.be.revertedWith("Cannot transfer to self.");
+  });
+});
+
+// ─── Subscriptions ───────────────────────────────────────────────────────────
+
+describe("Agent subscriptions", () => {
+  it("creates a native subscription and executes payment", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+
+    // Owner deposits escrow to fund subscription
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("5") });
+
+    const amt = ethers.parseEther("0.1");
+    // owner subscribes to alice
+    const tx = await dao.createAgentSubscription(
+      alice.address, ethers.ZeroAddress, amt, true, 60, 3
+    );
+    const receipt = await tx.wait();
+
+    // Verify subscription created
+    const sub = await dao.getAgentSubscription(1n);
+    expect(sub.subscriber).to.equal(owner.address);
+    expect(sub.provider).to.equal(alice.address);
+    expect(sub.active).to.be.true;
+
+    // Execute first payment (immediately due since nextPaymentDue = block.timestamp)
+    await dao.executeSubscriptionPayment(1n);
+
+    const fee = amt * 5n / 10000n;
+    const [, , aliceBal] = await dao.getAgentProfile(alice.address);
+    expect(aliceBal).to.equal(amt - fee);
+
+    // Check progress
+    const progress = await dao.getAgentSubscriptionProgress(1n);
+    expect(progress.paymentsMade).to.equal(1n);
+    expect(progress.totalPayments).to.equal(3n);
+  });
+
+  it("reverts execution before payment is due", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("5") });
+
+    await dao.createAgentSubscription(
+      alice.address, ethers.ZeroAddress, ethers.parseEther("0.1"), true, 3600, 0
+    );
+
+    // Execute first (due immediately)
+    await dao.executeSubscriptionPayment(1n);
+
+    // Try again immediately — not yet due
+    await expect(dao.executeSubscriptionPayment(1n)).to.be.revertedWith("Not yet due.");
+  });
+
+  it("auto-deactivates when all payments completed", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("5") });
+
+    // 1 total payment, 60s interval
+    await dao.createAgentSubscription(
+      alice.address, ethers.ZeroAddress, ethers.parseEther("0.01"), true, 60, 1
+    );
+    expect(await dao.activeSubscriptionCount()).to.equal(1n);
+
+    await dao.executeSubscriptionPayment(1n);
+
+    // Should be auto-deactivated
+    const sub = await dao.getAgentSubscription(1n);
+    expect(sub.active).to.be.false;
+    expect(await dao.activeSubscriptionCount()).to.equal(0n);
+  });
+
+  it("subscriber can cancel", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+
+    await dao.createAgentSubscription(
+      alice.address, ethers.ZeroAddress, ethers.parseEther("0.1"), true, 60, 0
+    );
+    expect(await dao.activeSubscriptionCount()).to.equal(1n);
+
+    await dao.cancelAgentSubscription(1n);
+    const sub = await dao.getAgentSubscription(1n);
+    expect(sub.active).to.be.false;
+    expect(await dao.activeSubscriptionCount()).to.equal(0n);
+  });
+
+  it("non-subscriber cannot cancel", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+
+    await dao.createAgentSubscription(
+      alice.address, ethers.ZeroAddress, ethers.parseEther("0.1"), true, 60, 0
+    );
+
+    await expect(
+      dao.connect(alice).cancelAgentSubscription(1n)
+    ).to.be.revertedWith("Only subscriber.");
+  });
+
+  it("reverts execution on cancelled subscription", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+
+    await dao.createAgentSubscription(
+      alice.address, ethers.ZeroAddress, ethers.parseEther("0.1"), true, 60, 0
+    );
+    await dao.cancelAgentSubscription(1n);
+
+    await expect(dao.executeSubscriptionPayment(1n)).to.be.revertedWith("Sub inactive.");
+  });
+});
+
+// ─── Protocol Velocity Metrics ───────────────────────────────────────────────
+
+describe("Protocol velocity metrics", () => {
+  it("tracks totalTransactionCount across operations", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+
+    expect(await dao.totalTransactionCount()).to.equal(0n);
+
+    // Deposit (1 tx)
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("5") });
+    expect(await dao.totalTransactionCount()).to.equal(1n);
+
+    // Transfer (1 tx)
+    await dao.transferNativeBetweenAgents(alice.address, ethers.parseEther("1"), "test");
+    expect(await dao.totalTransactionCount()).to.equal(2n);
+
+    // Withdraw (1 tx)
+    const [, , aliceBal] = await dao.getAgentProfile(alice.address);
+    await dao.connect(alice).withdrawNativeFromEscrow(aliceBal);
+    expect(await dao.totalTransactionCount()).to.equal(3n);
+  });
+
+  it("tracks totalNativeFeesCollected", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+
+    expect(await dao.totalNativeFeesCollected()).to.equal(0n);
+
+    const deposit = ethers.parseEther("10");
+    await dao.depositNativeToEscrow({ value: deposit });
+    const expectedFee = deposit * 5n / 10000n;
+    expect(await dao.totalNativeFeesCollected()).to.equal(expectedFee);
+  });
+
+  it("getProtocolMetrics returns correct values", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("1") });
+
+    const metrics = await dao.getProtocolMetrics();
+    expect(metrics.totalNativeFees).to.be.greaterThan(0n);
+    expect(metrics.totalTxCount).to.equal(1n);
+    expect(metrics.agentCount).to.equal(2n); // owner + alice
+    expect(metrics.activeSubs).to.equal(0n);
+  });
+
+  it("batch transfers increment transaction count per transfer", async () => {
+    const { dao, owner, alice, bob } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("10") });
+
+    await dao.batchTransferNativeBetweenAgents(
+      [alice.address, bob.address],
+      [ethers.parseEther("1"), ethers.parseEther("1")],
+      ["a", "b"]
+    );
+
+    // deposit = 1 tx, batch of 2 = 2 more txs
+    expect(await dao.totalTransactionCount()).to.equal(3n);
+  });
+});

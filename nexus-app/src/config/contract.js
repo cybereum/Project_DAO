@@ -79,6 +79,28 @@ export const PROJECT_DAO_ABI = [
   'event FeatureKitUpvoted(uint256 indexed kitId, address indexed voter, uint256 newVoteCount)',
   'event FeatureKitStatusChanged(uint256 indexed kitId, uint8 newStatus, string reason)',
 
+  // ─── Batch Transfers ─────────────────────────────────────────────────────
+  'function batchTransferNativeBetweenAgents(address[] _recipients, uint256[] _amounts, string[] _memos) external',
+  'function batchTransferTokenBetweenAgents(address _token, address[] _recipients, uint256[] _amounts, string[] _memos) external',
+  'event AgentBatchNativeTransfer(address indexed from, uint256 recipientCount, uint256 totalAmount, uint256 totalFees)',
+  'event AgentBatchTokenTransfer(address indexed from, address indexed token, uint256 recipientCount, uint256 totalAmount, uint256 totalFees)',
+
+  // ─── Subscriptions ──────────────────────────────────────────────────────
+  'function createAgentSubscription(address _provider, address _token, uint256 _amount, bool _isNative, uint256 _interval, uint256 _totalPayments) external returns (uint256)',
+  'function executeSubscriptionPayment(uint256 _subId) external',
+  'function cancelAgentSubscription(uint256 _subId) external',
+  'function getAgentSubscription(uint256 _subId) external view returns (uint256 id, address subscriber, address provider, uint256 amount, bool isNative, uint256 interval, uint256 nextPaymentDue, bool active)',
+  'function getAgentSubscriptionProgress(uint256 _subId) external view returns (address token, uint256 totalPayments, uint256 paymentsMade)',
+  'function activeSubscriptionCount() external view returns (uint256)',
+  'event AgentSubscriptionCreated(uint256 indexed subscriptionId, address indexed subscriber, address indexed provider, uint256 amount, uint256 interval)',
+  'event AgentSubscriptionPaymentExecuted(uint256 indexed subscriptionId, address indexed subscriber, address indexed provider, uint256 netAmount, uint256 paymentNumber)',
+  'event AgentSubscriptionCancelled(uint256 indexed subscriptionId)',
+
+  // ─── Protocol Velocity Metrics ──────────────────────────────────────────
+  'function totalNativeFeesCollected() external view returns (uint256)',
+  'function totalTransactionCount() external view returns (uint256)',
+  'function getProtocolMetrics() external view returns (uint256 totalNativeFees, uint256 totalTxCount, uint256 agentCount, uint256 activeSubs)',
+
   // ─── Open Onboarding (Stake to Join) ─────────────────────────────────────
   'function stakeAndJoin(string calldata metadataURI) external payable',
   'function leaveDAO() external',

@@ -276,6 +276,7 @@ export function useAppState() {
   const [agentTokenBalances, setAgentTokenBalances] = useState({});
   const [agentActivity, setAgentActivity] = useState([]);
   const [agentActivityLoading, setAgentActivityLoading] = useState(false);
+  const [protocolMetrics, setProtocolMetrics] = useState(null);
   const lastAgentActivityBlockRef = useRef(0);
   const lastAgentActivityWalletRef = useRef('');
 
@@ -289,6 +290,20 @@ export function useAppState() {
       ]);
       setAgentFeeBps(Number(feeBps));
       setAgentFlatFeeWei(flatFee.toString());
+    } catch { /* no-op if contract not configured */ }
+  }, [getDaoReadContract]);
+
+  const loadProtocolMetrics = useCallback(async () => {
+    const contract = getDaoReadContract();
+    if (!contract) return;
+    try {
+      const metrics = await contract.getProtocolMetrics();
+      setProtocolMetrics({
+        totalNativeFees: metrics.totalNativeFees.toString(),
+        totalTxCount: Number(metrics.totalTxCount),
+        agentCount: Number(metrics.agentCount),
+        activeSubs: Number(metrics.activeSubs),
+      });
     } catch { /* no-op if contract not configured */ }
   }, [getDaoReadContract]);
 
@@ -866,6 +881,8 @@ export function useAppState() {
     agentDepositToken, agentWithdrawToken, agentTransferToken, agentTransferAsset,
     agentLoadTokenBalance, loadAgentActivity,
     agentCreatePaymentRequest, agentSettlePaymentRequest, agentCancelPaymentRequest,
+    // protocol metrics
+    protocolMetrics, loadProtocolMetrics,
     // feature kits
     featureKits, featureKitsLoading,
     loadFeatureKits, submitFeatureKit, upvoteFeatureKit,
@@ -889,6 +906,7 @@ export function useAppState() {
     agentDepositToken, agentWithdrawToken, agentTransferToken, agentTransferAsset,
     agentLoadTokenBalance, loadAgentActivity,
     agentCreatePaymentRequest, agentSettlePaymentRequest, agentCancelPaymentRequest,
+    protocolMetrics, loadProtocolMetrics,
     featureKits, featureKitsLoading,
     loadFeatureKits, submitFeatureKit, upvoteFeatureKit,
     stakeAndJoin, leaveDAO,

@@ -253,12 +253,37 @@ transferTokenBetweenAgents(address token, address to, uint256 amount, string mem
 transferAssetBetweenAgents(address assetContract, address to, uint256 tokenId, string memo)   payable (exact assetTransferFlatFeeWei)
 ```
 
+#### Batch transfers (velocity maximizers)
+```
+batchTransferNativeBetweenAgents(address[] recipients, uint256[] amounts, string[] memos)
+batchTransferTokenBetweenAgents(address token, address[] recipients, uint256[] amounts, string[] memos)
+```
+Each individual transfer within a batch charges the standard protocol fee. Max 50 recipients per batch.
+
 #### Payment requests
 ```
 createAgentPaymentRequest(address payer, address token, uint256 amount, bool isNative, string description) → requestId
 settleAgentPaymentRequest(uint256 requestId)   payable if isNative
 cancelAgentPaymentRequest(uint256 requestId)
 getAgentPaymentRequest(uint256 requestId) → AgentPaymentRequest
+getAgentPaymentRequestStatus(uint256 requestId) → (PaymentStatus, createdAt, settledAt)
+```
+
+#### Subscriptions (recurring payment rails)
+```
+createAgentSubscription(address provider, address token, uint256 amount, bool isNative, uint256 interval, uint256 totalPayments) → subscriptionId
+executeSubscriptionPayment(uint256 subscriptionId)              permissionless crank
+cancelAgentSubscription(uint256 subscriptionId)                 only subscriber
+getAgentSubscription(uint256 subscriptionId) → (id, subscriber, provider, amount, isNative, interval, nextPaymentDue, active)
+getAgentSubscriptionProgress(uint256 subscriptionId) → (token, totalPayments, paymentsMade)
+```
+
+#### Protocol velocity metrics
+```
+totalNativeFeesCollected                                        → uint256 (running total of all native fees ever collected)
+totalTransactionCount                                           → uint256 (incremented on every fee-collecting operation)
+activeSubscriptionCount                                         → uint256
+getProtocolMetrics() → (totalNativeFees, totalTxCount, agentCount, activeSubs)
 ```
 
 #### Economic projects
@@ -345,6 +370,9 @@ cybereumFeeBps                         → uint256
 assetTransferFlatFeeWei                → uint256
 cybereumTreasury                       → address
 minStakeToJoin                         → uint256
+totalNativeFeesCollected               → uint256 (running total of all native fees)
+totalTransactionCount                  → uint256 (incremented on every fee-collecting op)
+activeSubscriptionCount                → uint256
 ```
 
 ### Key events
@@ -365,6 +393,15 @@ AgentNativeEscrowWithdrawn(address agent, uint256 amount)
 AgentPaymentRequestCreated(uint256 requestId, address requester, address payer, ...)
 AgentPaymentRequestSettled(uint256 requestId, address payer, address requester, uint256 settledAt)
 AgentPaymentRequestCancelled(uint256 requestId, address requester)
+
+// Batch transfer events
+AgentBatchNativeTransfer(address from, uint256 recipientCount, uint256 totalAmount, uint256 totalFees)
+AgentBatchTokenTransfer(address from, address token, uint256 recipientCount, uint256 totalAmount, uint256 totalFees)
+
+// Subscription events
+AgentSubscriptionCreated(uint256 subscriptionId, address subscriber, address provider, uint256 amount, uint256 interval)
+AgentSubscriptionPaymentExecuted(uint256 subscriptionId, address subscriber, address provider, uint256 netAmount, uint256 paymentNumber)
+AgentSubscriptionCancelled(uint256 subscriptionId)
 
 // Agent registration events
 AgentRegistered(address agent, string metadataURI)
@@ -399,6 +436,7 @@ MilestoneType   { REGULAR, PAYMENT }
 // Structs
 AgentProfile          { registered, metadataURI, nativeEscrowBalance }
 AgentPaymentRequest   { id, requester, payer, token, amount, isNative, description, status, createdAt, settledAt }
+AgentSubscription     { id, subscriber, provider, token, amount, interval, nextPaymentDue, totalPayments, paymentsMade, active, isNative }
 EconomicProject       { id, proposer, metadataURI, targetBudget, totalFunded, deadline, status, createdAt, contributorCount, funderCount }
 FeatureKit            { id, submitter, priority, status, metadataURI, voteCount, submittedAt }
 Member                { memberAddress, votingPower, privileges[], isMember }
@@ -720,6 +758,9 @@ cd sdk && npm install
 | `agent.withdrawToken(token, amountWei)` | Withdraw tokens from escrow |
 | `agent.transferToken(token, to, amountWei, memo)` | Agent-to-agent token transfer |
 | `agent.getTokenBalance(token)` | Get token escrow balance |
+| **Batch Transfers** | |
+| `agent.batchTransferNative(recipients)` | Transfer ETH to multiple agents in one tx |
+| `agent.batchTransferToken(token, recipients)` | Transfer tokens to multiple agents in one tx |
 | **Payment Requests** | |
 | `agent.createPaymentRequest(payer, amount, opts)` | Invoice another agent |
 | `agent.settlePaymentRequest(requestId)` | Pay an invoice |
@@ -738,9 +779,17 @@ cd sdk && npm install
 | `agent.cancelProject(id)` | Cancel project |
 | `agent.claimProjectShare(id)` | Claim revenue share |
 | `agent.refundProjectFunder(id)` | Refund funder |
+| **Subscriptions** | |
+| `agent.createSubscription(provider, amount, opts)` | Create recurring payment |
+| `agent.executeSubscription(subscriptionId)` | Crank a due subscription payment |
+| `agent.cancelSubscription(subscriptionId)` | Cancel subscription |
+| `agent.getSubscription(subscriptionId)` | Get subscription details + progress |
+| **Protocol Metrics** | |
+| `agent.getProtocolMetrics()` | Fetch velocity stats (fees, tx count, agents, subs) |
 | **Event Listeners** | |
 | `agent.onPaymentRequest(callback)` | Listen for incoming invoices |
 | `agent.onTransferReceived(callback)` | Listen for incoming transfers |
+| `agent.onSubscriptionPayment(callback)` | Listen for incoming subscription payments |
 | `agent.onBroadcast(callback)` | Listen for protocol broadcasts |
 | `agent.removeAllListeners()` | Stop all listeners |
 
