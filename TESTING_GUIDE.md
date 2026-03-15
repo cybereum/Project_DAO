@@ -181,13 +181,34 @@ Each test calls `deploy()` for a fresh contract instance, ensuring test isolatio
 | owner can change kit status | Status lifecycle works |
 | getFeatureKits paginates correctly | Pagination works |
 
+
+### Token Escrow + Token Payment Requests (3 tests)
+| Test | What It Verifies |
+|------|-----------------|
+| depositTokenToEscrow credits net amount and pays fee | Token escrow accounting and treasury fee routing |
+| transferTokenBetweenAgents moves net escrow | Token agent-to-agent transfer net of fee |
+| settles token payment request | Token request settlement and status transition |
+
+### Asset Transfer Between Agents (1 test)
+| Test | What It Verifies |
+|------|-----------------|
+| transfers NFT and routes flat fee to treasury | NFT transfer with flat native fee collection |
+
 ### System Integration (2 tests)
 | Test | What It Verifies |
 |------|-----------------|
 | two agents: deposit, transfer, withdraw end-to-end | Full lifecycle with fee verification |
 | payment request full round-trip | Create -> settle -> verify balances |
 
-**Total: 58 tests across 13 test suites**
+**Total: 66 tests across 15 test suites**
+
+---
+
+
+## 3.1 Coverage Runner Limitation
+
+- `npm run test:coverage` currently fails in this repository because `Project_DAO` is very large and deployment runs out of gas in the coverage-instrumented EVM, even though the normal Hardhat test run passes.
+- Use `npm test` as the CI gate for now, and treat coverage output as non-authoritative until the contract is split/refactored or coverage config is adjusted further.
 
 ---
 

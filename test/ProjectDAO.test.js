@@ -711,6 +711,116 @@ describe("Feature kit pipeline", () => {
   });
 });
 
+
+// ─── Token Escrow & Token Payment Requests ───────────────────────────────────
+
+describe("Token escrow and token payment requests", () => {
+  async function deployWithToken() {
+    const ctx = await deploy();
+    const Token = await ethers.getContractFactory("MockERC20");
+    const token = await Token.deploy();
+    await token.waitForDeployment();
+    return { ...ctx, token };
+  }
+
+  it("depositTokenToEscrow credits net amount and pays treasury fee", async () => {
+    const { dao, owner, treasury, token } = await deployWithToken();
+    await dao.registerAgent("ipfs://owner");
+
+    const amount = ethers.parseEther("100");
+    await token.approve(await dao.getAddress(), amount);
+
+    const treasuryBefore = await token.balanceOf(treasury.address);
+    await dao.depositTokenToEscrow(await token.getAddress(), amount);
+    const treasuryAfter = await token.balanceOf(treasury.address);
+
+    const fee = amount * 5n / 10000n;
+    const escrowBal = await dao.getAgentTokenBalance(owner.address, await token.getAddress());
+    expect(escrowBal).to.equal(amount - fee);
+    expect(treasuryAfter - treasuryBefore).to.equal(fee);
+  });
+
+  it("transferTokenBetweenAgents moves net escrow and emits event", async () => {
+    const { dao, owner, alice, token } = await deployWithToken();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+
+    const depositAmount = ethers.parseEther("100");
+    await token.approve(await dao.getAddress(), depositAmount);
+    await dao.depositTokenToEscrow(await token.getAddress(), depositAmount);
+
+    const transferAmt = ethers.parseEther("30");
+    const fee = transferAmt * 5n / 10000n;
+
+    await expect(
+      dao.transferTokenBetweenAgents(await token.getAddress(), alice.address, transferAmt, "token memo")
+    ).to.emit(dao, "AgentToAgentTokenTransfer");
+
+    const senderBal = await dao.getAgentTokenBalance(owner.address, await token.getAddress());
+    const recvBal = await dao.getAgentTokenBalance(alice.address, await token.getAddress());
+
+    const depositFee = depositAmount * 5n / 10000n;
+    expect(senderBal).to.equal((depositAmount - depositFee) - transferAmt);
+    expect(recvBal).to.equal(transferAmt - fee);
+  });
+
+  it("settles token payment request from payer to requester wallet (net of fee)", async () => {
+    const { dao, owner, alice, token, treasury } = await deployWithToken();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+
+    const amount = ethers.parseEther("50");
+    await dao.connect(alice).createAgentPaymentRequest(
+      owner.address,
+      await token.getAddress(),
+      amount,
+      false,
+      "token invoice"
+    );
+
+    await token.approve(await dao.getAddress(), amount);
+    const aliceBefore = await token.balanceOf(alice.address);
+    const treasuryBefore = await token.balanceOf(treasury.address);
+
+    await dao.settleAgentPaymentRequest(1n);
+
+    const fee = amount * 5n / 10000n;
+    const aliceAfter = await token.balanceOf(alice.address);
+    const treasuryAfter = await token.balanceOf(treasury.address);
+    const req = await dao.getAgentPaymentRequest(1n);
+
+    expect(aliceAfter - aliceBefore).to.equal(amount - fee);
+    expect(treasuryAfter - treasuryBefore).to.equal(fee);
+    expect(req.status).to.equal(1n);
+  });
+});
+
+// ─── Asset transfer between agents ───────────────────────────────────────────
+
+describe("transferAssetBetweenAgents", () => {
+  it("transfers NFT and routes flat fee to treasury", async () => {
+    const { dao, owner, alice, treasury } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+
+    const NFT = await ethers.getContractFactory("MockERC721");
+    const nft = await NFT.deploy();
+    await nft.waitForDeployment();
+
+    await nft.mint(owner.address);
+    await nft.approve(await dao.getAddress(), 0n);
+
+    const fee = await dao.assetTransferFlatFeeWei();
+    const treasuryBefore = await ethers.provider.getBalance(treasury.address);
+
+    await dao.transferAssetBetweenAgents(await nft.getAddress(), alice.address, 0n, "nft transfer", { value: fee });
+
+    const treasuryAfter = await ethers.provider.getBalance(treasury.address);
+    expect(await nft.ownerOf(0n)).to.equal(alice.address);
+    expect(treasuryAfter - treasuryBefore).to.equal(fee);
+  });
+});
+
 // ─── System / Integration ─────────────────────────────────────────────────────
 
 describe("System integration: full agent lifecycle", () => {
