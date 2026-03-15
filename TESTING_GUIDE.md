@@ -187,7 +187,15 @@ Each test calls `deploy()` for a fresh contract instance, ensuring test isolatio
 | two agents: deposit, transfer, withdraw end-to-end | Full lifecycle with fee verification |
 | payment request full round-trip | Create -> settle -> verify balances |
 
-**Total: 58 tests across 13 test suites**
+**Total: 62 tests across 13 test suites**
+
+---
+
+
+## 3.1 Coverage Runner Limitation
+
+- `npm run test:coverage` currently fails in this repository because `Project_DAO` is very large and deployment runs out of gas in the coverage-instrumented EVM, even though the normal Hardhat test run passes.
+- Use `npm test` as the CI gate for now, and treat coverage output as non-authoritative until the contract is split/refactored or coverage config is adjusted further.
 
 ---
 
