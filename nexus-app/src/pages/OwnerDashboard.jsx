@@ -59,7 +59,7 @@ export default function OwnerDashboard() {
   useEffect(() => {
     if (!unlocked || !walletConnected || !walletMatchesOwner) return;
     loadAgentProfile();
-    loadAgentActivity(true);
+    loadAgentActivity({ forceFull: true });
   }, [unlocked, walletConnected, walletMatchesOwner, loadAgentActivity, loadAgentProfile]);
 
   const txSummary = useMemo(() => {
@@ -174,7 +174,7 @@ export default function OwnerDashboard() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => loadAgentActivity(true)}
+            onClick={() => loadAgentActivity({ forceFull: true })}
             className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-nexus-border hover:bg-white/5 text-xs"
           >
             <RefreshCcw size={13} /> Refresh
