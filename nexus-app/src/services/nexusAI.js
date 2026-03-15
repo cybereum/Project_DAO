@@ -52,7 +52,7 @@ export const nexusAI = {
 
   /**
    * Run a full analysis in the given mode.
-   * @param {'health'|'security'|'ux'|'growth'} mode
+   * @param {'health'|'security'|'ux'|'growth'|'feedback'} mode
    * @returns {{ mode, label, model, filesAnalysed, result, usage } | { error }}
    */
   async analyse(mode = 'health') {
@@ -65,7 +65,7 @@ export const nexusAI = {
   /**
    * Stream an analysis, calling onChunk(text) for each token.
    * Resolves with the final raw JSON string when complete.
-   * @param {'health'|'security'|'ux'|'growth'} mode
+   * @param {'health'|'security'|'ux'|'growth'|'feedback'} mode
    * @param {(text: string) => void} onChunk
    * @returns {Promise<string>}
    */
@@ -111,6 +111,34 @@ export const nexusAI = {
       method: 'POST',
       body: JSON.stringify({ mode: 'triage', kits }),
     }).then(data => data?.result ?? data);
+  },
+
+  /**
+   * Save one feedback item from a human or AI contributor.
+   * @param {{sourceType:'human'|'ai', title:string, description:string, category:string, severity?:string, confidence?:number, votes?:number}} item
+   */
+  async submitFeedback(item) {
+    return safeFetch('/api/feedback', {
+      method: 'POST',
+      body: JSON.stringify(item),
+    });
+  },
+
+  /** Fetch ranked feedback insights. */
+  async getFeedbackInsights() {
+    return safeFetch('/api/feedback');
+  },
+
+  /**
+   * Register real-world outcome so source weighting can self-improve.
+   * @param {string} feedbackId
+   * @param {'adopted'|'successful'|'rejected'|'noisy'} outcome
+   */
+  async recordFeedbackOutcome(feedbackId, outcome) {
+    return safeFetch('/api/feedback/outcome', {
+      method: 'POST',
+      body: JSON.stringify({ feedbackId, outcome }),
+    });
   },
 
   /**
