@@ -41,7 +41,6 @@ export default function OwnerDashboard() {
     walletConnected,
     walletAddress,
     connectWallet,
-    proposals,
     projects,
     milestones,
     agentActivity,
@@ -54,7 +53,8 @@ export default function OwnerDashboard() {
   const [error, setError] = useState('');
   const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem(SESSION_KEY) === 'true');
 
-  const walletMatchesOwner = !OWNER_WALLET || walletAddress.toLowerCase() === OWNER_WALLET;
+  const normalizedWalletAddress = (walletAddress || '').toLowerCase();
+  const walletMatchesOwner = !OWNER_WALLET || normalizedWalletAddress === OWNER_WALLET;
 
   useEffect(() => {
     if (!unlocked || !walletConnected || !walletMatchesOwner) return;
@@ -64,22 +64,55 @@ export default function OwnerDashboard() {
 
   const txSummary = useMemo(() => {
     const recent = agentActivity.slice(0, 10);
+    const valueMovementEvents = new Set([
+      'AgentNativeEscrowDeposited',
+      'AgentNativeEscrowWithdrawn',
+      'AgentToAgentNativeTransfer',
+      'AgentToAgentTokenTransfer',
+      'AgentAssetTransfer',
+      'AgentPaymentRequestSettled',
+    ]);
+
+    const wallet = normalizedWalletAddress;
+    const openRequests = new Set();
+    const settledRequests = new Set();
+    const counterparties = new Set();
+
+    agentActivity.forEach((event) => {
+      const from = event.from?.toLowerCase();
+      const to = event.to?.toLowerCase();
+
+      if (from && from !== wallet) counterparties.add(from);
+      if (to && to !== wallet) counterparties.add(to);
+
+      if (!event.requestId) return;
+      if (event.name === 'AgentPaymentRequestCreated') {
+        openRequests.add(event.requestId);
+      }
+
+      if (event.name === 'AgentPaymentRequestSettled') {
+        settledRequests.add(event.requestId);
+      }
+    });
+
+    settledRequests.forEach((requestId) => openRequests.delete(requestId));
+
     return {
       total: agentActivity.length,
-      transfers: agentActivity.filter((t) => t.name?.includes('Transfer')).length,
-      paymentRequests: agentActivity.filter((t) => t.name?.includes('PaymentRequest')).length,
+      valueMovements: agentActivity.filter((event) => valueMovementEvents.has(event.name)).length,
+      paymentRequests: agentActivity.filter((event) => event.name === 'AgentPaymentRequestCreated').length,
+      openPaymentRequests: openRequests.size,
+      counterparties: counterparties.size,
       recent,
     };
-  }, [agentActivity]);
+  }, [agentActivity, normalizedWalletAddress]);
 
   const governanceSummary = useMemo(() => {
-    const active = proposals.filter((proposal) => proposal.status === 'Active').length;
-    const disputed = proposals.filter((proposal) => proposal.status === 'Disputed').length;
     const completedMilestones = milestones.filter((milestone) => milestone.status === 'Completed').length;
     const activeProjects = projects.filter((project) => project.status === 'Active').length;
 
-    return { active, disputed, completedMilestones, activeProjects };
-  }, [projects, milestones, proposals]);
+    return { completedMilestones, activeProjects };
+  }, [projects, milestones]);
 
   const handleUnlock = (event) => {
     event.preventDefault();
@@ -189,10 +222,10 @@ export default function OwnerDashboard() {
       </div>
 
       <Motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard icon={Activity} label="Tracked Transactions" value={txSummary.total} tone="cyan" />
-        <MetricCard icon={TrendingUp} label="Transfers" value={txSummary.transfers} tone="green" />
-        <MetricCard icon={Vote} label="Active Proposals" value={governanceSummary.active} tone="purple" />
-        <MetricCard icon={AlertTriangle} label="Disputed Proposals" value={governanceSummary.disputed} tone="amber" />
+        <MetricCard icon={Activity} label="Tracked Events" value={txSummary.total} tone="cyan" />
+        <MetricCard icon={TrendingUp} label="Value Movements" value={txSummary.valueMovements} tone="green" />
+        <MetricCard icon={Vote} label="Open Payment Requests" value={txSummary.openPaymentRequests} tone="purple" />
+        <MetricCard icon={AlertTriangle} label="Counterparties" value={txSummary.counterparties} tone="amber" />
       </Motion.div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
