@@ -41,7 +41,6 @@ export default function OwnerDashboard() {
     walletConnected,
     walletAddress,
     connectWallet,
-    proposals,
     projects,
     milestones,
     agentActivity,
@@ -54,7 +53,8 @@ export default function OwnerDashboard() {
   const [error, setError] = useState('');
   const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem(SESSION_KEY) === 'true');
 
-  const walletMatchesOwner = !OWNER_WALLET || walletAddress.toLowerCase() === OWNER_WALLET;
+  const normalizedWalletAddress = (walletAddress || '').toLowerCase();
+  const walletMatchesOwner = !OWNER_WALLET || normalizedWalletAddress === OWNER_WALLET;
 
   useEffect(() => {
     if (!unlocked || !walletConnected || !walletMatchesOwner) return;
@@ -73,7 +73,7 @@ export default function OwnerDashboard() {
       'AgentPaymentRequestSettled',
     ]);
 
-    const wallet = walletAddress.toLowerCase();
+    const wallet = normalizedWalletAddress;
     const openRequests = new Set();
     const settledRequests = new Set();
     const counterparties = new Set();
@@ -105,16 +105,14 @@ export default function OwnerDashboard() {
       counterparties: counterparties.size,
       recent,
     };
-  }, [agentActivity, walletAddress]);
+  }, [agentActivity, normalizedWalletAddress]);
 
   const governanceSummary = useMemo(() => {
-    const active = proposals.filter((proposal) => proposal.status === 'Active').length;
-    const disputed = proposals.filter((proposal) => proposal.status === 'Disputed').length;
     const completedMilestones = milestones.filter((milestone) => milestone.status === 'Completed').length;
     const activeProjects = projects.filter((project) => project.status === 'Active').length;
 
-    return { active, disputed, completedMilestones, activeProjects };
-  }, [projects, milestones, proposals]);
+    return { completedMilestones, activeProjects };
+  }, [projects, milestones]);
 
   const handleUnlock = (event) => {
     event.preventDefault();
