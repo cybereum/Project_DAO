@@ -78,6 +78,14 @@ export const nexusAI = {
         body: JSON.stringify({ mode, stream: true }),
       });
 
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        return JSON.stringify({ error: body.error || `HTTP ${res.status}` });
+      }
+      if (!res.body) {
+        return JSON.stringify({ error: 'Streaming response body is unavailable.' });
+      }
+
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
 

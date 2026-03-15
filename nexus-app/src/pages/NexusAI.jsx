@@ -253,11 +253,10 @@ export default function NexusAI() {
     if (!insight?.error) setFeedbackInsights(insight);
   }, []);
 
-  useEffect(() => {
-    refreshFeedbackInsights();
-  }, [refreshFeedbackInsights]);
-
   const runAnalysis = useCallback(async (mode) => {
+    if (mode === 'feedback') {
+      await refreshFeedbackInsights();
+    }
     setActiveMode(mode);
     setLoading(true);
     setResult(null);
@@ -285,7 +284,7 @@ export default function NexusAI() {
       // Not valid JSON — show raw (happens if server error leaked into stream)
       setResult({ raw });
     }
-  }, []);
+  }, [refreshFeedbackInsights]);
 
   const submitFeedback = useCallback(async (e) => {
     e.preventDefault();
@@ -560,6 +559,7 @@ export default function NexusAI() {
       </div>
 
       {/* Feedback intake + ranked queue */}
+      {activeMode === 'feedback' && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <form onSubmit={submitFeedback} className="p-4 rounded-xl border border-nexus-border bg-nexus-surface/40 space-y-3">
           <h3 className="text-sm font-semibold flex items-center gap-2"><SendHorizonal size={14} className="text-nexus-cyan" /> Submit feedback (human or AI)</h3>
@@ -610,6 +610,7 @@ export default function NexusAI() {
           )}
         </div>
       </div>
+      )}
 
       {/* Streaming token display while loading */}
       {loading && streamText && (

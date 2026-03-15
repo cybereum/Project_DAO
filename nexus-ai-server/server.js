@@ -31,6 +31,8 @@ app.use(express.json());
 
 const client = new Anthropic(); // reads ANTHROPIC_API_KEY from env
 
+const ALLOWED_OUTCOMES = new Set(['adopted', 'successful', 'rejected', 'noisy']);
+
 const DEFAULT_FEEDBACK_STORE = {
   sourceWeights: {
     human: 1,
@@ -545,6 +547,9 @@ app.post('/api/feedback/outcome', async (req, res) => {
     const { feedbackId, outcome } = req.body || {};
     if (!feedbackId || !outcome) {
       return res.status(400).json({ error: 'feedbackId and outcome are required.' });
+    }
+    if (!ALLOWED_OUTCOMES.has(outcome)) {
+      return res.status(400).json({ error: `Invalid outcome: ${outcome}. Valid outcomes: ${Array.from(ALLOWED_OUTCOMES).join(', ')}` });
     }
 
     const store = await loadFeedbackStore();
