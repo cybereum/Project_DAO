@@ -109,6 +109,44 @@ const USE_CASES = [
   },
 ];
 
+const NETWORK_FLYWHEEL = [
+  {
+    title: 'Verified outcomes become public proof',
+    desc: 'Every completed milestone and governance decision produces reusable trust signals stakeholders can reference instantly.',
+    metric: 'Proof surfaces in real time',
+  },
+  {
+    title: 'Proof attracts new collaborators',
+    desc: 'Teams with stronger records pull in better partners, vendors, and contributors who can verify delivery before they commit.',
+    metric: 'Higher-quality participation',
+  },
+  {
+    title: 'New collaborators compound reputation',
+    desc: 'As more actors transact transparently, reputation graphs deepen and decision confidence increases across the ecosystem.',
+    metric: 'Compounding trust graph',
+  },
+  {
+    title: 'Compounding trust accelerates adoption',
+    desc: 'Stronger ecosystem trust lowers onboarding friction and drives recurring inbound demand from institutions and communities.',
+    metric: 'Lower CAC, stronger retention',
+  },
+];
+
+const INBOUND_MOTION = [
+  {
+    channel: 'Shareable proof artifacts',
+    desc: 'Governance receipts, delivery records, and reputation snapshots become content assets users can publish across channels.',
+  },
+  {
+    channel: 'Persona-specific landing paths',
+    desc: 'Builders, governments, NGOs, and enterprises land on role-specific value stories mapped to their decision criteria.',
+  },
+  {
+    channel: 'Embedded referral loops',
+    desc: 'In-product sharing and invite CTAs turn every successful project into a growth node for the next cohort.',
+  },
+];
+
 // ─── Corruption cost calculator ───────────────────────────────────────────────
 const DEFAULT_RATE = 0.035;
 
@@ -456,6 +494,75 @@ export default function Landing() {
                 <Link to={uc.link} className="mt-4 inline-flex items-center gap-1 text-xs text-nexus-cyan hover:underline">Learn more <ArrowRight size={11} /></Link>
               </Motion.div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* HOW IT WORKS */}
+      <section className="py-20 px-6 border-t border-nexus-border bg-nexus-surface/20">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-12">
+            <span className="text-xs font-mono text-nexus-cyan uppercase tracking-widest">Growth Architecture</span>
+            <h2 className="text-3xl sm:text-4xl font-bold mt-2 mb-4">Engineered network effects. Compounding inbound demand.</h2>
+            <p className="text-nexus-text-dim max-w-3xl mx-auto">
+              NEXUS is designed so each verified transaction increases ecosystem trust and discoverability.
+              The result: stronger participation quality, higher referral velocity, and a self-reinforcing adoption loop.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            <div className="p-6 rounded-2xl border border-nexus-border bg-nexus-surface/40">
+              <div className="flex items-center gap-2 mb-5">
+                <TrendingUp size={18} className="text-nexus-cyan" />
+                <h3 className="text-lg font-semibold">Network Effects Flywheel</h3>
+              </div>
+              <div className="space-y-4">
+                {NETWORK_FLYWHEEL.map((item, i) => (
+                  <Motion.div
+                    key={item.title}
+                    initial={{ opacity: 0, y: 10 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: i * 0.08 }}
+                    className="p-4 rounded-xl border border-nexus-border/80 bg-black/20"
+                  >
+                    <div className="flex items-center justify-between gap-4 mb-1">
+                      <h4 className="font-medium text-sm sm:text-base">{item.title}</h4>
+                      <span className="text-[10px] sm:text-xs px-2 py-1 rounded-full bg-nexus-cyan/10 text-nexus-cyan whitespace-nowrap">{item.metric}</span>
+                    </div>
+                    <p className="text-sm text-nexus-text-dim">{item.desc}</p>
+                  </Motion.div>
+                ))}
+              </div>
+            </div>
+
+            <div className="p-6 rounded-2xl border border-nexus-border bg-nexus-surface/40">
+              <div className="flex items-center gap-2 mb-5">
+                <Globe size={18} className="text-nexus-purple" />
+                <h3 className="text-lg font-semibold">Inbound Magnetic Motion</h3>
+              </div>
+              <div className="space-y-4 mb-6">
+                {INBOUND_MOTION.map((item, i) => (
+                  <Motion.div
+                    key={item.channel}
+                    initial={{ opacity: 0, x: 10 }}
+                    whileInView={{ opacity: 1, x: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: i * 0.1 }}
+                    className="p-4 rounded-xl border border-nexus-border/80 bg-black/20"
+                  >
+                    <h4 className="font-medium mb-1">{item.channel}</h4>
+                    <p className="text-sm text-nexus-text-dim">{item.desc}</p>
+                  </Motion.div>
+                ))}
+              </div>
+              <div className="rounded-xl border border-nexus-cyan/30 bg-gradient-to-r from-nexus-cyan/10 to-nexus-purple/10 p-4">
+                <p className="text-sm text-nexus-text">
+                  <span className="font-semibold text-nexus-cyan">Outcome:</span> every successful deployment becomes a public case study,
+                  a reputation amplifier, and a new entry point for inbound operators.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </section>
