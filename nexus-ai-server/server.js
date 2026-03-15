@@ -23,12 +23,113 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
+const FEEDBACK_STORE_PATH = path.join(__dirname, 'data', 'feedback-memory.json');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 const client = new Anthropic(); // reads ANTHROPIC_API_KEY from env
+
+const ALLOWED_OUTCOMES = new Set(['adopted', 'successful', 'rejected', 'noisy']);
+
+const DEFAULT_FEEDBACK_STORE = {
+  sourceWeights: {
+    human: 1,
+    ai: 0.9,
+  },
+  outcomes: {},
+  items: [],
+};
+
+async function loadFeedbackStore() {
+  try {
+    const raw = await fs.readFile(FEEDBACK_STORE_PATH, 'utf-8');
+    return { ...DEFAULT_FEEDBACK_STORE, ...JSON.parse(raw) };
+  } catch {
+    await fs.mkdir(path.dirname(FEEDBACK_STORE_PATH), { recursive: true });
+    await fs.writeFile(FEEDBACK_STORE_PATH, JSON.stringify(DEFAULT_FEEDBACK_STORE, null, 2), 'utf-8');
+    return { ...DEFAULT_FEEDBACK_STORE };
+  }
+}
+
+async function saveFeedbackStore(store) {
+  await fs.mkdir(path.dirname(FEEDBACK_STORE_PATH), { recursive: true });
+  await fs.writeFile(FEEDBACK_STORE_PATH, JSON.stringify(store, null, 2), 'utf-8');
+}
+
+function qualityFilter(item) {
+  const text = `${item.title || ''} ${item.description || ''}`.trim();
+  if (item.flagged === true) return { include: false, reason: 'flagged' };
+  if (text.length < 20) return { include: false, reason: 'too-short' };
+  if (!item.category) return { include: false, reason: 'missing-category' };
+  return { include: true, reason: 'valid' };
+}
+
+function computeRank(item, sourceWeight = 1) {
+  const confidence = Math.min(Math.max(Number(item.confidence ?? 0.6), 0), 1);
+  const severityWeight = { critical: 1.3, high: 1.1, medium: 1, low: 0.7 }[item.severity] || 1;
+  const votes = Number(item.votes ?? 0);
+  const ageHours = Math.max(0, (Date.now() - new Date(item.createdAt || Date.now()).getTime()) / 36e5);
+  const freshness = 1 / (1 + ageHours / 48);
+  const score = (confidence * severityWeight * sourceWeight * 100 * freshness) + (votes * 4);
+  return Number(score.toFixed(2));
+}
+
+function normaliseFeedback(input = {}) {
+  return {
+    id: input.id || `fb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    sourceType: input.sourceType === 'ai' ? 'ai' : 'human',
+    author: input.author || 'anonymous',
+    title: input.title || 'Untitled feedback',
+    description: input.description || '',
+    category: input.category || '',
+    severity: input.severity || 'medium',
+    confidence: input.confidence,
+    votes: input.votes,
+    flagged: input.flagged,
+    createdAt: input.createdAt || new Date().toISOString(),
+  };
+}
+
+function buildFeedbackInsights(store) {
+  const considered = [];
+  const filteredOut = [];
+  for (const item of store.items) {
+    const decision = qualityFilter(item);
+    if (!decision.include) {
+      filteredOut.push({ id: item.id, reason: decision.reason, sourceType: item.sourceType, title: item.title });
+      continue;
+    }
+    const sourceWeight = store.sourceWeights[item.sourceType] ?? 1;
+    const rankScore = computeRank(item, sourceWeight);
+    considered.push({ ...item, sourceWeight, rankScore });
+  }
+
+  const ranked = considered.sort((a, b) => b.rankScore - a.rankScore).map((item, index) => ({
+    rank: index + 1,
+    id: item.id,
+    sourceType: item.sourceType,
+    title: item.title,
+    category: item.category,
+    severity: item.severity,
+    confidence: item.confidence ?? 0.6,
+    votes: item.votes ?? 0,
+    sourceWeight: item.sourceWeight,
+    rankScore: item.rankScore,
+    description: item.description,
+    createdAt: item.createdAt,
+  }));
+
+  return {
+    generatedAt: new Date().toISOString(),
+    totalReceived: store.items.length,
+    considered: considered.length,
+    filteredOut,
+    ranked,
+    sourceWeights: store.sourceWeights,
+  };
+}
 
 // ─── File reader (safe — only allows known paths) ─────────────────────────
 
@@ -237,6 +338,37 @@ Return ONLY a JSON object — no markdown.`,
 
 ${files.map(f => `=== ${f.path} ===\n${f.content}`).join('\n\n')}`,
   },
+
+  /** Feedback synthesis for human + AI suggestions */
+  feedback: {
+    label: 'Feedback Synthesis',
+    files: ['FULL_IMPLEMENTATION_PLAN.md', 'CLAUDE.md'],
+    systemPrompt: `You are NexusAI's continuous self-improvement planner.
+You receive ranked, filtered feedback from human and AI contributors.
+Generate a practical implementation backlog with the highest-value actions first.
+Return ONLY JSON — no markdown.`,
+    userTemplate: (files, _kits, feedbackInsights = null) => `Use the feedback insight payload below and produce JSON with this exact schema:
+{
+  "summary": "<2 sentence summary>",
+  "topActions": [
+    {
+      "rank": <number>,
+      "title": "<action title>",
+      "owner": "frontend"|"backend"|"protocol"|"ops",
+      "priority": "critical"|"high"|"medium"|"low",
+      "whyNow": "<reason>",
+      "dependsOn": ["<optional dependency>"]
+    }
+  ],
+  "selfImprovementRules": ["<rule to improve future triage quality>"]
+}
+
+Feedback insights:
+${JSON.stringify(feedbackInsights || {}, null, 2)}
+
+Plan + protocol context:
+${files.map(f => `=== ${f.path} ===\n${f.content}`).join('\n\n')}`,
+  },
 };
 
 // ─── /api/analyse — main analysis endpoint ───────────────────────────────
@@ -257,9 +389,12 @@ app.post('/api/analyse', async (req, res) => {
     return res.status(500).json({ error: 'Could not read source files.' });
   }
 
+  const feedbackInsights = mode === 'feedback' ? buildFeedbackInsights(await loadFeedbackStore()) : null;
   const userContent = mode === 'triage'
     ? modeConfig.userTemplate(files, kits)
-    : modeConfig.userTemplate(files);
+    : mode === 'feedback'
+      ? modeConfig.userTemplate(files, kits, feedbackInsights)
+      : modeConfig.userTemplate(files);
 
   try {
     if (doStream) {
@@ -308,6 +443,7 @@ app.post('/api/analyse', async (req, res) => {
         label: modeConfig.label,
         model: 'claude-opus-4-6',
         filesAnalysed: files.map(f => f.path),
+        feedbackInsights,
         result: parsed,
         usage: response.usage,
       });
@@ -381,6 +517,62 @@ app.get('/api/modes', (_req, res) => {
 // ─── /api/health ──────────────────────────────────────────────────────────
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, version: '1.0.0' }));
+
+// ─── Feedback memory endpoints (consider, filter, rank, self-improve) ───
+
+app.post('/api/feedback', async (req, res) => {
+  try {
+    const payload = normaliseFeedback(req.body || {});
+    const store = await loadFeedbackStore();
+    store.items.push(payload);
+    await saveFeedbackStore(store);
+    const insights = buildFeedbackInsights(store);
+    res.status(201).json({ saved: true, item: payload, insights });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to save feedback.' });
+  }
+});
+
+app.get('/api/feedback', async (_req, res) => {
+  try {
+    const store = await loadFeedbackStore();
+    res.json(buildFeedbackInsights(store));
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to read feedback.' });
+  }
+});
+
+app.post('/api/feedback/outcome', async (req, res) => {
+  try {
+    const { feedbackId, outcome } = req.body || {};
+    if (!feedbackId || !outcome) {
+      return res.status(400).json({ error: 'feedbackId and outcome are required.' });
+    }
+    if (!ALLOWED_OUTCOMES.has(outcome)) {
+      return res.status(400).json({ error: `Invalid outcome: ${outcome}. Valid outcomes: ${Array.from(ALLOWED_OUTCOMES).join(', ')}` });
+    }
+
+    const store = await loadFeedbackStore();
+    const item = store.items.find((x) => x.id === feedbackId);
+    if (!item) return res.status(404).json({ error: 'Feedback item not found.' });
+
+    const source = item.sourceType;
+    const current = store.sourceWeights[source] ?? 1;
+    const deltaMap = { adopted: 0.08, successful: 0.05, rejected: -0.06, noisy: -0.1 };
+    const delta = deltaMap[outcome] ?? 0;
+    store.sourceWeights[source] = Number(Math.min(1.5, Math.max(0.3, current + delta)).toFixed(2));
+    store.outcomes[feedbackId] = {
+      outcome,
+      sourceType: source,
+      recordedAt: new Date().toISOString(),
+    };
+
+    await saveFeedbackStore(store);
+    res.json({ updated: true, sourceType: source, newWeight: store.sourceWeights[source], insights: buildFeedbackInsights(store) });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to update feedback outcome.' });
+  }
+});
 
 // ─── Start ────────────────────────────────────────────────────────────────
 
