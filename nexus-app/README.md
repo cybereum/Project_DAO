@@ -15,11 +15,13 @@ cp .env.example .env
 npm run dev
 ```
 
-## Required environment variable
+## Required environment variables
 
 - `VITE_PROJECT_DAO_ADDRESS`: deployed `Project_DAO` contract address.
+- `VITE_OWNER_DASHBOARD_PASSCODE`: passcode for `/owner-dashboard` private dashboard unlock.
+- `VITE_OWNER_WALLET_ADDRESS` (optional): wallet allowlist for `/owner-dashboard`; only this address can open the dashboard after unlock.
 
-If this value is missing, the app gracefully falls back to local simulation for non-critical flows.
+If the DAO contract value is missing, the app gracefully falls back to local simulation for non-critical flows.
 
 ## Deployment readiness checks
 
