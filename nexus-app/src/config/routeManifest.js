@@ -72,6 +72,15 @@ export const ROUTE_MANIFEST = [
     },
   },
   {
+    path: '/treasury',
+    sitemap: { changefreq: 'daily', priority: '0.9' },
+    seo: {
+      title: 'Treasury Dashboard | NEXUS Protocol — Fee Revenue & Transaction Analytics',
+      description: 'Live treasury dashboard showing protocol fee revenue, transaction volume, agent activity, and earnings analytics. All data sourced directly from on-chain events.',
+      keywords: 'treasury dashboard, protocol fees, fee revenue, transaction analytics, cybereum treasury, on-chain analytics, agent economy metrics',
+    },
+  },
+  {
     path: '/agent-economy',
     sitemap: { changefreq: 'daily', priority: '0.92' },
     seo: {

@@ -22,6 +22,7 @@ import NexusAI from './pages/NexusAI';
 import FeatureKits from './pages/FeatureKits';
 import AgentReadiness from './pages/AgentReadiness';
 import OwnerDashboard from './pages/OwnerDashboard';
+import TreasuryDashboard from './pages/TreasuryDashboard';
 import { PUBLIC_ROUTES } from './config/routes';
 
 function AppShell({ children }) {
@@ -68,6 +69,7 @@ export default function App() {
           <Route path="/feature-kits" element={<FeatureKits />} />
           <Route path="/agent-readiness" element={<AgentReadiness />} />
           <Route path="/owner-dashboard" element={<OwnerDashboard />} />
+          <Route path="/treasury" element={<TreasuryDashboard />} />
         </Routes>
       </AppShell>
     </AppProvider>
