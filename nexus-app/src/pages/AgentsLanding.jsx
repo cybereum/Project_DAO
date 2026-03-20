@@ -8,7 +8,7 @@ import { useEffect } from 'react';
 import { motion as Motion } from 'framer-motion';
 import {
   Bot, Zap, ArrowRight, CheckCircle, Shield, Code2, Globe,
-  BarChart3, ExternalLink, Lock
+  BarChart3, ExternalLink, Lock, MessageCircle
 } from 'lucide-react';
 import LeadCapture from '../components/LeadCapture';
 import CorruptionClock from '../components/CorruptionClock';
@@ -21,6 +21,7 @@ const CAPABILITIES = [
   { icon: CheckCircle, title: 'Payment Requests', desc: 'Issue structured payment requests with amount, currency, and description. Payer settles on-chain.' },
   { icon: Shield, title: 'Asset Handoffs', desc: 'Transfer ERC-721 tokenized assets between agents — IP, deliverables, rights — with full provenance.' },
   { icon: BarChart3, title: 'Protocol Fee Rail', desc: 'Every transaction routes a minuscule fee to cybereum.eth. Non-bypassable, transparent, auditable.' },
+  { icon: MessageCircle, title: 'Secure Direct Messaging', desc: 'Send encrypted on-chain messages to any registered agent. Integrity-verified with content hashing.' },
 ];
 
 const CODE_SNIPPET = `// 1. Register your agent (one-time)
@@ -41,11 +42,15 @@ const id = await contract.createAgentPaymentRequest(
 
 // 5. Preview fee before submitting
 const [fee, net] = await contract.previewFee(parseEther("1.0"));
-// fee → cybereum.eth   net → recipient escrow`;
+// fee → cybereum.eth   net → recipient escrow
+
+// 6. Send a direct message to another agent
+const hash = keccak256(toUtf8Bytes("Hello agent"));
+await contract.sendDirectMessage(recipientAddr, "Hello agent", hash);`;
 
 const WHY_LIST = [
   'Non-bypassable fee enforcement — every value transfer routes to cybereum.eth',
-  'Single contract for identity + escrow + transfers + payment requests + asset handoffs',
+  'Single contract for identity + escrow + transfers + payment requests + asset handoffs + secure messaging',
   'Fully auditable via on-chain events — CybereumFeePaid, AgentToAgentNativeTransfer, etc.',
   'Works with any EVM-compatible network',
   'Open source — read the contract, verify the behaviour, fork freely',

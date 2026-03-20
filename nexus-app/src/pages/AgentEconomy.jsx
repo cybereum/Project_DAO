@@ -4,8 +4,10 @@ import { parseEther, formatEther, parseUnits } from 'ethers';
 import {
   Bot, Wallet, ArrowUpRight, ArrowDownLeft, Send, FileText,
   CheckCircle, XCircle, Clock, Zap, Info, Copy, ExternalLink,
-  RefreshCw, Shield, Twitter, Share2, Link2, Coins, Image
+  RefreshCw, Shield, Twitter, Share2, Link2, Coins, Image,
+  MessageCircle, Inbox, Lock, Eye
 } from 'lucide-react';
+import { keccak256, toUtf8Bytes } from 'ethers';
 import { generateReferralLink, markFunnelStep } from '../lib/utm.js';
 import { trackEvent } from '../lib/analytics.js';
 import { useApp } from '../store/appStore';
@@ -156,6 +158,8 @@ export default function AgentEconomy() {
     agentDepositToken, agentWithdrawToken, agentTransferToken,
     agentTransferAsset,
     agentCreatePaymentRequest, agentSettlePaymentRequest, agentCancelPaymentRequest,
+    inbox, inboxLoading, conversationMessages, conversationLoading,
+    loadInbox, loadConversation, agentSendMessage, agentMarkMessageRead,
   } = useApp();
 
   const [lastTx, setLastTx] = useState('');
@@ -191,6 +195,12 @@ export default function AgentEconomy() {
   const [tokenTransferTo, setTokenTransferTo] = useState('');
   const [tokenTransferAmt, setTokenTransferAmt] = useState('');
   const [tokenTransferMemo, setTokenTransferMemo] = useState('');
+
+  // Direct messaging form
+  const [msgRecipient, setMsgRecipient] = useState('');
+  const [msgContent, setMsgContent] = useState('');
+  const [msgConvAgent, setMsgConvAgent] = useState('');
+  const [msgMarkReadId, setMsgMarkReadId] = useState('');
 
   // Asset transfer form
   const [assetContract, setAssetContract] = useState('');
@@ -234,6 +244,8 @@ export default function AgentEconomy() {
       case 'AgentAssetTransfer': return 'Asset transfer';
       case 'AgentPaymentRequestCreated': return 'Payment request created';
       case 'AgentPaymentRequestSettled': return 'Payment request settled';
+      case 'DirectMessageSent': return 'Direct message sent';
+      case 'DirectMessageRead': return 'Message marked read';
       default: return item.name;
     }
   };
@@ -253,6 +265,7 @@ export default function AgentEconomy() {
     { id: 'assets', label: 'NFT Transfer' },
     { id: 'transfer', label: 'Transfer' },
     { id: 'requests', label: 'Payment Requests' },
+    { id: 'messaging', label: 'Messages' },
   ];
 
   return (
@@ -665,6 +678,137 @@ export default function AgentEconomy() {
         </div>
       )}
 
+      {/* ── Direct Messages tab ── */}
+      {tab === 'messaging' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-6">
+            <Card title="Send Direct Message" icon={MessageCircle}>
+              <div className="space-y-4">
+                <Field label="Recipient agent address" placeholder="0x..." value={msgRecipient} onChange={e => setMsgRecipient(e.target.value)} />
+                <div>
+                  <label className="block text-xs text-nexus-text-dim mb-1">Message content</label>
+                  <textarea
+                    className="w-full px-3 py-2 rounded-lg bg-nexus-bg border border-nexus-border text-sm text-nexus-text placeholder-nexus-text-dim focus:outline-none focus:border-nexus-cyan resize-none"
+                    rows={3}
+                    placeholder="Enter your message..."
+                    value={msgContent}
+                    onChange={e => setMsgContent(e.target.value)}
+                  />
+                </div>
+                <div className="flex items-center gap-2 text-xs text-nexus-text-dim">
+                  <Lock size={12} className="text-nexus-purple" />
+                  <span>Content is stored on-chain. The content hash (keccak256) is computed automatically for integrity verification.</span>
+                </div>
+                <Btn loading={txPending} disabled={!walletConnected || !msgRecipient || !msgContent}
+                  onClick={async () => {
+                    const contentHash = keccak256(toUtf8Bytes(msgContent));
+                    const hash = await agentSendMessage(msgRecipient, msgContent, contentHash);
+                    if (hash) {
+                      setLastTx(hash);
+                      setLastTxAction('sent a direct message');
+                      setMsgContent('');
+                      refresh();
+                      if (msgConvAgent && msgConvAgent.toLowerCase() === msgRecipient.toLowerCase()) {
+                        loadConversation(msgConvAgent);
+                      }
+                      markFunnelStep('agent_tx_complete');
+                      trackEvent('agent_transaction', { action: 'direct_message_sent' });
+                    }
+                  }}>
+                  <Send size={14} /> Send Message
+                </Btn>
+              </div>
+            </Card>
+
+            <Card title="Mark Message Read" icon={Eye}>
+              <div className="space-y-4">
+                <Field label="Message ID" type="number" min="1" placeholder="1" value={msgMarkReadId} onChange={e => setMsgMarkReadId(e.target.value)} />
+                <Btn variant="secondary" loading={txPending} disabled={!walletConnected || !msgMarkReadId}
+                  onClick={async () => {
+                    const hash = await agentMarkMessageRead(msgMarkReadId);
+                    if (hash) {
+                      setLastTx(hash);
+                      setLastTxAction('marked a message as read');
+                      setMsgMarkReadId('');
+                      loadInbox();
+                      if (msgConvAgent) loadConversation(msgConvAgent);
+                      markFunnelStep('agent_tx_complete');
+                    }
+                  }}>
+                  <CheckCircle size={14} /> Mark Read
+                </Btn>
+              </div>
+            </Card>
+          </div>
+
+          <div className="space-y-6">
+            <Card title="Inbox" icon={Inbox}>
+              <div className="space-y-3">
+                <Btn variant="secondary" loading={inboxLoading} disabled={!walletConnected}
+                  onClick={() => loadInbox()}>
+                  <RefreshCw size={14} /> Load Inbox
+                </Btn>
+                {inbox?.messages?.length > 0 ? (
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {inbox.messages.map(m => (
+                      <div key={m.id} className={`p-3 rounded-lg border text-xs ${m.readByRecipient ? 'border-nexus-border bg-nexus-surface/30' : 'border-nexus-cyan/30 bg-nexus-cyan/5'}`}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-mono text-nexus-text-dim">#{m.id} from {m.sender.slice(0, 6)}...{m.sender.slice(-4)}</span>
+                          <span className="flex items-center gap-1">
+                            {m.readByRecipient
+                              ? <><CheckCircle size={10} className="text-green-400" /> Read</>
+                              : <><Clock size={10} className="text-amber-400" /> Unread</>
+                            }
+                          </span>
+                        </div>
+                        <p className="text-nexus-text break-all">{m.encryptedContent.length > 120 ? m.encryptedContent.slice(0, 120) + '...' : m.encryptedContent}</p>
+                        <p className="text-nexus-text-dim mt-1">{new Date(m.timestamp * 1000).toLocaleString()}</p>
+                      </div>
+                    ))}
+                    <p className="text-xs text-nexus-text-dim text-center">Showing {inbox.messages.length} of {inbox.total} messages</p>
+                  </div>
+                ) : inbox?.messages ? (
+                  <p className="text-sm text-nexus-text-dim">No messages yet.</p>
+                ) : null}
+              </div>
+            </Card>
+
+            <Card title="Conversation Thread" icon={MessageCircle}>
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <Field label="Other agent address" placeholder="0x..." value={msgConvAgent} onChange={e => setMsgConvAgent(e.target.value)} />
+                  </div>
+                </div>
+                <Btn variant="secondary" loading={conversationLoading} disabled={!walletConnected || !msgConvAgent}
+                  onClick={() => loadConversation(msgConvAgent)}>
+                  <RefreshCw size={14} /> Load Conversation
+                </Btn>
+                {conversationMessages?.messages?.length > 0 ? (
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {conversationMessages.messages.map(m => (
+                      <div key={m.id} className={`p-3 rounded-lg border border-nexus-border text-xs ${m.sender.toLowerCase() === walletAddress?.toLowerCase() ? 'bg-nexus-cyan/5 ml-4' : 'bg-nexus-surface/50 mr-4'}`}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-mono text-nexus-text-dim">
+                            {m.sender.toLowerCase() === walletAddress?.toLowerCase() ? 'You' : m.sender.slice(0, 6) + '...' + m.sender.slice(-4)}
+                          </span>
+                          <span className="text-nexus-text-dim">{new Date(m.timestamp * 1000).toLocaleString()}</span>
+                        </div>
+                        <p className="text-nexus-text break-all">{m.encryptedContent}</p>
+                        {m.readByRecipient && <span className="text-green-400 text-xs flex items-center gap-1 mt-1"><CheckCircle size={10} /> Read</span>}
+                      </div>
+                    ))}
+                    <p className="text-xs text-nexus-text-dim text-center">Showing {conversationMessages.messages.length} of {conversationMessages.total} messages</p>
+                  </div>
+                ) : conversationMessages?.messages ? (
+                  <p className="text-sm text-nexus-text-dim">No messages in this conversation.</p>
+                ) : null}
+              </div>
+            </Card>
+          </div>
+        </div>
+      )}
+
       {/* ── Quick CLI reference ── */}
       <details className="mt-4">
         <summary className="cursor-pointer text-xs text-nexus-text-dim hover:text-nexus-text select-none">
@@ -687,7 +831,14 @@ const requestId = await contract.createAgentPaymentRequest(
 await contract.settleAgentPaymentRequest(requestId, { value: parseEther("0.5") });
 
 // Fee preview (read)
-const [fee, net] = await contract.previewFee(parseEther("1.0"));`}
+const [fee, net] = await contract.previewFee(parseEther("1.0"));
+
+// Direct messaging
+const contentHash = keccak256(toUtf8Bytes("Hello agent"));
+await contract.sendDirectMessage(recipientAddr, "Hello agent", contentHash);
+await contract.markMessageRead(messageId);
+const [msgIds, total] = await contract.getInbox(0, 50);
+const [convIds, convTotal] = await contract.getConversation(otherAgent, 0, 50);`}
         </pre>
       </details>
     </div>
