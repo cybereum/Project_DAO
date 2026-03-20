@@ -17,7 +17,7 @@ module.exports = {
   solidity: {
     version: "0.8.26",
     settings: {
-      optimizer: { enabled: true, runs: 1 },
+      optimizer: { enabled: true, runs: 200 },
       viaIR: true,
     },
   },
@@ -25,15 +25,24 @@ module.exports = {
     hardhat: {
       allowUnlimitedContractSize: true,
     },
-    // Uncomment and configure for deployment:
-    // sepolia: {
-    //   url: process.env.SEPOLIA_RPC_URL || "",
-    //   accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
-    // },
-    // mainnet: {
-    //   url: process.env.MAINNET_RPC_URL || "",
-    //   accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
-    // },
+    // Testnets
+    sepolia: {
+      url: process.env.SEPOLIA_RPC_URL || "",
+      accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
+    },
+    baseSepolia: {
+      url: process.env.BASE_SEPOLIA_RPC_URL || "",
+      accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
+    },
+    // Production
+    base: {
+      url: process.env.BASE_RPC_URL || "",
+      accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
+    },
+    mainnet: {
+      url: process.env.MAINNET_RPC_URL || "",
+      accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
+    },
   },
   paths: {
     sources: "./contracts",

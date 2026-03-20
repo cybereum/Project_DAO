@@ -236,9 +236,107 @@ export class AgentClient {
     return tx.wait();
   }
 
+  /** Approve a contributor for a project with a revenue share (in basis points). */
+  async approveContributor(projectId, contributorAddress, sharesBps) {
+    const tx = await this.contract.approveContributor(projectId, contributorAddress, sharesBps);
+    return tx.wait();
+  }
+
+  /** Mark a project as completed. Only the proposer can call this. */
+  async completeProject(projectId) {
+    const tx = await this.contract.completeProject(projectId);
+    return tx.wait();
+  }
+
+  /** Cancel a project. Only the proposer can call this. */
+  async cancelProject(projectId) {
+    const tx = await this.contract.cancelProject(projectId);
+    return tx.wait();
+  }
+
   /** Claim your revenue share from a completed project. */
   async claimProjectShare(projectId) {
     const tx = await this.contract.claimProjectShare(projectId);
+    return tx.wait();
+  }
+
+  /** Refund a funder from a cancelled project. */
+  async refundProjectFunder(projectId) {
+    const tx = await this.contract.refundProjectFunder(projectId);
+    return tx.wait();
+  }
+
+  /** Get details of an economic project. */
+  async getProject(projectId) {
+    const p = await this.contract.getEconomicProject(projectId);
+    return {
+      id: p.id, proposer: p.proposer, metadataURI: p.metadataURI,
+      targetBudget: p.targetBudget, totalFunded: p.totalFunded,
+      deadline: p.deadline, status: Number(p.status),
+      createdAt: p.createdAt, contributorCount: Number(p.contributorCount),
+      funderCount: Number(p.funderCount),
+    };
+  }
+
+  /** List economic projects (paginated). */
+  async listProjects(offset = 0, limit = 50) {
+    const [page, total] = await this.contract.getEconomicProjects(offset, limit);
+    return {
+      projects: page.map(p => ({
+        id: Number(p.id), proposer: p.proposer, metadataURI: p.metadataURI,
+        targetBudget: p.targetBudget, totalFunded: p.totalFunded,
+        deadline: Number(p.deadline), status: Number(p.status),
+        createdAt: Number(p.createdAt), contributorCount: Number(p.contributorCount),
+        funderCount: Number(p.funderCount),
+      })),
+      total: Number(total),
+    };
+  }
+
+  /** Get contributors for a project. */
+  async getProjectContributors(projectId) {
+    return this.contract.getProjectContributors(projectId);
+  }
+
+  /** Get funders for a project. */
+  async getProjectFunders(projectId) {
+    return this.contract.getProjectFunders(projectId);
+  }
+
+  // ─── Feature Kits ───────────────────────────────────────────────────────
+
+  /** Submit a feature kit. */
+  async submitFeatureKit(metadataURI, priority = 1) {
+    const tx = await this.contract.submitFeatureKit(metadataURI, priority);
+    return tx.wait();
+  }
+
+  /** Upvote a feature kit. */
+  async upvoteFeatureKit(kitId) {
+    const tx = await this.contract.upvoteFeatureKit(kitId);
+    return tx.wait();
+  }
+
+  /** List feature kits (paginated). */
+  async listFeatureKits(offset = 0, limit = 50) {
+    const [page, total] = await this.contract.getFeatureKits(offset, limit);
+    return {
+      kits: page.map(k => ({
+        id: Number(k.id), submitter: k.submitter,
+        priority: Number(k.priority), status: Number(k.status),
+        metadataURI: k.metadataURI, voteCount: Number(k.voteCount),
+        submittedAt: Number(k.submittedAt),
+      })),
+      total: Number(total),
+    };
+  }
+
+  // ─── ERC-721 Asset Transfer ─────────────────────────────────────────────
+
+  /** Transfer an ERC-721 asset between agents. Requires flat fee in ETH. */
+  async transferAsset(assetContract, toAddress, tokenId, memo = '') {
+    const flatFee = await this.contract.assetTransferFlatFeeWei();
+    const tx = await this.contract.transferAssetBetweenAgents(assetContract, toAddress, tokenId, memo, { value: flatFee });
     return tx.wait();
   }
 

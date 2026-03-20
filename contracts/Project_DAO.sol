@@ -213,6 +213,14 @@ contract Project_DAO {
     /// @notice Emitted when a kit status changes (e.g. validated, queued, rejected).
     event FeatureKitStatusChanged(uint256 indexed kitId, uint8 newStatus, string reason);
 
+    // --- Governance / admin events ---
+    event OwnerChanged(address indexed previousOwner, address indexed newOwner);
+    event PrivilegeGranted(address indexed member, uint256 privilege);
+    event VotingPeriodChanged(uint256 oldPeriod, uint256 newPeriod);
+    event MinimumVotingPowerChanged(uint256 oldPower, uint256 newPower);
+    event ContractPausedEvent(address indexed by);
+    event ContractResumedEvent(address indexed by);
+
     constructor() {
         owner = msg.sender;
         members[owner].isMember = true;
@@ -352,10 +360,12 @@ contract Project_DAO {
 
     function pauseContract() public onlyOwner {
         _paused = true;
+        emit ContractPausedEvent(msg.sender);
     }
 
     function resumeContract() public onlyOwner {
         _paused = false;
+        emit ContractResumedEvent(msg.sender);
     }
 
     // --- Agent, Payments, and Asset Value Transfer ---
@@ -543,7 +553,7 @@ contract Project_DAO {
         emit AgentToAgentNativeTransfer(msg.sender, _to, netAmount, _memo);
     }
 
-    function depositTokenToEscrow(address _token, uint256 _amount) public onlyRegisteredAgent whenNotPaused {
+    function depositTokenToEscrow(address _token, uint256 _amount) public onlyRegisteredAgent whenNotPaused nonReentrant {
         require(_token != address(0), "Invalid token address.");
         require(_amount > 0, "Amount must be greater than zero.");
         bool success = IERC20(_token).transferFrom(msg.sender, address(this), _amount);
@@ -557,7 +567,7 @@ contract Project_DAO {
         emit AgentTokenEscrowDeposited(msg.sender, _token, netAmount);
     }
 
-    function withdrawTokenFromEscrow(address _token, uint256 _amount) public onlyRegisteredAgent whenNotPaused {
+    function withdrawTokenFromEscrow(address _token, uint256 _amount) public onlyRegisteredAgent whenNotPaused nonReentrant {
         require(_token != address(0), "Invalid token address.");
         require(_amount > 0, "Amount must be greater than zero.");
         require(agentTokenEscrowBalances[msg.sender][_token] >= _amount, "Insufficient token escrow balance.");
@@ -577,7 +587,7 @@ contract Project_DAO {
         emit AgentTokenEscrowWithdrawn(msg.sender, _token, netAmount);
     }
 
-    function transferTokenBetweenAgents(address _token, address _to, uint256 _amount, string memory _memo) public onlyRegisteredAgent whenNotPaused {
+    function transferTokenBetweenAgents(address _token, address _to, uint256 _amount, string memory _memo) public onlyRegisteredAgent whenNotPaused nonReentrant {
         require(_token != address(0), "Invalid token address.");
         require(agents[_to].registered, "Recipient must be a registered agent.");
         require(_to != msg.sender, "Cannot transfer to self.");
@@ -732,6 +742,7 @@ contract Project_DAO {
     function grantPrivilege(address _member, uint256 _privilege) public onlyOwner {
         require(members[_member].isMember, "Invalid member address.");
         members[_member].privileges.push(_privilege);
+        emit PrivilegeGranted(_member, _privilege);
     }
 
     function changeOwner(address _newOwner) public onlyOwner {
@@ -750,7 +761,9 @@ contract Project_DAO {
         if (!found) {
             memberAddresses.push(_newOwner);
         }
+        address previousOwner = owner;
         owner = _newOwner;
+        emit OwnerChanged(previousOwner, _newOwner);
     }
 
     function getMemberCount() public view returns (uint256) {
@@ -1123,12 +1136,16 @@ contract Project_DAO {
 
     function changeVotingPeriod(uint256 _newVotingPeriod) public onlyOwner {
         require(_newVotingPeriod > 0, "New voting period should be greater than zero.");
+        uint256 oldPeriod = votingPeriod;
         votingPeriod = _newVotingPeriod;
+        emit VotingPeriodChanged(oldPeriod, _newVotingPeriod);
     }
 
     function changeMinimumVotingPower(uint256 _newMinimumVotingPower) public onlyOwner {
         require(_newMinimumVotingPower > 0, "New minimum voting power should be greater than zero.");
+        uint256 oldPower = minimumVotingPower;
         minimumVotingPower = _newMinimumVotingPower;
+        emit MinimumVotingPowerChanged(oldPower, _newMinimumVotingPower);
     }
 
     // ─── Agent Broadcast ──────────────────────────────────────────────────────

@@ -53,6 +53,8 @@ export default function Projects() {
     walletConnected, walletAddress, txPending, walletError,
     economicProjects, economicProjectsLoading,
     loadEconomicProjects, createEconomicProject, fundEconomicProject,
+    applyToEconomicProject, completeEconomicProject,
+    cancelEconomicProject, claimEconomicProjectShare, refundFromEconomicProject,
     agentProfile,
   } = useApp();
 
@@ -359,13 +361,78 @@ export default function Projects() {
                           <div className="text-xs text-nexus-text-dim">Deadline</div>
                         </div>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
                         {(p.status === 0 || p.status === 1) && walletConnected && (
                           <button
                             onClick={() => setFundModal(p.id)}
-                            className="flex-1 py-1.5 rounded-lg bg-nexus-cyan/10 text-nexus-cyan text-xs font-medium border border-nexus-cyan/20 hover:bg-nexus-cyan/20 transition-colors"
+                            disabled={txPending}
+                            className="flex-1 py-1.5 rounded-lg bg-nexus-cyan/10 text-nexus-cyan text-xs font-medium border border-nexus-cyan/20 hover:bg-nexus-cyan/20 transition-colors disabled:opacity-40"
                           >
                             Fund
+                          </button>
+                        )}
+                        {(p.status === 0 || p.status === 1) && walletConnected && isAgent && !isProposer && (
+                          <button
+                            onClick={async () => {
+                              const hash = await applyToEconomicProject(p.id);
+                              if (hash) setTxHash(hash);
+                            }}
+                            disabled={txPending}
+                            className="flex-1 py-1.5 rounded-lg bg-nexus-green/10 text-nexus-green text-xs font-medium border border-nexus-green/20 hover:bg-nexus-green/20 transition-colors disabled:opacity-40"
+                          >
+                            Apply
+                          </button>
+                        )}
+                        {isProposer && p.status === 1 && (
+                          <button
+                            onClick={async () => {
+                              if (confirm('Mark this project as completed?')) {
+                                const hash = await completeEconomicProject(p.id);
+                                if (hash) setTxHash(hash);
+                              }
+                            }}
+                            disabled={txPending}
+                            className="flex-1 py-1.5 rounded-lg bg-nexus-green/10 text-nexus-green text-xs font-medium border border-nexus-green/20 hover:bg-nexus-green/20 transition-colors disabled:opacity-40"
+                          >
+                            Complete
+                          </button>
+                        )}
+                        {isProposer && (p.status === 0 || p.status === 1) && (
+                          <button
+                            onClick={async () => {
+                              if (confirm('Cancel this project? Funders will be able to request refunds.')) {
+                                const hash = await cancelEconomicProject(p.id);
+                                if (hash) setTxHash(hash);
+                              }
+                            }}
+                            disabled={txPending}
+                            className="flex-1 py-1.5 rounded-lg bg-red-500/10 text-red-400 text-xs font-medium border border-red-500/20 hover:bg-red-500/20 transition-colors disabled:opacity-40"
+                          >
+                            Cancel
+                          </button>
+                        )}
+                        {p.status === 2 && walletConnected && (
+                          <button
+                            onClick={async () => {
+                              const hash = await claimEconomicProjectShare(p.id);
+                              if (hash) setTxHash(hash);
+                            }}
+                            disabled={txPending}
+                            className="flex-1 py-1.5 rounded-lg bg-nexus-amber/10 text-nexus-amber text-xs font-medium border border-nexus-amber/20 hover:bg-nexus-amber/20 transition-colors disabled:opacity-40"
+                          >
+                            Claim Share
+                          </button>
+                        )}
+                        {p.status === 3 && walletConnected && (
+                          <button
+                            onClick={async () => {
+                              const hash = await refundFromEconomicProject(p.id);
+                              if (hash) setTxHash(hash);
+                            }}
+                            disabled={txPending}
+                            className="flex-1 py-1.5 rounded-lg bg-nexus-amber/10 text-nexus-amber text-xs font-medium border border-nexus-amber/20 hover:bg-nexus-amber/20 transition-colors disabled:opacity-40"
+                          >
+                            Refund
                           </button>
                         )}
                         <Link to={`/projects/chain-${p.id}`}
@@ -373,13 +440,6 @@ export default function Projects() {
                         >
                           Details
                         </Link>
-                        {isProposer && (p.status === 0 || p.status === 1) && (
-                          <Link to={`/projects/chain-${p.id}`}
-                            className="flex-1 py-1.5 rounded-lg bg-nexus-purple/10 text-nexus-purple text-xs font-medium border border-nexus-purple/20 hover:bg-nexus-purple/20 transition-colors text-center"
-                          >
-                            Manage
-                          </Link>
-                        )}
                       </div>
                     </Motion.div>
                   );

@@ -36,3 +36,54 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run build
+
+  sdk:
+    name: SDK Validation
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: sdk/package-lock.json
+      - run: npm ci
+      - name: Validate SDK exports
+        run: node -e "import('./index.js').then(m => { if (!m.AgentClient) throw new Error('AgentClient not exported'); console.log('SDK exports OK'); })"
+
+  ai-server:
+    name: AI Server Validation
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nexus-ai-server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: nexus-ai-server/package-lock.json
+      - run: npm ci
+      - name: Validate server imports
+        run: node -e "import('./server.js').catch(e => { if (e.message?.includes('ANTHROPIC_API_KEY')) { console.log('Server validation OK (API key check works)'); process.exit(0); } throw e; })"
+
+  security-audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm audit --audit-level=high || true
+      - name: Frontend audit
+        working-directory: nexus-app
+        run: |
+          npm ci
+          npm audit --audit-level=high || true

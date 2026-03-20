@@ -24,10 +24,32 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const FEEDBACK_STORE_PATH = path.join(__dirname, 'data', 'feedback-memory.json');
+const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
+const MAX_REQUESTS_PER_MINUTE = parseInt(process.env.RATE_LIMIT_RPM || '20', 10);
+
+// ─── Validate environment ────────────────────────────────────────────────
+if (!process.env.ANTHROPIC_API_KEY) {
+  console.error('ERROR: ANTHROPIC_API_KEY environment variable is required.');
+  console.error('  Usage: ANTHROPIC_API_KEY=sk-ant-... node server.js');
+  process.exit(1);
+}
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
+
+// ─── Rate limiting (in-memory sliding window) ─────────────────────────────
+const requestLog = [];
+app.use('/api/analyse', (req, res, next) => {
+  const now = Date.now();
+  // Remove entries older than 1 minute
+  while (requestLog.length > 0 && requestLog[0] < now - 60000) requestLog.shift();
+  if (requestLog.length >= MAX_REQUESTS_PER_MINUTE) {
+    return res.status(429).json({ error: 'Rate limit exceeded. Try again in a minute.' });
+  }
+  requestLog.push(now);
+  next();
+});
 
 const client = new Anthropic(); // reads ANTHROPIC_API_KEY from env
 
@@ -404,7 +426,7 @@ app.post('/api/analyse', async (req, res) => {
       res.setHeader('Connection', 'keep-alive');
 
       const stream = client.messages.stream({
-        model: 'claude-opus-4-6',
+        model: CLAUDE_MODEL,
         max_tokens: 4096,
         thinking: { type: 'adaptive' },
         system: modeConfig.systemPrompt,
@@ -423,7 +445,7 @@ app.post('/api/analyse', async (req, res) => {
       res.end();
     } else {
       const response = await client.messages.create({
-        model: 'claude-opus-4-6',
+        model: CLAUDE_MODEL,
         max_tokens: 4096,
         thinking: { type: 'adaptive' },
         system: modeConfig.systemPrompt,
@@ -441,7 +463,7 @@ app.post('/api/analyse', async (req, res) => {
       res.json({
         mode,
         label: modeConfig.label,
-        model: 'claude-opus-4-6',
+        model: CLAUDE_MODEL,
         filesAnalysed: files.map(f => f.path),
         feedbackInsights,
         result: parsed,
@@ -473,7 +495,7 @@ app.post('/api/apply-suggestion', async (req, res) => {
     }
 
     const response = await client.messages.create({
-      model: 'claude-opus-4-6',
+      model: CLAUDE_MODEL,
       max_tokens: 8192,
       thinking: { type: 'adaptive' },
       system: 'You are a precise code editor. Apply the provided patch to the file and return ONLY the complete updated file content with no explanation, no markdown fences, no extra text.',
@@ -513,10 +535,6 @@ app.get('/api/modes', (_req, res) => {
     }))
   );
 });
-
-// ─── /api/health ──────────────────────────────────────────────────────────
-
-app.get('/api/health', (_req, res) => res.json({ ok: true, version: '1.0.0' }));
 
 // ─── Feedback memory endpoints (consider, filter, rank, self-improve) ───
 
@@ -576,8 +594,33 @@ app.post('/api/feedback/outcome', async (req, res) => {
 
 // ─── Start ────────────────────────────────────────────────────────────────
 
+// ─── Health check with dependency info ─────────────────────────────────
+app.get('/api/health', (_req, res) => res.json({
+  ok: true,
+  version: '1.1.0',
+  model: CLAUDE_MODEL,
+  rateLimitRpm: MAX_REQUESTS_PER_MINUTE,
+  apiKeyConfigured: !!process.env.ANTHROPIC_API_KEY,
+}));
+
+// ─── Start with graceful shutdown ──────────────────────────────────────
 const PORT = process.env.PORT || 3737;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`NexusAI server listening on http://localhost:${PORT}`);
-  console.log('ANTHROPIC_API_KEY:', process.env.ANTHROPIC_API_KEY ? 'set ✓' : 'NOT SET ✗');
+  console.log(`  Model: ${CLAUDE_MODEL}`);
+  console.log(`  Rate limit: ${MAX_REQUESTS_PER_MINUTE} req/min`);
+  console.log('  ANTHROPIC_API_KEY:', process.env.ANTHROPIC_API_KEY ? 'set' : 'NOT SET');
 });
+
+function gracefulShutdown(signal) {
+  console.log(`\n${signal} received. Closing server...`);
+  server.close(() => {
+    console.log('Server closed.');
+    process.exit(0);
+  });
+  // Force exit after 10s if connections don't close
+  setTimeout(() => process.exit(1), 10000);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

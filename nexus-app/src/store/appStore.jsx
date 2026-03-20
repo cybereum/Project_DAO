@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { useState, useRef, createContext, useContext, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, createContext, useContext, useCallback, useMemo } from 'react';
 import { BrowserProvider, Contract, isAddress } from 'ethers';
 import { PROJECT_DAO_ABI, PROJECT_DAO_ADDRESS, hasContractConfig } from '../config/contract';
 
@@ -852,6 +852,51 @@ export function useAppState() {
       setTxPending(false);
     }
   }, [getDaoWriteContract, loadFeatureKits]);
+
+  // ─── Auto-load on-chain data when wallet connects ─────────────────────
+  const hasInitRef = useRef(false);
+  useEffect(() => {
+    if (!walletConnected || !walletAddress || hasInitRef.current) return;
+    hasInitRef.current = true;
+    // Load all on-chain data in parallel
+    Promise.allSettled([
+      loadAgentConfig(),
+      loadAgentProfile(),
+      loadEconomicProjects(),
+      loadFeatureKits(),
+      syncProposalsFromChain(),
+      loadAgentActivity({ forceFull: true }),
+    ]);
+  }, [walletConnected, walletAddress, loadAgentConfig, loadAgentProfile, loadEconomicProjects, loadFeatureKits, syncProposalsFromChain, loadAgentActivity]);
+
+  // Reset init flag when wallet disconnects
+  useEffect(() => {
+    if (!walletConnected) hasInitRef.current = false;
+  }, [walletConnected]);
+
+  // ─── Listen for account/chain changes ────────────────────────────────
+  useEffect(() => {
+    const eth = window?.ethereum;
+    if (!eth) return;
+    const handleAccountsChanged = (accounts) => {
+      if (accounts.length === 0) {
+        setWalletConnected(false);
+        setWalletAddress('');
+      } else {
+        setWalletAddress(accounts[0]);
+        hasInitRef.current = false; // trigger re-init
+      }
+    };
+    const handleChainChanged = () => {
+      hasInitRef.current = false; // trigger re-init on next render
+    };
+    eth.on?.('accountsChanged', handleAccountsChanged);
+    eth.on?.('chainChanged', handleChainChanged);
+    return () => {
+      eth.removeListener?.('accountsChanged', handleAccountsChanged);
+      eth.removeListener?.('chainChanged', handleChainChanged);
+    };
+  }, []);
 
   const appState = useMemo(() => ({
     projects, milestones, proposals, members, companies, nfts, tasks,

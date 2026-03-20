@@ -1,4 +1,4 @@
-import { createElement, useState } from 'react';
+import { createElement, useState, useEffect, useRef } from 'react';
 import { NavLink, Link, useLocation } from 'react-router-dom';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { useApp } from '../store/appStore';
@@ -7,6 +7,53 @@ import {
   Trophy, Gem, Wallet, Zap, ChevronRight, Globe,
   AlertTriangle, ArrowLeft, Radio, Bot, Brain, Lightbulb, ClipboardCheck
 } from 'lucide-react';
+
+const CHAIN_NAMES = {
+  1: 'ETHEREUM MAINNET',
+  5: 'GOERLI TESTNET',
+  8453: 'BASE',
+  84532: 'BASE SEPOLIA',
+  11155111: 'SEPOLIA TESTNET',
+  31337: 'LOCAL (HARDHAT)',
+};
+
+function useNetworkInfo() {
+  const [chainId, setChainId] = useState(null);
+  const [blockNumber, setBlockNumber] = useState(null);
+  const intervalRef = useRef(null);
+
+  useEffect(() => {
+    const eth = window?.ethereum;
+    if (!eth) return;
+
+    const updateChain = (hexId) => setChainId(parseInt(hexId, 16));
+
+    // Get initial chain
+    eth.request?.({ method: 'eth_chainId' })
+      .then(updateChain)
+      .catch(() => {});
+
+    // Get block number periodically
+    const fetchBlock = () => {
+      eth.request?.({ method: 'eth_blockNumber' })
+        .then((hex) => setBlockNumber(parseInt(hex, 16)))
+        .catch(() => {});
+    };
+    fetchBlock();
+    intervalRef.current = setInterval(fetchBlock, 15000);
+
+    // Listen for chain changes
+    eth.on?.('chainChanged', updateChain);
+
+    return () => {
+      clearInterval(intervalRef.current);
+      eth.removeListener?.('chainChanged', updateChain);
+    };
+  }, []);
+
+  const networkName = chainId ? (CHAIN_NAMES[chainId] || `CHAIN ${chainId}`) : 'NOT CONNECTED';
+  return { chainId, networkName, blockNumber };
+}
 
 const NAV_ITEMS = [
   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -118,17 +165,18 @@ function DemoBanner({ walletConnected }) {
 
 function TopBar() {
   const { walletConnected, walletAddress, walletError, txPending, connectWallet } = useApp();
+  const { networkName, blockNumber } = useNetworkInfo();
   return (
     <>
       <header className="h-16 border-b border-nexus-border bg-nexus-surface/80 backdrop-blur-md flex items-center justify-between px-6 sticky top-0 z-30">
         <div className="flex items-center gap-3">
           <Globe size={16} className="text-nexus-cyan animate-pulse-glow" />
-          <span className="text-xs text-nexus-text-dim font-mono">NETWORK: ETHEREUM MAINNET</span>
-          <span className="w-2 h-2 rounded-full bg-nexus-green animate-pulse" />
+          <span className="text-xs text-nexus-text-dim font-mono">NETWORK: {networkName}</span>
+          <span className={`w-2 h-2 rounded-full ${walletConnected ? 'bg-nexus-green' : 'bg-nexus-text-dim'} animate-pulse`} />
         </div>
         <div className="flex items-center gap-4">
           <div className="text-xs text-nexus-text-dim font-mono hidden sm:block">
-            BLOCK: #19,847,293
+            {blockNumber ? `BLOCK: #${blockNumber.toLocaleString()}` : 'BLOCK: ---'}
           </div>
           {walletConnected ? (
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-nexus-cyan/10 border border-nexus-cyan/20">

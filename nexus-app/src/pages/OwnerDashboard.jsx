@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { motion as Motion } from 'framer-motion';
-import { Lock, Shield, Wallet, RefreshCcw, Activity, TrendingUp, Vote, AlertTriangle } from 'lucide-react';
+import { Lock, Shield, Wallet, RefreshCcw, Activity, TrendingUp, Vote, AlertTriangle, Settings, Users, Pause, Play } from 'lucide-react';
 import { useApp } from '../store/appStore';
+import { BrowserProvider, Contract, isAddress } from 'ethers';
+import { PROJECT_DAO_ABI, PROJECT_DAO_ADDRESS, hasContractConfig } from '../config/contract';
 
 const OWNER_PASSCODE = import.meta.env.VITE_OWNER_DASHBOARD_PASSCODE || '';
 const OWNER_WALLET = (import.meta.env.VITE_OWNER_WALLET_ADDRESS || '').toLowerCase();
@@ -32,6 +34,158 @@ function MetricCard({ icon: Icon, label, value, tone = 'cyan' }) {
         <Icon size={16} />
       </div>
       <div className="text-2xl font-bold text-nexus-text">{value}</div>
+    </div>
+  );
+}
+
+function AdminPanel() {
+  const [feeConfig, setFeeConfig] = useState({ feeBps: '', assetFeeWei: '' });
+  const [treasuryAddr, setTreasuryAddr] = useState('');
+  const [memberAddr, setMemberAddr] = useState('');
+  const [memberPower, setMemberPower] = useState('100');
+  const [removeMemberAddr, setRemoveMemberAddr] = useState('');
+  const [adminStatus, setAdminStatus] = useState('');
+  const [adminError, setAdminError] = useState('');
+  const [currentTreasury, setCurrentTreasury] = useState('');
+  const [currentFee, setCurrentFee] = useState({ feeBps: '5', assetFeeWei: '1000000000000' });
+
+  const getWriteContract = useCallback(async () => {
+    if (!hasContractConfig() || !isAddress(PROJECT_DAO_ADDRESS) || !window?.ethereum) return null;
+    const provider = new BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    return new Contract(PROJECT_DAO_ADDRESS, PROJECT_DAO_ABI, signer);
+  }, []);
+
+  // Load current config
+  useEffect(() => {
+    if (!hasContractConfig() || !isAddress(PROJECT_DAO_ADDRESS) || !window?.ethereum) return;
+    const provider = new BrowserProvider(window.ethereum);
+    const contract = new Contract(PROJECT_DAO_ADDRESS, PROJECT_DAO_ABI, provider);
+    Promise.allSettled([
+      contract.cybereumFeeBps(),
+      contract.assetTransferFlatFeeWei(),
+      contract.cybereumTreasury(),
+    ]).then(([feeBps, assetFee, treasury]) => {
+      if (feeBps.status === 'fulfilled') setCurrentFee(prev => ({ ...prev, feeBps: feeBps.value.toString() }));
+      if (assetFee.status === 'fulfilled') setCurrentFee(prev => ({ ...prev, assetFeeWei: assetFee.value.toString() }));
+      if (treasury.status === 'fulfilled') setCurrentTreasury(treasury.value);
+    });
+  }, []);
+
+  const runAdminAction = async (label, fn) => {
+    setAdminStatus('');
+    setAdminError('');
+    try {
+      setAdminStatus(`${label}...`);
+      const contract = await getWriteContract();
+      if (!contract) { setAdminError('Contract not configured.'); return; }
+      const tx = await fn(contract);
+      await tx.wait();
+      setAdminStatus(`${label} — confirmed.`);
+    } catch (err) {
+      setAdminError(err?.shortMessage || err?.message || `${label} failed.`);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-lg font-semibold flex items-center gap-2"><Settings size={18} className="text-nexus-cyan" /> Contract Administration</h2>
+
+      {adminStatus && <p className="text-xs text-nexus-green">{adminStatus}</p>}
+      {adminError && <p className="text-xs text-red-400">{adminError}</p>}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Fee Config */}
+        <div className="rounded-xl border border-nexus-border bg-nexus-card p-5 space-y-3">
+          <h3 className="text-sm font-semibold">Fee Configuration</h3>
+          <p className="text-xs text-nexus-text-dim">Current: {currentFee.feeBps} bps, asset flat fee: {currentFee.assetFeeWei} wei</p>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs text-nexus-text-dim">Fee (bps, 1-100)</label>
+              <input type="number" min="1" max="100" value={feeConfig.feeBps} onChange={(e) => setFeeConfig(prev => ({ ...prev, feeBps: e.target.value }))}
+                className="w-full px-2 py-1.5 rounded border border-nexus-border bg-nexus-bg text-sm" placeholder="5" />
+            </div>
+            <div>
+              <label className="text-xs text-nexus-text-dim">Asset flat fee (wei)</label>
+              <input type="text" value={feeConfig.assetFeeWei} onChange={(e) => setFeeConfig(prev => ({ ...prev, assetFeeWei: e.target.value }))}
+                className="w-full px-2 py-1.5 rounded border border-nexus-border bg-nexus-bg text-sm" placeholder="1000000000000" />
+            </div>
+          </div>
+          <button onClick={() => {
+            if (!feeConfig.feeBps || !feeConfig.assetFeeWei) { setAdminError('Both fee fields required.'); return; }
+            if (confirm(`Update fee to ${feeConfig.feeBps} bps and asset fee to ${feeConfig.assetFeeWei} wei?`)) {
+              runAdminAction('Updating fee config', (c) => c.setCybereumFeeConfig(parseInt(feeConfig.feeBps), BigInt(feeConfig.assetFeeWei)));
+            }
+          }} className="px-3 py-1.5 rounded-lg bg-nexus-cyan/10 border border-nexus-cyan/20 text-xs text-nexus-cyan hover:bg-nexus-cyan/20">
+            Update Fee Config
+          </button>
+        </div>
+
+        {/* Treasury */}
+        <div className="rounded-xl border border-nexus-border bg-nexus-card p-5 space-y-3">
+          <h3 className="text-sm font-semibold">Treasury Address</h3>
+          <p className="text-xs text-nexus-text-dim font-mono">Current: {currentTreasury || 'loading...'}</p>
+          <input type="text" value={treasuryAddr} onChange={(e) => setTreasuryAddr(e.target.value)}
+            className="w-full px-2 py-1.5 rounded border border-nexus-border bg-nexus-bg text-sm font-mono" placeholder="0x..." />
+          <button onClick={() => {
+            if (!isAddress(treasuryAddr)) { setAdminError('Invalid treasury address.'); return; }
+            if (confirm(`Set treasury to ${treasuryAddr}?`)) {
+              runAdminAction('Setting treasury', (c) => c.setCybereumTreasury(treasuryAddr));
+            }
+          }} className="px-3 py-1.5 rounded-lg bg-nexus-cyan/10 border border-nexus-cyan/20 text-xs text-nexus-cyan hover:bg-nexus-cyan/20">
+            Set Treasury
+          </button>
+        </div>
+
+        {/* Add Member */}
+        <div className="rounded-xl border border-nexus-border bg-nexus-card p-5 space-y-3">
+          <h3 className="text-sm font-semibold flex items-center gap-2"><Users size={14} /> Add Member</h3>
+          <input type="text" value={memberAddr} onChange={(e) => setMemberAddr(e.target.value)}
+            className="w-full px-2 py-1.5 rounded border border-nexus-border bg-nexus-bg text-sm font-mono" placeholder="Member address (0x...)" />
+          <input type="number" min="1" value={memberPower} onChange={(e) => setMemberPower(e.target.value)}
+            className="w-full px-2 py-1.5 rounded border border-nexus-border bg-nexus-bg text-sm" placeholder="Voting power" />
+          <button onClick={() => {
+            if (!isAddress(memberAddr)) { setAdminError('Invalid member address.'); return; }
+            runAdminAction('Adding member', (c) => c.addMember(memberAddr, parseInt(memberPower) || 100));
+          }} className="px-3 py-1.5 rounded-lg bg-nexus-green/10 border border-nexus-green/20 text-xs text-nexus-green hover:bg-nexus-green/20">
+            Add Member
+          </button>
+        </div>
+
+        {/* Remove Member */}
+        <div className="rounded-xl border border-nexus-border bg-nexus-card p-5 space-y-3">
+          <h3 className="text-sm font-semibold flex items-center gap-2"><Users size={14} /> Remove Member</h3>
+          <input type="text" value={removeMemberAddr} onChange={(e) => setRemoveMemberAddr(e.target.value)}
+            className="w-full px-2 py-1.5 rounded border border-nexus-border bg-nexus-bg text-sm font-mono" placeholder="Member address (0x...)" />
+          <button onClick={() => {
+            if (!isAddress(removeMemberAddr)) { setAdminError('Invalid address.'); return; }
+            if (confirm(`Remove member ${removeMemberAddr}?`)) {
+              runAdminAction('Removing member', (c) => c.removeMember(removeMemberAddr));
+            }
+          }} className="px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400 hover:bg-red-500/20">
+            Remove Member
+          </button>
+        </div>
+      </div>
+
+      {/* Pause/Resume */}
+      <div className="rounded-xl border border-nexus-border bg-nexus-card p-5">
+        <h3 className="text-sm font-semibold mb-3">Contract State</h3>
+        <div className="flex items-center gap-3">
+          <button onClick={() => {
+            if (confirm('Pause the contract? All state-changing functions will be disabled.')) {
+              runAdminAction('Pausing contract', (c) => c.pauseContract());
+            }
+          }} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400 hover:bg-red-500/20">
+            <Pause size={13} /> Pause Contract
+          </button>
+          <button onClick={() => {
+            runAdminAction('Resuming contract', (c) => c.resumeContract());
+          }} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-nexus-green/10 border border-nexus-green/20 text-xs text-nexus-green hover:bg-nexus-green/20">
+            <Play size={13} /> Resume Contract
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -280,6 +434,8 @@ export default function OwnerDashboard() {
           </div>
         )}
       </div>
+
+      <AdminPanel />
     </div>
   );
 }
