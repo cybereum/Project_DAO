@@ -242,6 +242,63 @@ export class AgentClient {
     return tx.wait();
   }
 
+  // ─── Secure Direct Messaging ───────────────────────────────────────────
+
+  /**
+   * Send an encrypted direct message to another registered agent.
+   * @param {string} toAddress       Recipient agent address.
+   * @param {string} encryptedContent  Encrypted payload (ECIES / x25519 / IPFS CID to encrypted blob).
+   * @param {string} contentHash     keccak256 hash of the plaintext (hex, 32 bytes). Use ethers.keccak256(ethers.toUtf8Bytes(plaintext)).
+   */
+  async sendMessage(toAddress, encryptedContent, contentHash) {
+    const tx = await this.contract.sendDirectMessage(toAddress, encryptedContent, contentHash);
+    const receipt = await tx.wait();
+    const event = receipt.logs.find(l => {
+      try { return this.contract.interface.parseLog(l)?.name === 'DirectMessageSent'; } catch { return false; }
+    });
+    if (event) {
+      return this.contract.interface.parseLog(event).args.messageId;
+    }
+    return receipt;
+  }
+
+  /** Mark a received message as read. */
+  async markMessageRead(messageId) {
+    const tx = await this.contract.markMessageRead(messageId);
+    return tx.wait();
+  }
+
+  /**
+   * Read a direct message by ID. Only sender or recipient can read.
+   * @returns {{ id, sender, recipient, contentHash, encryptedContent, timestamp, readByRecipient }}
+   */
+  async getMessage(messageId) {
+    const m = await this.contract.getDirectMessage(messageId);
+    return {
+      id: m.id, sender: m.sender, recipient: m.recipient,
+      contentHash: m.contentHash, encryptedContent: m.encryptedContent,
+      timestamp: m.timestamp, readByRecipient: m.readByRecipient,
+    };
+  }
+
+  /**
+   * Get the conversation thread with another agent (paginated).
+   * @returns {{ messageIds: bigint[], total: bigint }}
+   */
+  async getConversation(otherAgent, offset = 0, limit = 50) {
+    const [messageIds, total] = await this.contract.getConversation(otherAgent, offset, limit);
+    return { messageIds, total };
+  }
+
+  /**
+   * Get this agent's inbox — IDs of received messages (paginated).
+   * @returns {{ messageIds: bigint[], total: bigint }}
+   */
+  async getInbox(offset = 0, limit = 50) {
+    const [messageIds, total] = await this.contract.getInbox(offset, limit);
+    return { messageIds, total };
+  }
+
   // ─── Event Listening ───────────────────────────────────────────────────
 
   /** Listen for incoming payment requests addressed to this agent. */
@@ -257,6 +314,14 @@ export class AgentClient {
     const filter = this.contract.filters.AgentToAgentNativeTransfer(null, this.address);
     this.contract.on(filter, (from, to, amount, memo) => {
       callback({ from, to, amount, memo });
+    });
+  }
+
+  /** Listen for incoming direct messages to this agent. */
+  onDirectMessage(callback) {
+    const filter = this.contract.filters.DirectMessageSent(null, null, this.address);
+    this.contract.on(filter, (messageId, sender, recipient, contentHash, timestamp) => {
+      callback({ messageId, sender, recipient, contentHash, timestamp });
     });
   }
 

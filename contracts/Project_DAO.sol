@@ -1152,6 +1152,169 @@ contract Project_DAO {
         emit AgentBroadcast(currentBroadcastId++, msg.sender, broadcastType, messageURI, block.timestamp);
     }
 
+    // ─── Secure Agent Direct Messaging ──────────────────────────────────────
+
+    struct DirectMessage {
+        uint256 id;
+        address sender;
+        address recipient;
+        bytes32 contentHash;      // keccak256 of the plaintext — proves integrity
+        string  encryptedContent; // Encrypted payload (e.g. ECIES with recipient pubkey, or IPFS CID to encrypted blob)
+        uint256 timestamp;
+        bool    readByRecipient;
+    }
+
+    uint256 public currentDirectMessageId = 1;
+    mapping(uint256 => DirectMessage) public directMessages;
+
+    /// @notice Index of message IDs per conversation pair (sorted key = min(a,b), max(a,b))
+    mapping(bytes32 => uint256[]) private _conversationIndex;
+
+    /// @notice Inbox: message IDs received by each agent.
+    mapping(address => uint256[]) private _inbox;
+
+    event DirectMessageSent(
+        uint256 indexed messageId,
+        address indexed sender,
+        address indexed recipient,
+        bytes32 contentHash,
+        uint256 timestamp
+    );
+
+    event DirectMessageRead(
+        uint256 indexed messageId,
+        address indexed recipient
+    );
+
+    /**
+     * @notice Compute the deterministic conversation key for two agents.
+     *         Ensures (A,B) and (B,A) map to the same thread.
+     */
+    function _conversationKey(address a, address b) internal pure returns (bytes32) {
+        return a < b
+            ? keccak256(abi.encodePacked(a, b))
+            : keccak256(abi.encodePacked(b, a));
+    }
+
+    /**
+     * @notice Send an encrypted direct message to another registered agent.
+     * @param _to               Recipient agent address.
+     * @param _encryptedContent Encrypted message payload (off-chain encryption via
+     *                          ECIES / x25519 / app-level scheme). Can be an IPFS CID
+     *                          pointing to a larger encrypted blob.
+     * @param _contentHash      keccak256 hash of the plaintext (lets the recipient
+     *                          verify integrity after decryption).
+     */
+    function sendDirectMessage(
+        address _to,
+        string calldata _encryptedContent,
+        bytes32 _contentHash
+    ) external onlyRegisteredAgent whenNotPaused {
+        require(agents[_to].registered, "Recipient must be a registered agent.");
+        require(_to != msg.sender, "Cannot message self.");
+        require(bytes(_encryptedContent).length > 0, "Message content required.");
+        require(_contentHash != bytes32(0), "Content hash required.");
+
+        uint256 id = currentDirectMessageId++;
+        directMessages[id] = DirectMessage({
+            id:               id,
+            sender:           msg.sender,
+            recipient:        _to,
+            contentHash:      _contentHash,
+            encryptedContent: _encryptedContent,
+            timestamp:        block.timestamp,
+            readByRecipient:  false
+        });
+
+        bytes32 convKey = _conversationKey(msg.sender, _to);
+        _conversationIndex[convKey].push(id);
+        _inbox[_to].push(id);
+
+        emit DirectMessageSent(id, msg.sender, _to, _contentHash, block.timestamp);
+    }
+
+    /**
+     * @notice Mark a message as read. Only the recipient can call this.
+     * @param _messageId  ID of the message to mark as read.
+     */
+    function markMessageRead(uint256 _messageId) external onlyRegisteredAgent whenNotPaused {
+        DirectMessage storage m = directMessages[_messageId];
+        require(m.id != 0, "Message not found.");
+        require(m.recipient == msg.sender, "Only recipient can mark as read.");
+        m.readByRecipient = true;
+        emit DirectMessageRead(_messageId, msg.sender);
+    }
+
+    /**
+     * @notice Retrieve a direct message by ID. Only sender or recipient may read.
+     * @param _messageId  The message ID.
+     */
+    function getDirectMessage(uint256 _messageId) external view returns (
+        uint256 id,
+        address sender,
+        address recipient,
+        bytes32 contentHash,
+        string memory encryptedContent,
+        uint256 timestamp,
+        bool readByRecipient
+    ) {
+        DirectMessage storage m = directMessages[_messageId];
+        require(m.id != 0, "Message not found.");
+        require(
+            msg.sender == m.sender || msg.sender == m.recipient,
+            "Only sender or recipient can read this message."
+        );
+        return (m.id, m.sender, m.recipient, m.contentHash, m.encryptedContent, m.timestamp, m.readByRecipient);
+    }
+
+    /**
+     * @notice Get the full conversation thread between two agents (paginated).
+     *         Either party in the conversation can call this.
+     * @param _otherAgent  The other agent in the conversation.
+     * @param offset       0-based starting index.
+     * @param limit        Max messages to return.
+     */
+    function getConversation(
+        address _otherAgent,
+        uint256 offset,
+        uint256 limit
+    ) external view returns (uint256[] memory messageIds, uint256 total) {
+        require(
+            agents[msg.sender].registered || msg.sender == owner,
+            "Caller must be a registered agent."
+        );
+        bytes32 convKey = _conversationKey(msg.sender, _otherAgent);
+        uint256[] storage allIds = _conversationIndex[convKey];
+        total = allIds.length;
+        if (offset >= total) return (new uint256[](0), total);
+        uint256 end = offset + limit;
+        if (end > total) end = total;
+        messageIds = new uint256[](end - offset);
+        for (uint256 i = 0; i < messageIds.length; i++) {
+            messageIds[i] = allIds[offset + i];
+        }
+    }
+
+    /**
+     * @notice Get the caller's inbox — IDs of all messages received (paginated).
+     * @param offset  0-based starting index.
+     * @param limit   Max message IDs to return.
+     */
+    function getInbox(
+        uint256 offset,
+        uint256 limit
+    ) external view returns (uint256[] memory messageIds, uint256 total) {
+        uint256[] storage allIds = _inbox[msg.sender];
+        total = allIds.length;
+        if (offset >= total) return (new uint256[](0), total);
+        uint256 end = offset + limit;
+        if (end > total) end = total;
+        messageIds = new uint256[](end - offset);
+        for (uint256 i = 0; i < messageIds.length; i++) {
+            messageIds[i] = allIds[offset + i];
+        }
+    }
+
     // ─── Feature Kit Pipeline ────────────────────────────────────────────────
 
     struct FeatureKit {

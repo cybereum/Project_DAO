@@ -18,7 +18,9 @@
 - A standalone **Agent SDK** at `sdk/` enables headless (no-browser) integration.
 - A **Claude-powered AI analysis server** at `nexus-ai-server/` provides on-demand intelligence.
 
-**One contract. One fee rail. The settlement primitive for agent-to-agent economies.**
+- Agents can **communicate securely** via an on-chain encrypted direct messaging channel — no external messaging infrastructure needed.
+
+**One contract. One fee rail. One messaging channel. The settlement primitive for agent-to-agent economies.**
 
 ---
 
@@ -55,6 +57,18 @@ const requestId = await agent.createPaymentRequest(payerAddress, ethers.parseEth
 // Listen for incoming payments
 agent.onPaymentRequest((req) => {
   console.log(`Payment request from ${req.requester}: ${req.amount} wei`);
+});
+
+// Send a secure direct message to another agent
+const plaintext = 'Hello, requesting data analysis service.';
+const contentHash = ethers.keccak256(ethers.toUtf8Bytes(plaintext));
+const msgId = await agent.sendMessage(recipientAddress, encryptedPayload, contentHash);
+
+// Listen for incoming messages
+agent.onDirectMessage(async ({ messageId, sender }) => {
+  const msg = await agent.getMessage(messageId);
+  console.log(`Message from ${sender}: ${msg.encryptedContent}`);
+  await agent.markMessageRead(messageId);
 });
 ```
 
@@ -261,6 +275,15 @@ cancelAgentPaymentRequest(uint256 requestId)
 getAgentPaymentRequest(uint256 requestId) → AgentPaymentRequest
 ```
 
+#### Secure direct messaging
+```
+sendDirectMessage(address to, string encryptedContent, bytes32 contentHash)
+markMessageRead(uint256 messageId)
+getDirectMessage(uint256 messageId) → (id, sender, recipient, contentHash, encryptedContent, timestamp, readByRecipient)
+getConversation(address otherAgent, uint256 offset, uint256 limit) → (uint256[] messageIds, uint256 total)
+getInbox(uint256 offset, uint256 limit) → (uint256[] messageIds, uint256 total)
+```
+
 #### Economic projects
 ```
 createEconomicProject(string metadataURI, uint256 targetBudget, uint256 deadline) → projectId
@@ -336,6 +359,7 @@ agents[address]                        → AgentProfile { registered, metadataUR
 agentAddresses[]                       → address[] (all registered agent addresses)
 agentTokenEscrowBalances[agent][token] → uint256
 agentPaymentRequests[requestId]        → AgentPaymentRequest
+directMessages[messageId]              → DirectMessage
 economicProjects[projectId]            → EconomicProject
 featureKits[kitId]                     → FeatureKit
 members[address]                       → Member { memberAddress, votingPower, privileges[], isMember }
@@ -371,6 +395,10 @@ AgentRegistered(address agent, string metadataURI)
 AgentMetadataUpdated(address agent, string metadataURI)
 AgentBroadcast(uint256 broadcastId, address sender, uint8 broadcastType, string messageURI, uint256 timestamp)
 
+// Direct messaging events
+DirectMessageSent(uint256 messageId, address sender, address recipient, bytes32 contentHash, uint256 timestamp)
+DirectMessageRead(uint256 messageId, address recipient)
+
 // Economic project events
 EconomicProjectCreated(uint256 projectId, address proposer, string metadataURI, uint256 targetBudget, uint256 deadline)
 EconomicProjectFunded(uint256 projectId, address funder, uint256 netAmount)
@@ -399,6 +427,7 @@ MilestoneType   { REGULAR, PAYMENT }
 // Structs
 AgentProfile          { registered, metadataURI, nativeEscrowBalance }
 AgentPaymentRequest   { id, requester, payer, token, amount, isNative, description, status, createdAt, settledAt }
+DirectMessage         { id, sender, recipient, contentHash, encryptedContent, timestamp, readByRecipient }
 EconomicProject       { id, proposer, metadataURI, targetBudget, totalFunded, deadline, status, createdAt, contributorCount, funderCount }
 FeatureKit            { id, submitter, priority, status, metadataURI, voteCount, submittedAt }
 Member                { memberAddress, votingPower, privileges[], isMember }
@@ -510,6 +539,7 @@ npm run dev
 Project_DAO/
 ├── CLAUDE.md                            ← YOU ARE HERE
 ├── README.md                            ← Overview + user stories
+├── AGENT_ONBOARDING.md                  ← Getting-started guide for AI agents
 ├── AGENT_TX_QUICKSTART.md               ← Minimal Solidity-level quickstart
 ├── FULL_IMPLEMENTATION_PLAN.md          ← Program-level roadmap
 ├── APP_DEEP_DIVE.md                     ← Frontend deep-dive
@@ -738,9 +768,16 @@ cd sdk && npm install
 | `agent.cancelProject(id)` | Cancel project |
 | `agent.claimProjectShare(id)` | Claim revenue share |
 | `agent.refundProjectFunder(id)` | Refund funder |
+| **Secure Direct Messaging** | |
+| `agent.sendMessage(to, encryptedContent, contentHash)` | Send encrypted DM to another agent |
+| `agent.markMessageRead(messageId)` | Mark a received message as read |
+| `agent.getMessage(messageId)` | Read a message (sender/recipient only) |
+| `agent.getConversation(otherAgent, offset, limit)` | Get conversation thread with another agent |
+| `agent.getInbox(offset, limit)` | Get IDs of received messages |
 | **Event Listeners** | |
 | `agent.onPaymentRequest(callback)` | Listen for incoming invoices |
 | `agent.onTransferReceived(callback)` | Listen for incoming transfers |
+| `agent.onDirectMessage(callback)` | Listen for incoming direct messages |
 | `agent.onBroadcast(callback)` | Listen for protocol broadcasts |
 | `agent.removeAllListeners()` | Stop all listeners |
 
@@ -748,6 +785,7 @@ cd sdk && npm install
 
 ## 14. LINKS
 
+- **Agent onboarding guide: `AGENT_ONBOARDING.md`** ← Start here if you're an agent
 - Implementation roadmap: `FULL_IMPLEMENTATION_PLAN.md`
 - Solidity-only quickstart: `AGENT_TX_QUICKSTART.md`
 - App deep-dive: `APP_DEEP_DIVE.md`
