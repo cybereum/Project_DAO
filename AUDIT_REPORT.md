@@ -21,10 +21,10 @@ The core `Project_DAO.sol` contract is reasonably well-structured with good acce
 
 | Severity | Count |
 |----------|-------|
-| Critical | 3 |
-| High     | 8 |
-| Medium   | 12 |
-| Low      | 10 |
+| Critical | 2 |
+| High     | 6 |
+| Medium   | 13 |
+| Low      | 8 |
 | Informational | 8 |
 
 ---
@@ -42,95 +42,40 @@ The contract is ~41 KB, well over the 24,576-byte Spurious Dragon limit. **This 
 
 ---
 
-### C-2: Economic project insolvency — claim payouts can exceed contract balance
+### C-2: Economic project insolvency — ETH pooled without per-project reserves
 
-**File:** `Project_DAO.sol:1517-1536` (`claimProjectShare`)
+**File:** `Project_DAO.sol:1517-1536` (`claimProjectShare`), `Project_DAO.sol:1563-1578` (`refundProjectFunder`)
 
-When contributors claim their shares, the payout is calculated as:
-```solidity
-uint256 payout = (proj.totalFunded * shares) / 10000;
-```
+All ETH in the contract (agent escrow balances, project funds, member stakes) is pooled in a single `address(this).balance` with no per-pool segregation. This creates cross-contamination risk:
 
-However, `totalFunded` is never decremented when shares are claimed. If the proposer allocates 100% of shares across contributors, the total claimed equals `totalFunded`. But the contract may not actually hold that much ETH because:
-1. Fees were collected from funding (reducing contract-held ETH vs `totalFunded`)
-2. Other operations (withdraw, leaveDAO refunds) can reduce the contract's ETH balance
+1. `totalFunded` tracks net ETH credited to each project, but is never decremented when contributors claim shares via `claimProjectShare`. If all contributors claim 100% of shares, the payouts exactly equal `totalFunded` — but only if the contract actually holds that ETH.
+2. Agent escrow withdrawals, `leaveDAO` stake refunds, and project claims all draw from the same contract balance. A large project payout could make agent withdrawals fail, and vice versa.
+3. Cancelled project refunds use `projectFunderContributions` amounts without verifying sufficient contract balance.
+4. A completed project with no contributors (see L-7) traps funded ETH permanently — no one can claim or refund it.
 
-Additionally, refunds for cancelled projects use `projectFunderContributions` amounts, but there is no check that the contract has sufficient balance. If project funds were used elsewhere (via other escrow mechanisms), refunds will fail silently on low balance.
+Note: the fee collection mechanism itself is safe — fees on deposits come from `msg.value` and fees on inter-agent transfers come from already-held escrow ETH. The issue is the shared pool model, not individual fee transfers.
 
-**Recommendation:** Track actual ETH held per project in a dedicated balance variable. Deduct from it on claim. Add a solvency check.
-
----
-
-### C-3: `_collectNativeFee` in `transferNativeBetweenAgents` sends ETH to treasury from contract balance but doesn't verify contract has enough
-
-**File:** `Project_DAO.sol:524-544`
-
-In `transferNativeBetweenAgents`, the fee is sent to treasury via:
-```solidity
-(bool feeOk,) = payable(cybereumTreasury).call{value: fee}("");
-```
-
-This sends ETH from the **contract's balance**. The sender's escrow is debited, but the fee ETH must actually exist in the contract. If the contract is ever drained or underfunded (e.g., via project claims), these transfers will fail for all agents.
-
-**Recommendation:** Ensure accounting integrity by verifying `address(this).balance` covers all obligations, or keep escrow and project funds in separate accounting pools.
+**Recommendation:** Track per-project ETH reserves in a dedicated `projectBalance` variable. Deduct from it on claim. Consider separating escrow, project, and stake pools into distinct accounting buckets or sub-contracts.
 
 ---
 
 ## HIGH Findings
 
-### H-1: Missing `nonReentrant` on `depositNativeToEscrow`
+### H-1: Missing `nonReentrant` on multiple ETH-transferring functions
 
-**File:** `Project_DAO.sol:496-503`
+**Files:** `Project_DAO.sol:496` (`depositNativeToEscrow`), `Project_DAO.sol:524` (`transferNativeBetweenAgents`), `Project_DAO.sol:560` (`withdrawTokenFromEscrow`), `Project_DAO.sol:580` (`transferTokenBetweenAgents`)
 
-`depositNativeToEscrow` calls `_collectNativeFee` which sends ETH to `cybereumTreasury` via `.call{value: fee}("")`. If the treasury is a malicious contract, it could re-enter before `nativeEscrowBalance` is updated. While the fee is sent before balance update, the state is partially modified.
+Several functions that make external calls lack `nonReentrant`:
 
-**Recommendation:** Add `nonReentrant` modifier.
+- **`transferNativeBetweenAgents`**: Escrow balances are updated (lines 535-536) before the fee is sent to treasury (line 538). If treasury re-enters, it operates on updated state — no fund theft, but potential invariant violations in other functions. Should have `nonReentrant`.
+- **`depositNativeToEscrow`**: Sends fee to treasury before crediting escrow balance. Lower risk since the ETH comes from `msg.value` (not re-spendable), but `nonReentrant` is still best practice for defense-in-depth.
+- **`withdrawTokenFromEscrow`** and **`transferTokenBetweenAgents`**: Make external calls to arbitrary ERC-20 tokens. Malicious tokens (e.g., ERC-777 with transfer hooks) could re-enter. Should have `nonReentrant`.
 
----
-
-### H-2: Missing `nonReentrant` on `transferNativeBetweenAgents`
-
-**File:** `Project_DAO.sol:524-544`
-
-Same pattern — sends ETH to treasury via low-level call without reentrancy protection. The treasury could re-enter to drain escrow.
-
-**Recommendation:** Add `nonReentrant` modifier.
+**Recommendation:** Add `nonReentrant` to all four functions. The treasury is owner-set so exploitation requires a compromised owner, but defense-in-depth is appropriate for a value-transfer protocol.
 
 ---
 
-### H-3: `changeOwner` removes old owner membership — breaks invariants
-
-**File:** `Project_DAO.sol:737-754`
-
-```solidity
-members[owner].isMember = false;
-```
-
-Setting the old owner's `isMember` to `false` does **not** remove them from `memberAddresses[]`. This means:
-- `getMemberCount()` iterates but skips them (benign)
-- But they remain in the array, consuming gas forever
-- If the old owner later re-joins via `stakeAndJoin`, they'll be added to `memberAddresses` again, creating a duplicate
-
-Also, the old owner's agent registration is untouched — they remain a registered agent even after losing membership.
-
-**Recommendation:** Clean up `memberAddresses` properly and de-register the agent if needed.
-
----
-
-### H-4: `leaveDAO` does not remove from `agentAddresses` array
-
-**File:** `Project_DAO.sol:1307-1339`
-
-When leaving, `agents[msg.sender].registered = false` is set, but the address remains in `agentAddresses[]`. This means:
-- `getAgentCount()` returns inflated numbers
-- `getRegisteredAgents()` returns de-registered agents (with `registered = false`)
-- Discovery becomes unreliable over time
-
-**Recommendation:** Remove from `agentAddresses[]` using swap-and-pop, or filter in `getRegisteredAgents`.
-
----
-
-### H-5: `removeMember` does not de-register agent
+### H-2: `removeMember` does not de-register agent
 
 **File:** `Project_DAO.sol:711-730`
 
@@ -140,7 +85,7 @@ When a member is removed by the owner, their agent profile (`agents[member].regi
 
 ---
 
-### H-6: MilestoneTracker v1 — no reentrancy guard on ETH transfers
+### H-3: MilestoneTracker v1 — no reentrancy guard on ETH transfers
 
 **File:** `MilestoneTracker.sol:226-235`, `MilestoneTracker.sol:237-254`
 
@@ -150,7 +95,7 @@ When a member is removed by the owner, their agent profile (`agents[member].regi
 
 ---
 
-### H-7: MilestoneTracker v1 — `payMilestone` has no access control
+### H-4: MilestoneTracker v1 — `payMilestone` has no access control
 
 **File:** `MilestoneTracker.sol:256-288`
 
@@ -160,7 +105,7 @@ Anyone can call `payMilestone` to trigger payment from the contract to contracto
 
 ---
 
-### H-8: MilestoneTracker v1 — `completeMilestone` contradictory deadline logic
+### H-5: MilestoneTracker v1 — `completeMilestone` contradictory deadline logic
 
 **File:** `MilestoneTracker.sol:185-214`
 
@@ -173,6 +118,19 @@ if (block.timestamp > milestone.deadline && milestone.penalty > 0) {
 The `require` on line 192 ensures `block.timestamp <= deadline`, but the `if` on line 198 checks `block.timestamp > deadline`. This condition is **impossible** — the penalty logic is dead code.
 
 **Recommendation:** Fix the logic to allow completion past deadline with penalty, or remove the dead penalty code.
+
+---
+
+### H-6: `leaveDAO` and `changeOwner` leave stale entries in address arrays
+
+**Files:** `Project_DAO.sol:1307-1339` (`leaveDAO`), `Project_DAO.sol:737-754` (`changeOwner`)
+
+Both functions mark addresses as inactive but don't clean up all arrays:
+
+- **`leaveDAO`**: Sets `agents[msg.sender].registered = false` but does not remove from `agentAddresses[]`. `getAgentCount()` returns inflated numbers and `getRegisteredAgents()` returns de-registered agents.
+- **`changeOwner`**: Sets `members[owner].isMember = false` but does not remove the old owner from `memberAddresses[]`. If the old owner later re-joins via `stakeAndJoin`, they'll be added again, creating a duplicate. The old owner's agent registration also remains active.
+
+**Recommendation:** Use swap-and-pop to remove from `agentAddresses[]` in `leaveDAO`. Clean up `memberAddresses[]` and de-register agent in `changeOwner`.
 
 ---
 
@@ -238,17 +196,7 @@ Any ERC-20 address can be deposited. Malicious or rebasing tokens could manipula
 
 ---
 
-### M-6: `withdrawTokenFromEscrow` — no reentrancy guard
-
-**File:** `Project_DAO.sol:560-578`
-
-Token withdrawals make two external calls (`IERC20.transfer` for fee and for user) without `nonReentrant`. While ERC-20 `transfer` is typically safe, malicious tokens (e.g., ERC-777 with hooks) could re-enter.
-
-**Recommendation:** Add `nonReentrant` modifier.
-
----
-
-### M-7: `_resolveProposalDispute` can set `proposalPassed = true` on already-executed proposals
+### M-6: `_resolveProposalDispute` can set `proposalPassed = true` on already-executed proposals
 
 **File:** `Project_DAO.sol:987-996`
 
@@ -258,7 +206,7 @@ There is no check for `proposal.executed` in `_resolveProposalDispute`. A disput
 
 ---
 
-### M-8: Governance votes use raw voting power, not percentage-based quorum
+### M-7: Governance votes use raw voting power, not percentage-based quorum
 
 **File:** `Project_DAO.sol:864-897`
 
@@ -268,7 +216,7 @@ There is no check for `proposal.executed` in `_resolveProposalDispute`. A disput
 
 ---
 
-### M-9: VCDAO — weak verification code generation
+### M-8: VCDAO — weak verification code generation
 
 **File:** `VCDAO.sol:114-116`
 
@@ -282,7 +230,7 @@ The verification code is deterministic and predictable on-chain. Any observer ca
 
 ---
 
-### M-10: VCDAO — `removeVerifiedCredential` uses `delete` which leaves a gap
+### M-9: VCDAO — `removeVerifiedCredential` uses `delete` which leaves a gap
 
 **File:** `VCDAO.sol:194-199`
 
@@ -292,7 +240,7 @@ The verification code is deterministic and predictable on-chain. Any observer ca
 
 ---
 
-### M-11: AssetNFT — `mintAsset` and `createAsset` are identical functions
+### M-10: AssetNFT — `mintAsset` and `createAsset` are identical functions
 
 **File:** `AssetNFT.sol:28-56`
 
@@ -302,7 +250,7 @@ Both functions have identical bodies. This is dead code duplication.
 
 ---
 
-### M-12: AssetNFT — hardcoded token URI base URL
+### M-11: AssetNFT — hardcoded token URI base URL
 
 **File:** `AssetNFT.sol:36`
 
@@ -313,6 +261,26 @@ _setTokenURI(assetId, string(abi.encodePacked("https://example.com/asset/", _uin
 Uses a placeholder `example.com` URL. This should be configurable.
 
 **Recommendation:** Make the base URI a constructor parameter or settable by owner.
+
+---
+
+### M-12: `completeProject` allows completion with no contributors — permanently traps funds
+
+**File:** `Project_DAO.sol:1499-1510`
+
+A proposer can create a project, get it funded, and immediately call `completeProject` with zero contributors. Once completed, no one can claim shares (no contributors) and the project cannot be cancelled or refunded. The funded ETH is permanently locked in the contract.
+
+**Recommendation:** Require `proj.contributorCount > 0` before allowing completion, or give the proposer an implicit share.
+
+---
+
+### M-13: `cancelProject` has no restrictions after contributors are approved
+
+**File:** `Project_DAO.sol:1543-1557`
+
+A proposer can cancel an Active project at any time, even after contributors have been approved and are working. This allows the proposer to avoid paying contributors while funders get their money back. There is no timelock, vote, or dispute mechanism for cancellation.
+
+**Recommendation:** Restrict cancellation of Active projects, or add a dispute/vote process.
 
 ---
 
@@ -378,27 +346,7 @@ While practically safe (arrays won't reach `int256` max), the pattern of casting
 
 ---
 
-### L-7: `completeProject` allows proposer to complete with no contributors
-
-**File:** `Project_DAO.sol:1499-1510`
-
-A proposer can create a project, get it funded, and immediately complete it. With no contributors, the funded ETH is locked forever (no one can claim shares, and the project can't be refunded once completed).
-
-**Recommendation:** Require at least one contributor before completion, or give proposer an implicit share.
-
----
-
-### L-8: `cancelProject` doesn't check deadline
-
-**File:** `Project_DAO.sol:1543-1557`
-
-A proposer can cancel at any time, even after the deadline. This could be used to avoid payouts to contributors.
-
-**Recommendation:** Consider restrictions on cancellation once project is Active with contributors.
-
----
-
-### L-9: Economic project refund may underflow `totalFunded`
+### L-7: Economic project refund may underflow `totalFunded`
 
 **File:** `Project_DAO.sol:1572`
 
@@ -412,7 +360,7 @@ If `claimProjectShare` is somehow called before `cancelProject` (impossible with
 
 ---
 
-### L-10: `AssetNFT._isApprovedOrOwner` — deprecated in OZ v5
+### L-8: `AssetNFT._isApprovedOrOwner` — deprecated in OZ v5
 
 **File:** `AssetNFT.sol:73`
 
@@ -465,52 +413,35 @@ The contract has no proxy or upgrade mechanism. Once deployed, bugs cannot be fi
 
 ## Test Coverage Gaps
 
-The test suite (66 tests) covers the core agent economy flows well but has gaps:
+The test suite (66 tests) covers the core agent economy well (fees, escrow, transfers, payments, projects, feature kits, onboarding). The following areas have **zero test coverage**:
 
-| Area | Status |
-|------|--------|
-| Fee config, treasury | Well tested |
-| Agent registration & discovery | Well tested |
-| Native escrow (deposit/withdraw/transfer) | Well tested |
-| Payment requests (create/settle/cancel) | Well tested |
-| Token escrow & token payments | Well tested |
-| NFT transfer between agents | Tested |
-| Pause/unpause | Tested |
-| stakeAndJoin / leaveDAO | Tested |
-| Economic projects lifecycle | Tested |
-| Feature kits | Tested |
-| **Governance (proposals/voting/execution)** | **NOT TESTED** |
-| **Disputes** | **NOT TESTED** |
-| **Role management** | **NOT TESTED** |
-| **Milestone management** | **NOT TESTED** |
-| **Task management** | **NOT TESTED** |
-| **Broadcast** | **NOT TESTED** |
-| **changeOwner** | **NOT TESTED** |
-| **Edge cases: leaveDAO with active projects** | **NOT TESTED** |
-| **Edge cases: paused operations across all functions** | **Partially tested** |
-| **Reentrancy attack scenarios** | **NOT TESTED** |
-| **Fee-on-transfer token scenarios** | **NOT TESTED** |
-| **Supporting contracts (VCDAO, MilestoneTracker, AssetNFT)** | **NOT TESTED** |
+- **Governance**: proposals, voting, execution, `changeOwner`
+- **Disputes**: dispute creation, voting, resolution (both auto and manual)
+- **Role & task management**: `createRole`, `assignRole`, `createTask`, `addTaskProgress`
+- **Milestone management**: `createMilestone`, `assignRoleToMilestone`
+- **Broadcasts**: `broadcastToAgents`
+- **Edge cases**: `leaveDAO` with active projects, reentrancy attacks, fee-on-transfer tokens, paused operations across all functions (only partially tested)
+- **Supporting contracts**: `VCDAO.sol`, `MilestoneTracker.sol`, `MilestoneTracker2.sol`, `AssetNFT.sol` have no tests
 
 ---
 
 ## Recommendations Summary
 
 ### Before Mainnet Deployment (blocking)
-1. **Split the contract** to fit within the 24 KB limit (C-1)
-2. **Fix economic project insolvency risk** — track per-project ETH balance (C-2, C-3)
-3. **Add `nonReentrant`** to `depositNativeToEscrow`, `transferNativeBetweenAgents`, `withdrawTokenFromEscrow` (H-1, H-2, M-6)
-4. **Fix `leaveDAO`** to remove from `agentAddresses[]` (H-4)
-5. **Fix `removeMember`** to de-register agent (H-5)
-6. **Fix `changeOwner`** to clean up old owner properly (H-3)
+1. **Split the contract** into multiple contracts (proxy, Diamond/EIP-2535, or library pattern) to fit within the 24 KB EIP-170 limit. Custom errors (L-2) help reduce size by ~1-2 KB but cannot close the 17 KB gap alone. (C-1)
+2. **Segregate ETH pools** — track per-project ETH reserves separately from agent escrow and member stakes, decrement on claim/refund. (C-2)
+3. **Add `nonReentrant`** to `depositNativeToEscrow`, `transferNativeBetweenAgents`, `withdrawTokenFromEscrow`, `transferTokenBetweenAgents` (H-1)
+4. **Fix `removeMember`** to de-register agent — currently removed members retain full agent privileges (H-2)
+5. **Fix `leaveDAO`/`changeOwner`** to clean up `agentAddresses[]` and `memberAddresses[]` (H-6)
 
 ### Before Production Use (important)
-7. Add expiration to payment requests (M-3)
-8. Handle fee-on-transfer tokens or document unsupported (M-4)
-9. Add quorum to governance (M-8)
-10. Use custom errors instead of string reverts to reduce contract size (L-2)
+6. Add expiration to payment requests (M-3)
+7. Handle fee-on-transfer tokens: reject on deposit or use balanceOf before/after pattern (M-4)
+8. Add quorum requirement to governance — currently a single voter can pass proposals (M-8)
+9. Require at least one contributor before `completeProject` to prevent permanently trapped funds (L-7)
+10. Use custom errors instead of string reverts for gas savings (L-2)
 11. Pin pragma to `0.8.26` (L-1)
-12. Add comprehensive tests for governance, disputes, roles, and edge cases
+12. Add comprehensive tests for governance, disputes, roles, milestones, tasks, broadcasts, and `changeOwner`
 
 ### Nice to Have
 13. Token allowlist (M-5)
