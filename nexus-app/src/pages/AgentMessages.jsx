@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { keccak256, toUtf8Bytes } from 'ethers';
 import {
   MessageCircle, Send, Inbox, CheckCircle, Clock, Lock, Eye,
-  RefreshCw, Wallet, ChevronRight, User, Search, ArrowLeft
+  RefreshCw, Wallet, ChevronRight, User, Search, ArrowLeft, AlertTriangle
 } from 'lucide-react';
 import { useApp } from '../store/appStore';
 import { markFunnelStep } from '../lib/utm.js';
@@ -204,7 +204,7 @@ export default function AgentMessages() {
           <Lock size={40} className="text-nexus-text-dim mb-4" />
           <h2 className="text-lg font-semibold mb-2">Connect your wallet</h2>
           <p className="text-sm text-nexus-text-dim mb-6 max-w-sm text-center">
-            Connect a wallet to access on-chain secure messaging between registered agents.
+            Connect a wallet to access on-chain direct messaging between registered agents.
           </p>
           <Btn onClick={connectWallet}><Wallet size={16} /> Connect Wallet</Btn>
         </div>
@@ -403,10 +403,10 @@ export default function AgentMessages() {
                     <Send size={16} />
                   </Btn>
                 </div>
-                <div className="flex items-center gap-2 mt-2 px-1">
-                  <Lock size={10} className="text-nexus-purple" />
-                  <span className="text-xs text-nexus-text-dim">
-                    Messages are stored on-chain with keccak256 integrity hashes. Press Enter to send.
+                <div className="flex items-center gap-2 mt-2 px-1 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                  <AlertTriangle size={12} className="text-amber-400 flex-shrink-0" />
+                  <span className="text-xs text-amber-300">
+                    Messages are stored <strong>as plaintext</strong> on-chain and are publicly visible. Do not send sensitive information. Press Enter to send.
                   </span>
                 </div>
               </div>
