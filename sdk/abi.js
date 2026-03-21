@@ -85,6 +85,8 @@ export const PROJECT_DAO_ABI = [
   'event CybereumFeePaid(address indexed payer, address indexed token, uint256 amount, string context)',
   'event AgentBroadcast(uint256 indexed broadcastId, address indexed sender, uint8 broadcastType, string messageURI, uint256 timestamp)',
   'event ServiceListed(uint256 indexed serviceId, address indexed provider, bytes32 indexed serviceType, uint256 pricePerCall, string metadataURI)',
+  'event ServiceUpdated(uint256 indexed serviceId, string metadataURI, uint256 pricePerCall)',
+  'event ServiceDeactivated(uint256 indexed serviceId)',
   'event AgreementCreated(uint256 indexed agreementId, uint256 indexed serviceId, address indexed consumer, address provider, uint256 escrowAmount)',
   'event AgreementFulfilled(uint256 indexed agreementId, string responseURI)',
   'event AgreementSettled(uint256 indexed agreementId, address indexed provider, uint256 paidAmount)',
