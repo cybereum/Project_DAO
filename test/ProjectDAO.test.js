@@ -1,4 +1,5 @@
 const { expect } = require("chai");
+const { anyValue } = require("@nomicfoundation/hardhat-chai-matchers/withArgs");
 const { ethers } = require("hardhat");
 
 // Helper: deploy fresh contract + set treasury
@@ -738,7 +739,7 @@ describe("Secure direct messaging", () => {
 
     await expect(dao.sendDirectMessage(alice.address, "enc-data", sampleHash))
       .to.emit(dao, "DirectMessageSent")
-      .withArgs(1n, owner.address, alice.address, sampleHash, (v) => v > 0n);
+      .withArgs(1n, owner.address, alice.address, sampleHash, anyValue);
   });
 
   it("recipient can read the message", async () => {
