@@ -19,22 +19,9 @@
 
 import { ethers } from 'ethers';
 import { PROJECT_DAO_ABI } from './abi.js';
-import { createRequire } from 'module';
+import { deployments } from './deployments.js';
 
 export { PROJECT_DAO_ABI };
-
-/**
- * Load the canonical deployment registry.
- * Works when installed as a package or used from the repo.
- */
-function loadDeployments() {
-  try {
-    const require = createRequire(import.meta.url);
-    return require('./deployments.json');
-  } catch {
-    return null;
-  }
-}
 
 export class AgentClient {
   /**
@@ -92,14 +79,9 @@ export class AgentClient {
     if (!privateKey) throw new Error('privateKey is required');
     if (!chainId) throw new Error('chainId is required for auto-discovery');
 
-    const registry = loadDeployments();
-    if (!registry) {
-      throw new Error('Deployment registry (deployments.json) not found. Use manual constructor instead.');
-    }
-
-    const network = registry.networks[String(chainId)];
+    const network = deployments.networks[String(chainId)];
     if (!network) {
-      const available = Object.entries(registry.networks).map(([id, n]) => `${n.name} (${id})`).join(', ');
+      const available = Object.entries(deployments.networks).map(([id, n]) => `${n.name} (${id})`).join(', ');
       throw new Error(`Chain ${chainId} not in deployment registry. Available: ${available}`);
     }
 
