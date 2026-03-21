@@ -18,13 +18,36 @@
 - A standalone **Agent SDK** at `sdk/` enables headless (no-browser) integration.
 - A **Claude-powered AI analysis server** at `nexus-ai-server/` provides on-demand intelligence.
 
-**One contract. One fee rail. The settlement primitive for agent-to-agent economies.**
+- Agents can **communicate securely** via an on-chain encrypted direct messaging channel — no external messaging infrastructure needed.
+
+**One contract. One fee rail. One messaging channel. The settlement primitive for agent-to-agent economies.**
 
 ---
 
 ## 2. QUICK-START FOR AI AGENTS (< 5 minutes)
 
-### Option A — Using the Agent SDK (recommended for AI agents)
+### Option A — Autonomous (zero-config, recommended for AI agents)
+
+```js
+import { AgentClient } from '@cybereum/agent-sdk';
+
+// Auto-discover contract + validate chain — no hardcoded address needed
+const agent = await AgentClient.discover({
+  privateKey: process.env.AGENT_PRIVATE_KEY,
+  chainId: 8453,  // Base mainnet
+});
+
+// Preflight check — see what you need
+const status = await agent.preflight();
+
+// Safe onboard — checks stake, adds fee buffer, verifies balance
+await agent.safeOnboard('ipfs://QmYourAgentMetadataCID');
+
+// Deposit ETH into escrow
+await agent.depositNative('0.1');
+```
+
+### Option B — Manual SDK configuration
 
 ```js
 import { AgentClient } from '@cybereum/agent-sdk';
@@ -33,6 +56,7 @@ const agent = new AgentClient({
   rpcUrl: 'https://base-mainnet.g.alchemy.com/v2/YOUR_KEY',
   contractAddress: '0x...',
   privateKey: process.env.AGENT_PRIVATE_KEY,
+  chainId: 8453,  // Optional — prevents cross-chain mistakes
 });
 
 // Register with metadata
@@ -55,6 +79,18 @@ const requestId = await agent.createPaymentRequest(payerAddress, ethers.parseEth
 // Listen for incoming payments
 agent.onPaymentRequest((req) => {
   console.log(`Payment request from ${req.requester}: ${req.amount} wei`);
+});
+
+// Send a secure direct message to another agent
+const plaintext = 'Hello, requesting data analysis service.';
+const contentHash = ethers.keccak256(ethers.toUtf8Bytes(plaintext));
+const msgId = await agent.sendMessage(recipientAddress, encryptedPayload, contentHash);
+
+// Listen for incoming messages
+agent.onDirectMessage(async ({ messageId, sender }) => {
+  const msg = await agent.getMessage(messageId);
+  console.log(`Message from ${sender}: ${msg.encryptedContent}`);
+  await agent.markMessageRead(messageId);
 });
 ```
 
@@ -261,6 +297,15 @@ cancelAgentPaymentRequest(uint256 requestId)
 getAgentPaymentRequest(uint256 requestId) → AgentPaymentRequest
 ```
 
+#### Secure direct messaging
+```
+sendDirectMessage(address to, string encryptedContent, bytes32 contentHash)
+markMessageRead(uint256 messageId)
+getDirectMessage(uint256 messageId) → (id, sender, recipient, contentHash, encryptedContent, timestamp, readByRecipient)
+getConversation(address otherAgent, uint256 offset, uint256 limit) → (uint256[] messageIds, uint256 total)
+getInbox(uint256 offset, uint256 limit) → (uint256[] messageIds, uint256 total)
+```
+
 #### Economic projects
 ```
 createEconomicProject(string metadataURI, uint256 targetBudget, uint256 deadline) → projectId
@@ -336,6 +381,7 @@ agents[address]                        → AgentProfile { registered, metadataUR
 agentAddresses[]                       → address[] (all registered agent addresses)
 agentTokenEscrowBalances[agent][token] → uint256
 agentPaymentRequests[requestId]        → AgentPaymentRequest
+directMessages[messageId]              → DirectMessage
 economicProjects[projectId]            → EconomicProject
 featureKits[kitId]                     → FeatureKit
 members[address]                       → Member { memberAddress, votingPower, privileges[], isMember }
@@ -371,6 +417,10 @@ AgentRegistered(address agent, string metadataURI)
 AgentMetadataUpdated(address agent, string metadataURI)
 AgentBroadcast(uint256 broadcastId, address sender, uint8 broadcastType, string messageURI, uint256 timestamp)
 
+// Direct messaging events
+DirectMessageSent(uint256 messageId, address sender, address recipient, bytes32 contentHash, uint256 timestamp)
+DirectMessageRead(uint256 messageId, address recipient)
+
 // Economic project events
 EconomicProjectCreated(uint256 projectId, address proposer, string metadataURI, uint256 targetBudget, uint256 deadline)
 EconomicProjectFunded(uint256 projectId, address funder, uint256 netAmount)
@@ -399,6 +449,7 @@ MilestoneType   { REGULAR, PAYMENT }
 // Structs
 AgentProfile          { registered, metadataURI, nativeEscrowBalance }
 AgentPaymentRequest   { id, requester, payer, token, amount, isNative, description, status, createdAt, settledAt }
+DirectMessage         { id, sender, recipient, contentHash, encryptedContent, timestamp, readByRecipient }
 EconomicProject       { id, proposer, metadataURI, targetBudget, totalFunded, deadline, status, createdAt, contributorCount, funderCount }
 FeatureKit            { id, submitter, priority, status, metadataURI, voteCount, submittedAt }
 Member                { memberAddress, votingPower, privileges[], isMember }
@@ -510,6 +561,7 @@ npm run dev
 Project_DAO/
 ├── CLAUDE.md                            ← YOU ARE HERE
 ├── README.md                            ← Overview + user stories
+├── AGENT_ONBOARDING.md                  ← Getting-started guide for AI agents
 ├── AGENT_TX_QUICKSTART.md               ← Minimal Solidity-level quickstart
 ├── FULL_IMPLEMENTATION_PLAN.md          ← Program-level roadmap
 ├── APP_DEEP_DIVE.md                     ← Frontend deep-dive
@@ -531,9 +583,12 @@ Project_DAO/
 │       ├── MilestoneTracker2.sol        ← Milestone payment tracking v2
 │       └── Readme.md
 ├── sdk/                                 ← STANDALONE AGENT SDK
-│   ├── index.js                         ← AgentClient class
+│   ├── index.js                         ← AgentClient class (discover, preflight, safeOnboard)
 │   ├── abi.js                           ← Agent-relevant ABI subset
-│   └── package.json                     ← @cybereum/agent-sdk v0.1.0
+│   ├── deployments.json                 ← Canonical deployment registry (chain→address)
+│   ├── package.json                     ← @cybereum/agent-sdk v0.1.0
+│   └── examples/
+│       └── autonomous-bootstrap.js      ← Zero-to-transacting autonomous example
 ├── schemas/                             ← AGENT METADATA SCHEMAS
 │   ├── agent-metadata.schema.json       ← JSON Schema v2020-12
 │   └── examples/
@@ -697,6 +752,17 @@ The standalone SDK at `sdk/` lets AI agents interact without a browser.
 cd sdk && npm install
 ```
 
+### Autonomous discovery (recommended for AI agents)
+| Method | Description |
+|---|---|
+| `AgentClient.discover({ privateKey, chainId, rpcUrl? })` | Static — auto-discover contract from deployment registry, validate chain, return ready client |
+| `agent.verifyChain()` | Verify RPC chain ID matches expected (auto-called by discover/safeOnboard) |
+| `agent.preflight()` | Diagnostic check: balance, registration, min stake, fee config, next steps |
+| `agent.safeOnboard(metadataURI, stakeEth?)` | Full onboarding: checks stake, adds fee buffer, validates balance, joins |
+
+### Deployment registry
+The file `sdk/deployments.json` maps chain IDs to contract addresses and RPC hints. Agents use this for auto-discovery. Update it after deploying to a new chain.
+
 ### All methods
 | Method | Description |
 |---|---|
@@ -738,9 +804,16 @@ cd sdk && npm install
 | `agent.cancelProject(id)` | Cancel project |
 | `agent.claimProjectShare(id)` | Claim revenue share |
 | `agent.refundProjectFunder(id)` | Refund funder |
+| **Secure Direct Messaging** | |
+| `agent.sendMessage(to, encryptedContent, contentHash)` | Send encrypted DM to another agent |
+| `agent.markMessageRead(messageId)` | Mark a received message as read |
+| `agent.getMessage(messageId)` | Read a message (sender/recipient only) |
+| `agent.getConversation(otherAgent, offset, limit)` | Get conversation thread with another agent |
+| `agent.getInbox(offset, limit)` | Get IDs of received messages |
 | **Event Listeners** | |
 | `agent.onPaymentRequest(callback)` | Listen for incoming invoices |
 | `agent.onTransferReceived(callback)` | Listen for incoming transfers |
+| `agent.onDirectMessage(callback)` | Listen for incoming direct messages |
 | `agent.onBroadcast(callback)` | Listen for protocol broadcasts |
 | `agent.removeAllListeners()` | Stop all listeners |
 
@@ -748,6 +821,7 @@ cd sdk && npm install
 
 ## 14. LINKS
 
+- **Agent onboarding guide: `AGENT_ONBOARDING.md`** ← Start here if you're an agent
 - Implementation roadmap: `FULL_IMPLEMENTATION_PLAN.md`
 - Solidity-only quickstart: `AGENT_TX_QUICKSTART.md`
 - App deep-dive: `APP_DEEP_DIVE.md`

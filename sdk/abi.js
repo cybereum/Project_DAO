@@ -55,6 +55,14 @@ export const PROJECT_DAO_ABI = [
   'function submitFeatureKit(string calldata metadataURI, uint8 priority) external',
   'function upvoteFeatureKit(uint256 kitId) external',
 
+  // ─── Secure Direct Messaging ───────────────────────────────────────────
+  'function sendDirectMessage(address _to, string calldata _encryptedContent, bytes32 _contentHash) external',
+  'function markMessageRead(uint256 _messageId) external',
+  'function getDirectMessage(uint256 _messageId) external view returns (uint256 id, address sender, address recipient, bytes32 contentHash, string encryptedContent, uint256 timestamp, bool readByRecipient)',
+  'function getConversation(address _otherAgent, uint256 offset, uint256 limit) external view returns (uint256[] messageIds, uint256 total)',
+  'function getInbox(uint256 offset, uint256 limit) external view returns (uint256[] messageIds, uint256 total)',
+  'function currentDirectMessageId() external view returns (uint256)',
+
   // ─── Events ────────────────────────────────────────────────────────────
   'event AgentRegistered(address indexed agent, string metadataURI)',
   'event AgentToAgentNativeTransfer(address indexed from, address indexed to, uint256 amount, string memo)',
@@ -63,4 +71,6 @@ export const PROJECT_DAO_ABI = [
   'event AgentPaymentRequestSettled(uint256 indexed requestId, address indexed payer, address indexed requester, uint256 settledAt)',
   'event CybereumFeePaid(address indexed payer, address indexed token, uint256 amount, string context)',
   'event AgentBroadcast(uint256 indexed broadcastId, address indexed sender, uint8 broadcastType, string messageURI, uint256 timestamp)',
+  'event DirectMessageSent(uint256 indexed messageId, address indexed sender, address indexed recipient, bytes32 contentHash, uint256 timestamp)',
+  'event DirectMessageRead(uint256 indexed messageId, address indexed recipient)',
 ];

@@ -450,6 +450,8 @@ export function useAppState() {
         contract.queryFilter(contract.filters.AgentPaymentRequestCreated(null, null, walletAddress), baseFromBlock, latestBlock),
         contract.queryFilter(contract.filters.AgentPaymentRequestSettled(null, walletAddress, null), baseFromBlock, latestBlock),
         contract.queryFilter(contract.filters.AgentPaymentRequestSettled(null, null, walletAddress), baseFromBlock, latestBlock),
+        contract.queryFilter(contract.filters.DirectMessageSent(null, walletAddress, null), baseFromBlock, latestBlock),
+        contract.queryFilter(contract.filters.DirectMessageSent(null, null, walletAddress), baseFromBlock, latestBlock),
       ]);
 
       const activityChunks = activityResults
@@ -791,6 +793,88 @@ export function useAppState() {
     }
   }, [getDaoWriteContract]);
 
+  // ─── Direct messaging state ──────────────────────────────────────────────
+  const [inbox, setInbox] = useState({ messages: [], total: 0 });
+  const [inboxLoading, setInboxLoading] = useState(false);
+  const [conversationMessages, setConversationMessages] = useState({ messages: [], total: 0 });
+  const [conversationLoading, setConversationLoading] = useState(false);
+
+  const hydrateMessages = useCallback(async (contract, messageIds) => {
+    const messages = await Promise.all(
+      messageIds.map(async (id) => {
+        try {
+          const m = await contract.getDirectMessage(id);
+          return {
+            id: Number(m.id), sender: m.sender, recipient: m.recipient,
+            contentHash: m.contentHash, encryptedContent: m.encryptedContent,
+            timestamp: Number(m.timestamp), readByRecipient: m.readByRecipient,
+          };
+        } catch { return null; }
+      })
+    );
+    return messages.filter(Boolean);
+  }, []);
+
+  const loadInbox = useCallback(async (offset = 0, limit = 50) => {
+    if (!walletAddress) return;
+    const contract = getDaoReadContract();
+    if (!contract) return;
+    setInboxLoading(true);
+    try {
+      const [messageIds, total] = await contract.getInbox(offset, limit);
+      const messages = await hydrateMessages(contract, messageIds);
+      setInbox({ messages, total: Number(total) });
+    } catch { setInbox({ messages: [], total: 0 }); }
+    finally { setInboxLoading(false); }
+  }, [walletAddress, getDaoReadContract, hydrateMessages]);
+
+  const loadConversation = useCallback(async (otherAgent, offset = 0, limit = 50) => {
+    if (!walletAddress) return;
+    const contract = getDaoReadContract();
+    if (!contract) return;
+    setConversationLoading(true);
+    try {
+      const [messageIds, total] = await contract.getConversation(otherAgent, offset, limit);
+      const messages = await hydrateMessages(contract, messageIds);
+      setConversationMessages({ messages, total: Number(total) });
+    } catch { setConversationMessages({ messages: [], total: 0 }); }
+    finally { setConversationLoading(false); }
+  }, [walletAddress, getDaoReadContract, hydrateMessages]);
+
+  const agentSendMessage = useCallback(async (toAddress, encryptedContent, contentHash) => {
+    setWalletError('');
+    const contract = await getDaoWriteContract();
+    if (!contract) { setWalletError('Wallet not connected or contract not configured.'); return null; }
+    try {
+      setTxPending(true);
+      const tx = await contract.sendDirectMessage(toAddress, encryptedContent, contentHash);
+      const receipt = await tx.wait();
+      return receipt.hash;
+    } catch (error) {
+      setWalletError(error?.shortMessage || error?.message || 'Message send failed.');
+      return null;
+    } finally {
+      setTxPending(false);
+    }
+  }, [getDaoWriteContract]);
+
+  const agentMarkMessageRead = useCallback(async (messageId) => {
+    setWalletError('');
+    const contract = await getDaoWriteContract();
+    if (!contract) { setWalletError('Wallet not connected or contract not configured.'); return null; }
+    try {
+      setTxPending(true);
+      const tx = await contract.markMessageRead(messageId);
+      const receipt = await tx.wait();
+      return receipt.hash;
+    } catch (error) {
+      setWalletError(error?.shortMessage || error?.message || 'Mark read failed.');
+      return null;
+    } finally {
+      setTxPending(false);
+    }
+  }, [getDaoWriteContract]);
+
   // ─── Feature Kit state ────────────────────────────────────────────────────
   const [featureKits, setFeatureKits] = useState([]);
   const [featureKitsLoading, setFeatureKitsLoading] = useState(false);
@@ -866,6 +950,9 @@ export function useAppState() {
     agentDepositToken, agentWithdrawToken, agentTransferToken, agentTransferAsset,
     agentLoadTokenBalance, loadAgentActivity,
     agentCreatePaymentRequest, agentSettlePaymentRequest, agentCancelPaymentRequest,
+    // direct messaging
+    inbox, inboxLoading, conversationMessages, conversationLoading,
+    loadInbox, loadConversation, agentSendMessage, agentMarkMessageRead,
     // feature kits
     featureKits, featureKitsLoading,
     loadFeatureKits, submitFeatureKit, upvoteFeatureKit,
@@ -889,6 +976,8 @@ export function useAppState() {
     agentDepositToken, agentWithdrawToken, agentTransferToken, agentTransferAsset,
     agentLoadTokenBalance, loadAgentActivity,
     agentCreatePaymentRequest, agentSettlePaymentRequest, agentCancelPaymentRequest,
+    inbox, inboxLoading, conversationMessages, conversationLoading,
+    loadInbox, loadConversation, agentSendMessage, agentMarkMessageRead,
     featureKits, featureKitsLoading,
     loadFeatureKits, submitFeatureKit, upvoteFeatureKit,
     stakeAndJoin, leaveDAO,

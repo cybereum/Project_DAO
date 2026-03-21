@@ -10,5 +10,5 @@
     "ethers": "^6.16.0"
   },
   "peerDependencies": {},
-  "files": ["index.js", "abi.js"]
+  "files": ["index.js", "abi.js", "deployments.js", "deployments.json"]
 }

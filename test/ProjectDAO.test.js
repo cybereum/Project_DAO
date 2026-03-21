@@ -1,4 +1,5 @@
 const { expect } = require("chai");
+const { anyValue } = require("@nomicfoundation/hardhat-chai-matchers/withArgs");
 const { ethers } = require("hardhat");
 
 // Helper: deploy fresh contract + set treasury
@@ -711,6 +712,196 @@ describe("Feature kit pipeline", () => {
   });
 });
 
+
+// ─── Secure Direct Messaging ─────────────────────────────────────────────────
+
+describe("Secure direct messaging", () => {
+  const sampleHash = ethers.keccak256(ethers.toUtf8Bytes("hello agent"));
+
+  it("registered agent can send a direct message", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+
+    await dao.sendDirectMessage(alice.address, "encrypted-payload-abc", sampleHash);
+    const m = await dao.getDirectMessage(1n);
+    expect(m.sender).to.equal(owner.address);
+    expect(m.recipient).to.equal(alice.address);
+    expect(m.contentHash).to.equal(sampleHash);
+    expect(m.encryptedContent).to.equal("encrypted-payload-abc");
+    expect(m.readByRecipient).to.be.false;
+  });
+
+  it("emits DirectMessageSent event", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+
+    await expect(dao.sendDirectMessage(alice.address, "enc-data", sampleHash))
+      .to.emit(dao, "DirectMessageSent")
+      .withArgs(1n, owner.address, alice.address, sampleHash, anyValue);
+  });
+
+  it("recipient can read the message", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    await dao.sendDirectMessage(alice.address, "enc-data", sampleHash);
+
+    const m = await dao.connect(alice).getDirectMessage(1n);
+    expect(m.encryptedContent).to.equal("enc-data");
+  });
+
+  it("third party cannot read the message", async () => {
+    const { dao, owner, alice, bob } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    await dao.addMember(bob.address, 10);
+    await dao.connect(bob).registerAgent("ipfs://bob");
+    await dao.sendDirectMessage(alice.address, "enc-data", sampleHash);
+
+    await expect(dao.connect(bob).getDirectMessage(1n)).to.be.revertedWith(
+      "Only sender or recipient can read this message."
+    );
+  });
+
+  it("recipient can mark message as read", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    await dao.sendDirectMessage(alice.address, "enc-data", sampleHash);
+
+    await dao.connect(alice).markMessageRead(1n);
+    const m = await dao.getDirectMessage(1n);
+    expect(m.readByRecipient).to.be.true;
+  });
+
+  it("emits DirectMessageRead event", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    await dao.sendDirectMessage(alice.address, "enc-data", sampleHash);
+
+    await expect(dao.connect(alice).markMessageRead(1n))
+      .to.emit(dao, "DirectMessageRead")
+      .withArgs(1n, alice.address);
+  });
+
+  it("non-recipient cannot mark as read", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    await dao.sendDirectMessage(alice.address, "enc-data", sampleHash);
+
+    await expect(dao.markMessageRead(1n)).to.be.revertedWith(
+      "Only recipient can mark as read."
+    );
+  });
+
+  it("cannot message self", async () => {
+    const { dao, owner } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+
+    await expect(
+      dao.sendDirectMessage(owner.address, "enc", sampleHash)
+    ).to.be.revertedWith("Cannot message self.");
+  });
+
+  it("cannot message unregistered agent", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+
+    await expect(
+      dao.sendDirectMessage(alice.address, "enc", sampleHash)
+    ).to.be.revertedWith("Recipient must be a registered agent.");
+  });
+
+  it("reverts on empty content", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+
+    await expect(
+      dao.sendDirectMessage(alice.address, "", sampleHash)
+    ).to.be.revertedWith("Message content required.");
+  });
+
+  it("reverts on zero content hash", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+
+    await expect(
+      dao.sendDirectMessage(alice.address, "enc", ethers.ZeroHash)
+    ).to.be.revertedWith("Content hash required.");
+  });
+
+  it("getConversation returns thread between two agents", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+
+    const hash1 = ethers.keccak256(ethers.toUtf8Bytes("msg1"));
+    const hash2 = ethers.keccak256(ethers.toUtf8Bytes("msg2"));
+    const hash3 = ethers.keccak256(ethers.toUtf8Bytes("msg3"));
+
+    await dao.sendDirectMessage(alice.address, "enc1", hash1);
+    await dao.connect(alice).sendDirectMessage(owner.address, "enc2", hash2);
+    await dao.sendDirectMessage(alice.address, "enc3", hash3);
+
+    const [ids, total] = await dao.getConversation(alice.address, 0, 10);
+    expect(total).to.equal(3n);
+    expect(ids.length).to.equal(3);
+    expect(ids[0]).to.equal(1n);
+    expect(ids[1]).to.equal(2n);
+    expect(ids[2]).to.equal(3n);
+
+    // Same conversation from alice's perspective
+    const [ids2, total2] = await dao.connect(alice).getConversation(owner.address, 0, 10);
+    expect(total2).to.equal(3n);
+    expect(ids2.length).to.equal(3);
+  });
+
+  it("getConversation paginates correctly", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+
+    for (let i = 0; i < 5; i++) {
+      const hash = ethers.keccak256(ethers.toUtf8Bytes(`msg${i}`));
+      await dao.sendDirectMessage(alice.address, `enc${i}`, hash);
+    }
+
+    const [page1, total] = await dao.getConversation(alice.address, 0, 3);
+    expect(total).to.equal(5n);
+    expect(page1.length).to.equal(3);
+    const [page2] = await dao.getConversation(alice.address, 3, 3);
+    expect(page2.length).to.equal(2);
+  });
+
+  it("getInbox returns received messages", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+
+    await dao.sendDirectMessage(alice.address, "enc1", ethers.keccak256(ethers.toUtf8Bytes("m1")));
+    await dao.sendDirectMessage(alice.address, "enc2", ethers.keccak256(ethers.toUtf8Bytes("m2")));
+
+    const [ids, total] = await dao.connect(alice).getInbox(0, 10);
+    expect(total).to.equal(2n);
+    expect(ids[0]).to.equal(1n);
+    expect(ids[1]).to.equal(2n);
+  });
+
+  it("non-agent cannot send messages", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+
+    await expect(
+      dao.connect(alice).sendDirectMessage(owner.address, "enc", sampleHash)
+    ).to.be.revertedWith("Only registered agents can call this function.");
+  });
+});
 
 // ─── Token Escrow & Token Payment Requests ───────────────────────────────────
 
