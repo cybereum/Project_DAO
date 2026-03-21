@@ -87,13 +87,13 @@ function Field({ label, ...props }) {
   );
 }
 
-function Btn({ children, loading, variant = 'primary', disabled, ...props }) {
+function Btn({ children, loading, variant = 'primary', disabled, className = '', ...props }) {
   const base = 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-opacity disabled:opacity-50';
   const v = variant === 'primary'
     ? 'bg-gradient-to-r from-nexus-cyan to-nexus-purple text-white hover:opacity-90'
     : 'border border-nexus-border text-nexus-text-dim hover:text-nexus-text hover:border-nexus-cyan/40';
   return (
-    <button className={`${base} ${v}`} disabled={disabled || loading} {...props}>
+    <button className={`${base} ${v} ${className}`} disabled={disabled || loading} {...props}>
       {loading && <RefreshCw size={14} className="animate-spin" />}
       {children}
     </button>

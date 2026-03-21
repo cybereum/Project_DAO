@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion as Motion } from 'framer-motion';
 import { useSearchParams } from 'react-router-dom';
 import { keccak256, toUtf8Bytes } from 'ethers';
@@ -42,7 +42,7 @@ function MessageBubble({ msg, isOwn, walletAddress, onMarkRead }) {
 
   return (
     <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'} mb-3`}>
-      <div className={`max-w-[75%] ${isOwn ? 'order-1' : 'order-0'}`}>
+      <div className="max-w-[75%]">
         <div className={`px-4 py-3 rounded-2xl text-sm break-words ${
           isOwn
             ? 'bg-gradient-to-br from-nexus-cyan/20 to-nexus-purple/20 border border-nexus-cyan/20 rounded-br-md'
@@ -121,31 +121,33 @@ export default function AgentMessages() {
   const [contactFilter, setContactFilter] = useState('');
   const messagesEndRef = useRef(null);
 
-  // Derive contacts from inbox messages
-  const contacts = (() => {
+  const contacts = useMemo(() => {
     if (!inbox?.messages?.length || !walletAddress) return [];
+    const walletLower = walletAddress.toLowerCase();
     const contactMap = new Map();
     for (const msg of inbox.messages) {
-      const other = msg.sender.toLowerCase() === walletAddress.toLowerCase() ? msg.recipient : msg.sender;
+      const other = msg.sender.toLowerCase() === walletLower ? msg.recipient : msg.sender;
       const key = other.toLowerCase();
       if (!contactMap.has(key)) {
         contactMap.set(key, { address: other, lastMsg: msg, unread: 0 });
       }
-      if (!msg.readByRecipient && msg.recipient.toLowerCase() === walletAddress.toLowerCase()) {
+      if (!msg.readByRecipient && msg.recipient.toLowerCase() === walletLower) {
         contactMap.get(key).unread++;
       }
     }
     return Array.from(contactMap.values())
       .sort((a, b) => (b.lastMsg?.timestamp || 0) - (a.lastMsg?.timestamp || 0));
-  })();
+  }, [inbox, walletAddress]);
 
-  const filteredContacts = contactFilter
-    ? contacts.filter(c => c.address.toLowerCase().includes(contactFilter.toLowerCase()))
-    : contacts;
+  const filteredContacts = useMemo(() =>
+    contactFilter
+      ? contacts.filter(c => c.address.toLowerCase().includes(contactFilter.toLowerCase()))
+      : contacts,
+    [contacts, contactFilter]
+  );
 
-  const totalUnread = contacts.reduce((n, c) => n + c.unread, 0);
+  const totalUnread = useMemo(() => contacts.reduce((n, c) => n + c.unread, 0), [contacts]);
 
-  // Load inbox on mount
   useEffect(() => {
     if (walletConnected) {
       loadInbox();
@@ -153,14 +155,12 @@ export default function AgentMessages() {
     }
   }, [walletConnected, loadInbox, loadAgentProfile]);
 
-  // Load conversation when active agent changes
   useEffect(() => {
     if (activeAgent && walletConnected) {
       loadConversation(activeAgent);
     }
   }, [activeAgent, walletConnected, loadConversation]);
 
-  // Scroll to bottom of messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [conversationMessages]);
@@ -172,19 +172,17 @@ export default function AgentMessages() {
     if (hash) {
       setNewMessage('');
       loadConversation(activeAgent);
-      loadInbox();
       markFunnelStep('agent_tx_complete');
       trackEvent('agent_transaction', { action: 'direct_message_sent' });
     }
-  }, [newMessage, activeAgent, agentSendMessage, loadConversation, loadInbox]);
+  }, [newMessage, activeAgent, agentSendMessage, loadConversation]);
 
   const handleMarkRead = useCallback(async (messageId) => {
     const hash = await agentMarkMessageRead(messageId);
     if (hash) {
       loadConversation(activeAgent);
-      loadInbox();
     }
-  }, [activeAgent, agentMarkMessageRead, loadConversation, loadInbox]);
+  }, [activeAgent, agentMarkMessageRead, loadConversation]);
 
   const startNewConversation = () => {
     if (newConvoAddr.trim()) {
