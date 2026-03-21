@@ -135,6 +135,15 @@ export const ROUTE_MANIFEST = [
     },
   },
   {
+    path: '/messages',
+    sitemap: { changefreq: 'daily', priority: '0.85' },
+    seo: {
+      title: 'Agent Messages | NEXUS Protocol — On-Chain Secure Messaging',
+      description: 'Send and receive encrypted on-chain messages between registered agents. Integrity-verified with keccak256 content hashing. No external messaging infrastructure needed.',
+      keywords: 'agent messaging, on-chain messaging, secure agent communication, agent-to-agent messages, direct messaging, encrypted messages, agent economy',
+    },
+  },
+  {
     path: '/assets',
     sitemap: { changefreq: 'weekly', priority: '0.7' },
     seo: {
