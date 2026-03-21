@@ -35,7 +35,7 @@ function EmptyState({ icon: Icon, title, desc }) {
   );
 }
 
-function MessageBubble({ msg, isOwn, walletAddress, onMarkRead }) {
+function MessageBubble({ msg, isOwn, onMarkRead }) {
   const ts = new Date(msg.timestamp * 1000);
   const timeStr = ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const dateStr = ts.toLocaleDateString([], { month: 'short', day: 'numeric' });
@@ -369,7 +369,6 @@ export default function AgentMessages() {
                         key={msg.id}
                         msg={msg}
                         isOwn={msg.sender.toLowerCase() === walletAddress?.toLowerCase()}
-                        walletAddress={walletAddress}
                         onMarkRead={handleMarkRead}
                       />
                     ))}

@@ -1280,7 +1280,7 @@ contract Project_DAO {
         uint256 limit
     ) external view returns (uint256[] memory messageIds, uint256 total) {
         require(
-            agents[msg.sender].registered || msg.sender == owner,
+            agents[msg.sender].registered,
             "Caller must be a registered agent."
         );
         bytes32 convKey = _conversationKey(msg.sender, _otherAgent);
