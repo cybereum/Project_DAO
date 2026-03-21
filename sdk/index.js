@@ -164,7 +164,9 @@ export class AgentClient {
   async createPaymentRequest(payerAddress, amount, { isNative = true, tokenAddress = ethers.ZeroAddress, description = '' } = {}) {
     const tx = await this.contract.createAgentPaymentRequest(payerAddress, tokenAddress, amount, isNative, description);
     const receipt = await tx.wait();
-    return this._extractEvent(receipt, 'AgentPaymentRequestCreated', 'requestId') ?? receipt;
+    const requestId = this._extractEvent(receipt, 'AgentPaymentRequestCreated', 'requestId');
+    if (requestId == null) throw new Error('AgentPaymentRequestCreated event not found in receipt');
+    return requestId;
   }
 
   /** Settle (pay) a payment request. For native requests, sends ETH. */
@@ -218,7 +220,9 @@ export class AgentClient {
   async createProject(metadataURI, targetBudgetWei, deadlineUnix) {
     const tx = await this.contract.createEconomicProject(metadataURI, targetBudgetWei, deadlineUnix);
     const receipt = await tx.wait();
-    return this._extractEvent(receipt, 'EconomicProjectCreated', 'projectId') ?? receipt;
+    const projectId = this._extractEvent(receipt, 'EconomicProjectCreated', 'projectId');
+    if (projectId == null) throw new Error('EconomicProjectCreated event not found in receipt');
+    return projectId;
   }
 
   /** Fund a project with ETH. */
@@ -253,7 +257,9 @@ export class AgentClient {
     const typeHash = ethers.id(serviceType);
     const tx = await this.contract.listService(typeHash, metadataURI, pricePerCallWei);
     const receipt = await tx.wait();
-    return this._extractEvent(receipt, 'ServiceListed', 'serviceId') ?? receipt;
+    const serviceId = this._extractEvent(receipt, 'ServiceListed', 'serviceId');
+    if (serviceId == null) throw new Error('ServiceListed event not found in receipt');
+    return serviceId;
   }
 
   /** Update an existing service listing. */
@@ -325,7 +331,9 @@ export class AgentClient {
     }
     const tx = await this.contract.createServiceAgreement(serviceId, requestURI, expiresAt, { value });
     const receipt = await tx.wait();
-    return this._extractEvent(receipt, 'AgreementCreated', 'agreementId') ?? receipt;
+    const agreementId = this._extractEvent(receipt, 'AgreementCreated', 'agreementId');
+    if (agreementId == null) throw new Error('AgreementCreated event not found in receipt');
+    return agreementId;
   }
 
   /** Fulfill a service agreement (provider submits response). */
