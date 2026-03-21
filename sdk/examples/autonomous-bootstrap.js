@@ -6,8 +6,12 @@
  * to being fully onboarded and transacting on the Cybereum settlement layer
  * with ZERO human configuration.
  *
- * Usage:
+ * Usage (auto-discover, recommended):
  *   AGENT_PRIVATE_KEY=0x... node autonomous-bootstrap.js
+ *
+ * If auto-discovery fails, set these env vars to use manual configuration:
+ *   RPC_URL=https://...         (JSON-RPC endpoint)
+ *   CONTRACT_ADDRESS=0x...      (deployed Project_DAO address)
  *
  * What it does:
  *   1. Discovers the contract address from the deployment registry
@@ -43,11 +47,20 @@ async function main() {
     console.log(`      Contract found. Agent wallet: ${agent.address}`);
   } catch (err) {
     console.error(`      Discovery failed: ${err.message}`);
+
+    const rpcUrl = process.env.RPC_URL;
+    const contractAddress = process.env.CONTRACT_ADDRESS;
+
+    if (!rpcUrl || !contractAddress) {
+      console.error('\n      Falling back to manual configuration requires:');
+      console.error('        RPC_URL=https://...          (JSON-RPC endpoint)');
+      console.error('        CONTRACT_ADDRESS=0x...       (deployed Project_DAO address)');
+      process.exit(1);
+    }
+
     console.log('\n      Falling back to manual configuration...');
-    console.log('      Set these env vars and use the manual constructor:');
-    console.log('        RPC_URL=https://...');
-    console.log('        CONTRACT_ADDRESS=0x...');
-    process.exit(1);
+    agent = new AgentClient({ rpcUrl, contractAddress, privateKey, chainId: CHAIN_ID });
+    console.log(`      Manual client created. Agent wallet: ${agent.address}`);
   }
 
   // ── Step 2: Preflight check ─────────────────────────────────────────────

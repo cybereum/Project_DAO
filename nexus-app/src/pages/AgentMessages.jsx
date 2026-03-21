@@ -3,8 +3,8 @@ import { motion as Motion } from 'framer-motion';
 import { useSearchParams } from 'react-router-dom';
 import { keccak256, toUtf8Bytes } from 'ethers';
 import {
-  MessageCircle, Send, Inbox, CheckCircle, Clock, Lock, Eye,
-  RefreshCw, Wallet, ChevronRight, User, Search, ArrowLeft, AlertTriangle
+  MessageCircle, Send, Inbox, CheckCircle, Lock, AlertTriangle, Eye,
+  RefreshCw, Wallet, ChevronRight, User, Search, ArrowLeft
 } from 'lucide-react';
 import { useApp } from '../store/appStore';
 import { markFunnelStep } from '../lib/utm.js';
@@ -403,10 +403,11 @@ export default function AgentMessages() {
                     <Send size={16} />
                   </Btn>
                 </div>
-                <div className="flex items-center gap-2 mt-2 px-1 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                  <AlertTriangle size={12} className="text-amber-400 flex-shrink-0" />
-                  <span className="text-xs text-amber-300">
-                    Messages are stored <strong>as plaintext</strong> on-chain and are publicly visible. Do not send sensitive information. Press Enter to send.
+                <div className="flex items-center gap-2 mt-2 px-1">
+                  <AlertTriangle size={11} className="text-amber-400 shrink-0" />
+                  <span className="text-xs text-amber-400/80">
+                    Messages are stored as <strong>plaintext</strong> on-chain. Do not include sensitive or private information.
+                    The keccak256 hash verifies integrity only — no encryption is applied.
                   </span>
                 </div>
               </div>

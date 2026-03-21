@@ -19,22 +19,9 @@
 
 import { ethers } from 'ethers';
 import { PROJECT_DAO_ABI } from './abi.js';
-import { createRequire } from 'module';
+import { deployments } from './deployments.js';
 
 export { PROJECT_DAO_ABI };
-
-/**
- * Load the canonical deployment registry.
- * Works when installed as a package or used from the repo.
- */
-function loadDeployments() {
-  try {
-    const require = createRequire(import.meta.url);
-    return require('./deployments.json');
-  } catch {
-    return null;
-  }
-}
 
 export class AgentClient {
   /**
@@ -92,14 +79,14 @@ export class AgentClient {
     if (!privateKey) throw new Error('privateKey is required');
     if (!chainId) throw new Error('chainId is required for auto-discovery');
 
-    const registry = loadDeployments();
+    const registry = deployments;
     if (!registry) {
-      throw new Error('Deployment registry (deployments.json) not found. Use manual constructor instead.');
+      throw new Error('Deployment registry not found. Use manual constructor instead.');
     }
 
     const network = registry.networks[String(chainId)];
     if (!network) {
-      const available = Object.entries(registry.networks).map(([id, n]) => `${n.name} (${id})`).join(', ');
+      const available = Object.entries(deployments.networks).map(([id, n]) => `${n.name} (${id})`).join(', ');
       throw new Error(`Chain ${chainId} not in deployment registry. Available: ${available}`);
     }
 
@@ -210,6 +197,20 @@ export class AgentClient {
     };
   }
 
+  /**
+   * @private
+   * Enforces chain verification before executing any write transaction.
+   * Since verifyChain() memoizes after the first check, this is effectively
+   * free on all subsequent write calls within the same session.
+   * @template T
+   * @param {() => Promise<T>} fn  Function that submits the transaction.
+   * @returns {Promise<T>}
+   */
+  async _write(fn) {
+    await this.verifyChain();
+    return fn();
+  }
+
   /** Extract a named arg from a transaction receipt's event logs. */
   _extractEventArg(receipt, eventName, argName) {
     const log = receipt.logs.find(l => {
@@ -223,13 +224,13 @@ export class AgentClient {
 
   /** Register this agent on-chain with an IPFS metadata URI. */
   async register(metadataURI) {
-    const tx = await this.contract.registerAgent(metadataURI);
+    const tx = await this._write(() => this.contract.registerAgent(metadataURI));
     return tx.wait();
   }
 
   /** Update this agent's metadata URI. */
   async updateMetadata(metadataURI) {
-    const tx = await this.contract.updateAgentMetadata(metadataURI);
+    const tx = await this._write(() => this.contract.updateAgentMetadata(metadataURI));
     return tx.wait();
   }
 
@@ -281,19 +282,19 @@ export class AgentClient {
   /** Deposit ETH into escrow. Amount in ETH string (e.g. '0.1'). */
   async depositNative(amountEth) {
     const value = ethers.parseEther(amountEth);
-    const tx = await this.contract.depositNativeToEscrow({ value });
+    const tx = await this._write(() => this.contract.depositNativeToEscrow({ value }));
     return tx.wait();
   }
 
   /** Withdraw ETH from escrow. Amount in wei (bigint). */
   async withdrawNative(amountWei) {
-    const tx = await this.contract.withdrawNativeFromEscrow(amountWei);
+    const tx = await this._write(() => this.contract.withdrawNativeFromEscrow(amountWei));
     return tx.wait();
   }
 
   /** Transfer ETH from your escrow to another agent. Amount in wei. */
   async transferNative(toAddress, amountWei, memo = '') {
-    const tx = await this.contract.transferNativeBetweenAgents(toAddress, amountWei, memo);
+    const tx = await this._write(() => this.contract.transferNativeBetweenAgents(toAddress, amountWei, memo));
     return tx.wait();
   }
 
@@ -307,19 +308,19 @@ export class AgentClient {
 
   /** Deposit ERC-20 tokens (must approve contract first). */
   async depositToken(tokenAddress, amountWei) {
-    const tx = await this.contract.depositTokenToEscrow(tokenAddress, amountWei);
+    const tx = await this._write(() => this.contract.depositTokenToEscrow(tokenAddress, amountWei));
     return tx.wait();
   }
 
   /** Withdraw ERC-20 tokens from escrow. */
   async withdrawToken(tokenAddress, amountWei) {
-    const tx = await this.contract.withdrawTokenFromEscrow(tokenAddress, amountWei);
+    const tx = await this._write(() => this.contract.withdrawTokenFromEscrow(tokenAddress, amountWei));
     return tx.wait();
   }
 
   /** Transfer ERC-20 tokens to another agent's escrow. */
   async transferToken(tokenAddress, toAddress, amountWei, memo = '') {
-    const tx = await this.contract.transferTokenBetweenAgents(tokenAddress, toAddress, amountWei, memo);
+    const tx = await this._write(() => this.contract.transferTokenBetweenAgents(tokenAddress, toAddress, amountWei, memo));
     return tx.wait();
   }
 
@@ -335,7 +336,7 @@ export class AgentClient {
    * @returns {bigint} requestId
    */
   async createPaymentRequest(payerAddress, amount, { isNative = true, tokenAddress = ethers.ZeroAddress, description = '' } = {}) {
-    const tx = await this.contract.createAgentPaymentRequest(payerAddress, tokenAddress, amount, isNative, description);
+    const tx = await this._write(() => this.contract.createAgentPaymentRequest(payerAddress, tokenAddress, amount, isNative, description));
     const receipt = await tx.wait();
     return this._extractEventArg(receipt, 'AgentPaymentRequestCreated', 'requestId') ?? receipt;
   }
@@ -344,13 +345,13 @@ export class AgentClient {
   async settlePaymentRequest(requestId) {
     const req = await this.getPaymentRequest(requestId);
     const opts = req.isNative ? { value: req.amount } : {};
-    const tx = await this.contract.settleAgentPaymentRequest(requestId, opts);
+    const tx = await this._write(() => this.contract.settleAgentPaymentRequest(requestId, opts));
     return tx.wait();
   }
 
   /** Cancel a payment request you created. */
   async cancelPaymentRequest(requestId) {
-    const tx = await this.contract.cancelAgentPaymentRequest(requestId);
+    const tx = await this._write(() => this.contract.cancelAgentPaymentRequest(requestId));
     return tx.wait();
   }
 
@@ -370,13 +371,13 @@ export class AgentClient {
   /** Stake ETH to join the DAO and register as an agent in one transaction. */
   async stakeAndJoin(metadataURI, stakeEth) {
     const value = ethers.parseEther(stakeEth);
-    const tx = await this.contract.stakeAndJoin(metadataURI, { value });
+    const tx = await this._write(() => this.contract.stakeAndJoin(metadataURI, { value }));
     return tx.wait();
   }
 
   /** Leave the DAO and reclaim your stake. */
   async leaveDAO() {
-    const tx = await this.contract.leaveDAO();
+    const tx = await this._write(() => this.contract.leaveDAO());
     return tx.wait();
   }
 
@@ -389,7 +390,7 @@ export class AgentClient {
 
   /** Create an economic project. Returns projectId. */
   async createProject(metadataURI, targetBudgetWei, deadlineUnix) {
-    const tx = await this.contract.createEconomicProject(metadataURI, targetBudgetWei, deadlineUnix);
+    const tx = await this._write(() => this.contract.createEconomicProject(metadataURI, targetBudgetWei, deadlineUnix));
     const receipt = await tx.wait();
     return this._extractEventArg(receipt, 'EconomicProjectCreated', 'projectId') ?? receipt;
   }
@@ -397,19 +398,19 @@ export class AgentClient {
   /** Fund a project with ETH. */
   async fundProject(projectId, amountEth) {
     const value = ethers.parseEther(amountEth);
-    const tx = await this.contract.fundProject(projectId, { value });
+    const tx = await this._write(() => this.contract.fundProject(projectId, { value }));
     return tx.wait();
   }
 
   /** Apply to contribute to a project. */
   async applyToProject(projectId) {
-    const tx = await this.contract.applyToProject(projectId);
+    const tx = await this._write(() => this.contract.applyToProject(projectId));
     return tx.wait();
   }
 
   /** Claim your revenue share from a completed project. */
   async claimProjectShare(projectId) {
-    const tx = await this.contract.claimProjectShare(projectId);
+    const tx = await this._write(() => this.contract.claimProjectShare(projectId));
     return tx.wait();
   }
 
@@ -422,14 +423,14 @@ export class AgentClient {
    * @param {string} contentHash     keccak256 hash of the plaintext (hex, 32 bytes). Use ethers.keccak256(ethers.toUtf8Bytes(plaintext)).
    */
   async sendMessage(toAddress, encryptedContent, contentHash) {
-    const tx = await this.contract.sendDirectMessage(toAddress, encryptedContent, contentHash);
+    const tx = await this._write(() => this.contract.sendDirectMessage(toAddress, encryptedContent, contentHash));
     const receipt = await tx.wait();
     return this._extractEventArg(receipt, 'DirectMessageSent', 'messageId') ?? receipt;
   }
 
   /** Mark a received message as read. */
   async markMessageRead(messageId) {
-    const tx = await this.contract.markMessageRead(messageId);
+    const tx = await this._write(() => this.contract.markMessageRead(messageId));
     return tx.wait();
   }
 
