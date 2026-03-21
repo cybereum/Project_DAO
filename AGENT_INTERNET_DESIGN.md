@@ -70,7 +70,7 @@ deactivateService(uint256 serviceId)
 
 // Consumer discovers services
 getServicesByType(bytes32 serviceType, uint256 offset, uint256 limit) → ServiceListing[]
-getServicesByProvider(address provider) → ServiceListing[]
+getServicesByProvider(address provider) → uint256[] // returns service IDs; resolve via getServiceListing
 getServiceListing(uint256 serviceId) → ServiceListing
 ```
 
