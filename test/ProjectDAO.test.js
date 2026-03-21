@@ -1189,4 +1189,104 @@ describe("Service agreements", () => {
     expect(disputed).to.equal(1n);
     expect(serviceCount).to.equal(1n);
   });
+
+  it("owner can resolve dispute in favor of provider", async () => {
+    const { dao, owner, alice } = await setupService();
+    const price = ethers.parseEther("0.01");
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
+    await dao.fulfillServiceAgreement(1n, "ipfs://res");
+    await dao.connect(alice).disputeServiceAgreement(1n, "ipfs://dispute");
+
+    // Owner resolves in favor of provider
+    await expect(dao.resolveServiceDispute(1n, true))
+      .to.emit(dao, "ServiceDisputeResolved")
+      .withArgs(1n, true);
+
+    // Provider reputation restored
+    expect(await dao.providerDisputedServices(owner.address)).to.equal(0n);
+    expect(await dao.providerCompletedServices(owner.address)).to.equal(1n);
+
+    // Agreement settled
+    const agr = await dao.getServiceAgreement(1n);
+    expect(agr.status).to.equal(2n); // Settled
+  });
+
+  it("owner can resolve dispute in favor of consumer (refund)", async () => {
+    const { dao, alice } = await setupService();
+    const price = ethers.parseEther("0.01");
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
+    await dao.fulfillServiceAgreement(1n, "ipfs://res");
+    await dao.connect(alice).disputeServiceAgreement(1n, "ipfs://dispute");
+
+    const aliceBal0 = await ethers.provider.getBalance(alice.address);
+    await dao.resolveServiceDispute(1n, false);
+    const aliceBal1 = await ethers.provider.getBalance(alice.address);
+
+    // Consumer refunded
+    expect(aliceBal1 - aliceBal0).to.equal(price);
+  });
+
+  it("non-owner cannot resolve dispute", async () => {
+    const { dao, alice } = await setupService();
+    const price = ethers.parseEther("0.01");
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
+    await dao.fulfillServiceAgreement(1n, "ipfs://res");
+    await dao.connect(alice).disputeServiceAgreement(1n, "ipfs://dispute");
+    await expect(dao.connect(alice).resolveServiceDispute(1n, true))
+      .to.be.revertedWith("Only the owner can call this function.");
+  });
+
+  it("expired disputed agreement can be reclaimed by consumer", async () => {
+    const { dao, alice } = await setupService();
+    const price = ethers.parseEther("0.01");
+    const block = await ethers.provider.getBlock("latest");
+    const expiresAt = block.timestamp + 60;
+    await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
+    await dao.fulfillServiceAgreement(1n, "ipfs://res");
+    await dao.connect(alice).disputeServiceAgreement(1n, "ipfs://dispute");
+
+    // Advance past expiry
+    await ethers.provider.send("evm_increaseTime", [120]);
+    await ethers.provider.send("evm_mine");
+
+    await expect(dao.connect(alice).claimExpiredAgreement(1n))
+      .to.emit(dao, "AgreementExpired");
+  });
+
+  it("agreement for nonexistent service reverts", async () => {
+    const { dao, alice } = await setupService();
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    await expect(
+      dao.connect(alice).createServiceAgreement(999n, "ipfs://req", expiresAt, { value: 1000n })
+    ).to.be.revertedWith("Service not found.");
+  });
+
+  it("provider cannot fulfill twice", async () => {
+    const { dao, alice } = await setupService();
+    const price = ethers.parseEther("0.01");
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
+    await dao.fulfillServiceAgreement(1n, "ipfs://res");
+    await expect(dao.fulfillServiceAgreement(1n, "ipfs://res2"))
+      .to.be.revertedWith("Agreement not in Requested status.");
+  });
+
+  it("free service (pricePerCall=0) works correctly", async () => {
+    const env = await deploy();
+    const { dao, alice } = env;
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    await dao.listService(ethers.id("free-service"), "ipfs://free", 0n);
+
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: 0n });
+    await dao.fulfillServiceAgreement(1n, "ipfs://res");
+    await dao.connect(alice).confirmServiceDelivery(1n);
+
+    const agr = await dao.getServiceAgreement(1n);
+    expect(agr.status).to.equal(2n); // Settled
+  });
 });

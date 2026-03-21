@@ -1389,6 +1389,7 @@ contract Project_DAO {
     event AgreementDisputed(uint256 indexed agreementId, address indexed consumer, string disputeURI);
     event AgreementExpired(uint256 indexed agreementId, address indexed consumer, uint256 refundAmount);
     event AgreementCancelled(uint256 indexed agreementId);
+    event ServiceDisputeResolved(uint256 indexed agreementId, bool favorProvider);
 
     // ─── Service Catalog Functions ──────────────────────────────────────────
 
@@ -1567,17 +1568,18 @@ contract Project_DAO {
     /**
      * @notice Consumer confirms delivery, releasing escrowed payment to the provider (minus fee).
      */
-    function confirmServiceDelivery(uint256 agreementId) external whenNotPaused nonReentrant {
+    function confirmServiceDelivery(uint256 agreementId) external onlyRegisteredAgent whenNotPaused nonReentrant {
         ServiceAgreement storage agr = serviceAgreements[agreementId];
         require(agr.id != 0, "Agreement not found.");
         require(agr.consumer == msg.sender, "Not the consumer.");
         require(agr.status == AgreementStatus.Fulfilled, "Agreement not fulfilled.");
 
-        agr.status = AgreementStatus.Settled;
-        agr.settledAt = block.timestamp;
-
+        // Collect fee first (external call), then update state (CEI pattern)
         uint256 fee = _collectNativeFee(agr.escrowAmount, "serviceAgreement");
         uint256 payout = agr.escrowAmount - fee;
+
+        agr.status = AgreementStatus.Settled;
+        agr.settledAt = block.timestamp;
 
         // Update service stats
         serviceCatalog[agr.serviceId].totalCalls++;
@@ -1611,9 +1613,55 @@ contract Project_DAO {
     }
 
     /**
+     * @notice Owner resolves a disputed agreement, releasing escrow to consumer or provider.
+     * @param agreementId  ID of the disputed agreement
+     * @param favorProvider  If true, pay provider (minus fee). If false, refund consumer.
+     */
+    function resolveServiceDispute(
+        uint256 agreementId,
+        bool favorProvider
+    ) external onlyOwner whenNotPaused nonReentrant {
+        ServiceAgreement storage agr = serviceAgreements[agreementId];
+        require(agr.id != 0, "Agreement not found.");
+        require(agr.status == AgreementStatus.Disputed, "Agreement not disputed.");
+
+        agr.status = AgreementStatus.Settled;
+        agr.settledAt = block.timestamp;
+
+        if (favorProvider) {
+            // Provider was right: pay them minus fee, fix reputation
+            uint256 fee = _collectNativeFee(agr.escrowAmount, "disputeResolution");
+            uint256 payout = agr.escrowAmount - fee;
+
+            serviceCatalog[agr.serviceId].totalCalls++;
+            providerCompletedServices[agr.provider]++;
+            // Undo the dispute count since provider was vindicated
+            if (providerDisputedServices[agr.provider] > 0) {
+                providerDisputedServices[agr.provider]--;
+            }
+            if (serviceCatalog[agr.serviceId].totalDisputes > 0) {
+                serviceCatalog[agr.serviceId].totalDisputes--;
+            }
+
+            (bool ok,) = payable(agr.provider).call{value: payout}("");
+            require(ok, "Provider payment failed.");
+
+            emit AgreementSettled(agreementId, agr.provider, payout);
+        } else {
+            // Consumer was right: refund them
+            (bool ok,) = payable(agr.consumer).call{value: agr.escrowAmount}("");
+            require(ok, "Consumer refund failed.");
+
+            emit AgreementExpired(agreementId, agr.consumer, agr.escrowAmount);
+        }
+
+        emit ServiceDisputeResolved(agreementId, favorProvider);
+    }
+
+    /**
      * @notice Consumer cancels an agreement before it is fulfilled. Refunds escrow.
      */
-    function cancelServiceAgreement(uint256 agreementId) external whenNotPaused nonReentrant {
+    function cancelServiceAgreement(uint256 agreementId) external onlyRegisteredAgent whenNotPaused nonReentrant {
         ServiceAgreement storage agr = serviceAgreements[agreementId];
         require(agr.id != 0, "Agreement not found.");
         require(agr.consumer == msg.sender, "Not the consumer.");
@@ -1628,14 +1676,16 @@ contract Project_DAO {
     }
 
     /**
-     * @notice Reclaim escrow from an expired agreement that was never fulfilled.
+     * @notice Reclaim escrow from an expired agreement that was never fulfilled or is disputed.
      */
-    function claimExpiredAgreement(uint256 agreementId) external whenNotPaused nonReentrant {
+    function claimExpiredAgreement(uint256 agreementId) external onlyRegisteredAgent whenNotPaused nonReentrant {
         ServiceAgreement storage agr = serviceAgreements[agreementId];
         require(agr.id != 0, "Agreement not found.");
         require(agr.consumer == msg.sender, "Not the consumer.");
         require(
-            agr.status == AgreementStatus.Requested || agr.status == AgreementStatus.Fulfilled,
+            agr.status == AgreementStatus.Requested ||
+            agr.status == AgreementStatus.Fulfilled ||
+            agr.status == AgreementStatus.Disputed,
             "Agreement not reclaimable."
         );
         require(block.timestamp >= agr.expiresAt, "Agreement has not expired.");

@@ -280,6 +280,7 @@ confirmServiceDelivery(uint256 agreementId)
 disputeServiceAgreement(uint256 agreementId, string disputeURI)
 cancelServiceAgreement(uint256 agreementId)
 claimExpiredAgreement(uint256 agreementId)
+resolveServiceDispute(uint256 agreementId, bool favorProvider)    onlyOwner
 getServiceAgreement(uint256 agreementId) → ServiceAgreement
 getProviderReputation(address provider) → (uint256 completed, uint256 disputed, uint256 serviceCount)
 ```

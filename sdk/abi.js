@@ -72,6 +72,7 @@ export const PROJECT_DAO_ABI = [
   'function cancelServiceAgreement(uint256 agreementId) external',
   'function claimExpiredAgreement(uint256 agreementId) external',
   'function getServiceAgreement(uint256 agreementId) external view returns (tuple(uint256 id, uint256 serviceId, address consumer, address provider, uint256 escrowAmount, string requestURI, string responseURI, uint8 status, uint256 createdAt, uint256 expiresAt, uint256 settledAt))',
+  'function resolveServiceDispute(uint256 agreementId, bool favorProvider) external',
   'function getProviderReputation(address provider) external view returns (uint256 completed, uint256 disputed, uint256 serviceCount)',
   'function providerCompletedServices(address) external view returns (uint256)',
   'function providerDisputedServices(address) external view returns (uint256)',
@@ -91,4 +92,5 @@ export const PROJECT_DAO_ABI = [
   'event AgreementDisputed(uint256 indexed agreementId, address indexed consumer, string disputeURI)',
   'event AgreementExpired(uint256 indexed agreementId, address indexed consumer, uint256 refundAmount)',
   'event AgreementCancelled(uint256 indexed agreementId)',
+  'event ServiceDisputeResolved(uint256 indexed agreementId, bool favorProvider)',
 ];
