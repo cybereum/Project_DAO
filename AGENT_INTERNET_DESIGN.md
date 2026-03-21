@@ -230,7 +230,7 @@ mapping(address => uint256) public providerDisputedServices;
 
 New events:
 ```solidity
-event ServiceListed(uint256 indexed serviceId, address indexed provider, bytes32 indexed serviceType, uint256 pricePerCall);
+event ServiceListed(uint256 indexed serviceId, address indexed provider, bytes32 indexed serviceType, string metadataURI, uint256 pricePerCall);
 event ServiceUpdated(uint256 indexed serviceId, string metadataURI, uint256 pricePerCall);
 event ServiceDeactivated(uint256 indexed serviceId);
 event AgreementCreated(uint256 indexed agreementId, uint256 indexed serviceId, address indexed consumer, address provider, uint256 escrowAmount);
