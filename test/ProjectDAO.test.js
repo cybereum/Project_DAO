@@ -1289,4 +1289,43 @@ describe("Service agreements", () => {
     const agr = await dao.getServiceAgreement(1n);
     expect(agr.status).to.equal(2n); // Settled
   });
+
+  it("cannot cancel a settled agreement", async () => {
+    const { dao, alice } = await setupService();
+    const price = ethers.parseEther("0.01");
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
+    await dao.fulfillServiceAgreement(1n, "ipfs://res");
+    await dao.connect(alice).confirmServiceDelivery(1n);
+    await expect(dao.connect(alice).cancelServiceAgreement(1n))
+      .to.be.revertedWith("Can only cancel Requested agreements.");
+  });
+
+  it("cannot dispute a settled agreement", async () => {
+    const { dao, alice } = await setupService();
+    const price = ethers.parseEther("0.01");
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
+    await dao.fulfillServiceAgreement(1n, "ipfs://res");
+    await dao.connect(alice).confirmServiceDelivery(1n);
+    await expect(dao.connect(alice).disputeServiceAgreement(1n, "ipfs://dispute"))
+      .to.be.revertedWith("Agreement not fulfilled.");
+  });
+
+  it("fulfill nonexistent agreement reverts", async () => {
+    const { dao } = await setupService();
+    await expect(dao.fulfillServiceAgreement(999n, "ipfs://res"))
+      .to.be.revertedWith("Agreement not found.");
+  });
+
+  it("third party cannot cancel another agent's agreement", async () => {
+    const { dao, alice, bob } = await setupService();
+    await dao.addMember(bob.address, 10);
+    await dao.connect(bob).registerAgent("ipfs://bob");
+    const price = ethers.parseEther("0.01");
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
+    await expect(dao.connect(bob).cancelServiceAgreement(1n))
+      .to.be.revertedWith("Not the consumer.");
+  });
 });

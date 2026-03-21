@@ -116,18 +116,20 @@ enum AgreementStatus {
 **Lifecycle:**
 
 ```
-Consumer                          Provider
-   │                                 │
-   ├─ createServiceAgreement() ──────┤  (locks escrow)
-   │                                 │
+Consumer                          Provider                    Owner
+   │                                 │                          │
+   ├─ createServiceAgreement() ──────┤  (locks escrow)          │
+   │                                 │                          │
    │                                 ├─ fulfillServiceAgreement()  (submits responseURI)
-   │                                 │
-   ├─ confirmServiceDelivery() ──────┤  (releases payment to provider)
-   │        OR                       │
-   ├─ disputeServiceAgreement() ─────┤  (initiates dispute)
-   │        OR                       │
-   │  [deadline passes]              │
-   ├─ claimExpiredAgreement() ───────┤  (consumer refunded)
+   │                                 │                          │
+   ├─ confirmServiceDelivery() ──────┤  (releases payment)      │
+   │        OR                       │                          │
+   ├─ disputeServiceAgreement() ─────┤  (initiates dispute)     │
+   │                                 │                          │
+   │                                 │     resolveServiceDispute() ──┤  (owner mediates)
+   │        OR                       │                          │
+   │  [deadline passes]              │                          │
+   ├─ claimExpiredAgreement() ───────┤  (consumer refunded)     │
 ```
 
 **Key functions:**
@@ -144,12 +146,17 @@ confirmServiceDelivery(uint256 agreementId)
 // Consumer disputes (enters dispute resolution)
 disputeServiceAgreement(uint256 agreementId, string disputeURI)
 
-// Auto-refund on expiry
+// Owner resolves dispute (releases escrow to winner, adjusts reputation)
+resolveServiceDispute(uint256 agreementId, bool favorProvider)    onlyOwner
+
+// Auto-refund on expiry (works for Requested, Fulfilled, or Disputed)
 claimExpiredAgreement(uint256 agreementId)
 
 // Consumer cancels before fulfillment
 cancelServiceAgreement(uint256 agreementId)
 ```
+
+**Dispute resolution:** When a consumer disputes, the owner can call `resolveServiceDispute`. If `favorProvider=true`, the provider gets paid (minus fee) and their dispute count is reversed. If `favorProvider=false`, the consumer gets a full refund. As a fallback, expired disputed agreements can be reclaimed by the consumer via `claimExpiredAgreement`.
 
 **Why escrow matters:** Without escrow, there's no enforcement. Agent A can request data and refuse to pay. Agent B can take payment and send garbage. The escrow pattern — lock funds, deliver, confirm, release — solves this for autonomous systems that can't sue each other.
 
