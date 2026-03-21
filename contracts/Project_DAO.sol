@@ -1165,7 +1165,7 @@ contract Project_DAO {
     }
 
     uint256 public currentDirectMessageId = 1;
-    mapping(uint256 => DirectMessage) public directMessages;
+    mapping(uint256 => DirectMessage) private directMessages;
 
     /// @notice Index of message IDs per conversation pair (sorted key = min(a,b), max(a,b))
     mapping(bytes32 => uint256[]) private _conversationIndex;
