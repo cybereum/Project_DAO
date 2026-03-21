@@ -6,8 +6,11 @@
  * to being fully onboarded and transacting on the Cybereum settlement layer
  * with ZERO human configuration.
  *
- * Usage:
+ * Usage (auto-discover, recommended):
  *   AGENT_PRIVATE_KEY=0x... node autonomous-bootstrap.js
+ *
+ * Usage (manual fallback if discovery fails):
+ *   AGENT_PRIVATE_KEY=0x... RPC_URL=https://... CONTRACT_ADDRESS=0x... node autonomous-bootstrap.js
  *
  * What it does:
  *   1. Discovers the contract address from the deployment registry
@@ -44,10 +47,19 @@ async function main() {
   } catch (err) {
     console.error(`      Discovery failed: ${err.message}`);
     console.log('\n      Falling back to manual configuration...');
-    console.log('      Set these env vars and use the manual constructor:');
-    console.log('        RPC_URL=https://...');
-    console.log('        CONTRACT_ADDRESS=0x...');
-    process.exit(1);
+
+    const rpcUrl = process.env.RPC_URL;
+    const contractAddress = process.env.CONTRACT_ADDRESS;
+
+    if (!rpcUrl || !contractAddress) {
+      console.error('      Manual fallback requires RPC_URL and CONTRACT_ADDRESS env vars.');
+      console.error('        RPC_URL=https://base-mainnet.g.alchemy.com/v2/YOUR_KEY');
+      console.error('        CONTRACT_ADDRESS=0x...');
+      process.exit(1);
+    }
+
+    agent = new AgentClient({ rpcUrl, contractAddress, privateKey, chainId: CHAIN_ID });
+    console.log(`      Manual configuration loaded. Agent wallet: ${agent.address}`);
   }
 
   // ── Step 2: Preflight check ─────────────────────────────────────────────
