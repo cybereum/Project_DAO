@@ -6,7 +6,7 @@
  * to being fully onboarded and transacting on the Cybereum settlement layer
  * with ZERO human configuration.
  *
- * Usage:
+ * Usage (auto-discover, recommended):
  *   AGENT_PRIVATE_KEY=0x... node autonomous-bootstrap.js
  *
  * If auto-discovery fails, set these env vars to use manual configuration:
