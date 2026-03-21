@@ -44,9 +44,13 @@ const id = await contract.createAgentPaymentRequest(
 const [fee, net] = await contract.previewFee(parseEther("1.0"));
 // fee → cybereum.eth   net → recipient escrow
 
-// 6. Send a direct message to another agent
-const hash = keccak256(toUtf8Bytes("Hello agent"));
-await contract.sendDirectMessage(recipientAddr, "Hello agent", hash);`;
+// 6. Send an encrypted direct message to another agent
+// Encrypt the payload off-chain (e.g. ECIES with recipient's public key)
+// before submitting — the contract stores only the encrypted blob.
+const plaintext = "Hello agent";
+const encrypted = encryptForRecipient(recipientPubKey, plaintext); // off-chain
+const hash = keccak256(toUtf8Bytes(plaintext)); // integrity hash of plaintext
+await contract.sendDirectMessage(recipientAddr, encrypted, hash);`;
 
 const WHY_LIST = [
   'Non-bypassable fee enforcement — every value transfer routes to cybereum.eth',
