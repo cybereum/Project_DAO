@@ -1574,16 +1574,17 @@ contract Project_DAO {
         require(agr.consumer == msg.sender, "Not the consumer.");
         require(agr.status == AgreementStatus.Fulfilled, "Agreement not fulfilled.");
 
-        // Collect fee first (external call), then update state (CEI pattern)
-        uint256 fee = _collectNativeFee(agr.escrowAmount, "serviceAgreement");
-        uint256 payout = agr.escrowAmount - fee;
+        uint256 escrow = agr.escrowAmount;
 
+        // Update state before external calls (CEI)
         agr.status = AgreementStatus.Settled;
         agr.settledAt = block.timestamp;
-
-        // Update service stats
         serviceCatalog[agr.serviceId].totalCalls++;
         providerCompletedServices[agr.provider]++;
+
+        // External calls: fee transfer + provider payment
+        uint256 fee = _collectNativeFee(escrow, "serviceAgreement");
+        uint256 payout = escrow - fee;
 
         (bool ok,) = payable(agr.provider).call{value: payout}("");
         require(ok, "Provider payment failed.");
@@ -1625,34 +1626,40 @@ contract Project_DAO {
         require(agr.id != 0, "Agreement not found.");
         require(agr.status == AgreementStatus.Disputed, "Agreement not disputed.");
 
+        uint256 escrow = agr.escrowAmount;
+        address provider = agr.provider;
+        address consumer = agr.consumer;
+        uint256 serviceId = agr.serviceId;
+
+        // Update state before external calls (CEI)
         agr.status = AgreementStatus.Settled;
         agr.settledAt = block.timestamp;
 
         if (favorProvider) {
-            // Provider was right: pay them minus fee, fix reputation
-            uint256 fee = _collectNativeFee(agr.escrowAmount, "disputeResolution");
-            uint256 payout = agr.escrowAmount - fee;
-
-            serviceCatalog[agr.serviceId].totalCalls++;
-            providerCompletedServices[agr.provider]++;
-            // Undo the dispute count since provider was vindicated
-            if (providerDisputedServices[agr.provider] > 0) {
-                providerDisputedServices[agr.provider]--;
+            // Provider was right: fix reputation
+            serviceCatalog[serviceId].totalCalls++;
+            providerCompletedServices[provider]++;
+            if (providerDisputedServices[provider] > 0) {
+                providerDisputedServices[provider]--;
             }
-            if (serviceCatalog[agr.serviceId].totalDisputes > 0) {
-                serviceCatalog[agr.serviceId].totalDisputes--;
+            if (serviceCatalog[serviceId].totalDisputes > 0) {
+                serviceCatalog[serviceId].totalDisputes--;
             }
 
-            (bool ok,) = payable(agr.provider).call{value: payout}("");
+            // External calls: fee + payment
+            uint256 fee = _collectNativeFee(escrow, "disputeResolution");
+            uint256 payout = escrow - fee;
+
+            (bool ok,) = payable(provider).call{value: payout}("");
             require(ok, "Provider payment failed.");
 
-            emit AgreementSettled(agreementId, agr.provider, payout);
+            emit AgreementSettled(agreementId, provider, payout);
         } else {
-            // Consumer was right: refund them
-            (bool ok,) = payable(agr.consumer).call{value: agr.escrowAmount}("");
+            // Consumer was right: refund
+            (bool ok,) = payable(consumer).call{value: escrow}("");
             require(ok, "Consumer refund failed.");
 
-            emit AgreementExpired(agreementId, agr.consumer, agr.escrowAmount);
+            emit AgreementExpired(agreementId, consumer, escrow);
         }
 
         emit ServiceDisputeResolved(agreementId, favorProvider);

@@ -327,7 +327,7 @@ export class AgentClient {
    */
   async requestService(serviceId, requestURI, { expiresAt, value } = {}) {
     if (!expiresAt) expiresAt = Math.floor(Date.now() / 1000) + 3600; // 1h default
-    if (!value) {
+    if (value == null) {
       const svc = await this.getService(serviceId);
       value = svc.pricePerCall;
     }
