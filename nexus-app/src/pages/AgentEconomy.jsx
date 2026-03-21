@@ -1,13 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion as Motion } from 'framer-motion';
-import { parseEther, formatEther, parseUnits } from 'ethers';
+import { parseEther, formatEther, parseUnits, keccak256, toUtf8Bytes } from 'ethers';
 import {
   Bot, Wallet, ArrowUpRight, ArrowDownLeft, Send, FileText,
   CheckCircle, XCircle, Clock, Zap, Info, Copy, ExternalLink,
   RefreshCw, Shield, Twitter, Share2, Link2, Coins, Image,
   MessageCircle, Inbox, Lock, Eye
 } from 'lucide-react';
-import { keccak256, toUtf8Bytes } from 'ethers';
 import { generateReferralLink, markFunnelStep } from '../lib/utm.js';
 import { trackEvent } from '../lib/analytics.js';
 import { useApp } from '../store/appStore';
