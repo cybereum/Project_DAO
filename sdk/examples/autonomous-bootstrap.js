@@ -9,8 +9,9 @@
  * Usage (auto-discover, recommended):
  *   AGENT_PRIVATE_KEY=0x... node autonomous-bootstrap.js
  *
- * Usage (manual fallback if discovery fails):
- *   AGENT_PRIVATE_KEY=0x... RPC_URL=https://... CONTRACT_ADDRESS=0x... node autonomous-bootstrap.js
+ * If auto-discovery fails, set these env vars to use manual configuration:
+ *   RPC_URL=https://...         (JSON-RPC endpoint)
+ *   CONTRACT_ADDRESS=0x...      (deployed Project_DAO address)
  *
  * What it does:
  *   1. Discovers the contract address from the deployment registry
@@ -46,20 +47,20 @@ async function main() {
     console.log(`      Contract found. Agent wallet: ${agent.address}`);
   } catch (err) {
     console.error(`      Discovery failed: ${err.message}`);
-    console.log('\n      Falling back to manual configuration...');
 
     const rpcUrl = process.env.RPC_URL;
     const contractAddress = process.env.CONTRACT_ADDRESS;
 
     if (!rpcUrl || !contractAddress) {
-      console.error('      Manual fallback requires RPC_URL and CONTRACT_ADDRESS env vars.');
-      console.error('        RPC_URL=https://base-mainnet.g.alchemy.com/v2/YOUR_KEY');
-      console.error('        CONTRACT_ADDRESS=0x...');
+      console.error('\n      Falling back to manual configuration requires:');
+      console.error('        RPC_URL=https://...          (JSON-RPC endpoint)');
+      console.error('        CONTRACT_ADDRESS=0x...       (deployed Project_DAO address)');
       process.exit(1);
     }
 
+    console.log('\n      Falling back to manual configuration...');
     agent = new AgentClient({ rpcUrl, contractAddress, privateKey, chainId: CHAIN_ID });
-    console.log(`      Manual configuration loaded. Agent wallet: ${agent.address}`);
+    console.log(`      Manual client created. Agent wallet: ${agent.address}`);
   }
 
   // ── Step 2: Preflight check ─────────────────────────────────────────────
