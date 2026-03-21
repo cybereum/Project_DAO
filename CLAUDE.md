@@ -420,6 +420,7 @@ AgreementCreated(uint256 agreementId, uint256 serviceId, address consumer, addre
 AgreementFulfilled(uint256 agreementId, string responseURI)
 AgreementSettled(uint256 agreementId, address provider, uint256 paidAmount)
 AgreementDisputed(uint256 agreementId, address consumer, string disputeURI)
+ServiceDisputeResolved(uint256 agreementId, address resolver, uint256 providerPayout, uint256 consumerRefund)
 AgreementExpired(uint256 agreementId, address consumer, uint256 refundAmount)
 AgreementCancelled(uint256 agreementId)
 ```
