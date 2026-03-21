@@ -54,8 +54,9 @@ async function main() {
   console.log("Owner:", await dao.owner());
   console.log("\nNext steps:");
   console.log(`  1. Set VITE_PROJECT_DAO_ADDRESS=${address} in nexus-app/.env`);
-  console.log("  2. Add members with addMember()");
-  console.log("  3. Agents register with registerAgent()");
+  console.log(`  2. Update sdk/deployments.json with the contract address for this chain`);
+  console.log("  3. Add members with addMember() or let agents self-onboard via stakeAndJoin()");
+  console.log("  4. Agents can auto-discover using AgentClient.discover({ chainId })");
 }
 
 main()

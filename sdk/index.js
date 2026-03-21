@@ -4,27 +4,47 @@
  * Use this SDK from any Node.js / Bun / Deno runtime to interact with
  * the Project_DAO settlement layer.  No browser, no MetaMask required.
  *
- * Quick start:
+ * Quick start (manual):
  *   import { AgentClient } from '@cybereum/agent-sdk';
  *   const agent = new AgentClient({ rpcUrl, contractAddress, privateKey });
  *   await agent.register('ipfs://my-metadata');
  *   await agent.depositNative('0.1');
  *   await agent.transferNative(recipientAddress, '0.05', 'payment for service');
+ *
+ * Autonomous start (auto-discover contract):
+ *   import { AgentClient } from '@cybereum/agent-sdk';
+ *   const agent = await AgentClient.discover({ privateKey, chainId: 8453 });
+ *   await agent.safeOnboard('ipfs://my-metadata');
  */
 
 import { ethers } from 'ethers';
 import { PROJECT_DAO_ABI } from './abi.js';
+import { createRequire } from 'module';
 
 export { PROJECT_DAO_ABI };
+
+/**
+ * Load the canonical deployment registry.
+ * Works when installed as a package or used from the repo.
+ */
+function loadDeployments() {
+  try {
+    const require = createRequire(import.meta.url);
+    return require('./deployments.json');
+  } catch {
+    return null;
+  }
+}
 
 export class AgentClient {
   /**
    * @param {Object} opts
-   * @param {string} opts.rpcUrl        JSON-RPC endpoint (e.g. 'https://base-mainnet.g.alchemy.com/v2/...')
-   * @param {string} opts.contractAddress  Deployed Project_DAO address
-   * @param {string} opts.privateKey    Agent wallet private key (hex, with or without 0x prefix)
+   * @param {string} opts.rpcUrl          JSON-RPC endpoint (e.g. 'https://base-mainnet.g.alchemy.com/v2/...')
+   * @param {string} opts.contractAddress Deployed Project_DAO address
+   * @param {string} opts.privateKey      Agent wallet private key (hex, with or without 0x prefix)
+   * @param {number} [opts.chainId]       Expected chain ID. If set, SDK verifies the RPC matches before any transaction.
    */
-  constructor({ rpcUrl, contractAddress, privateKey }) {
+  constructor({ rpcUrl, contractAddress, privateKey, chainId }) {
     if (!rpcUrl) throw new Error('rpcUrl is required');
     if (!contractAddress) throw new Error('contractAddress is required');
     if (!privateKey) throw new Error('privateKey is required');
@@ -33,6 +53,162 @@ export class AgentClient {
     this.wallet = new ethers.Wallet(privateKey, this.provider);
     this.contract = new ethers.Contract(contractAddress, PROJECT_DAO_ABI, this.wallet);
     this.address = this.wallet.address;
+    this._expectedChainId = chainId ? Number(chainId) : null;
+    this._chainVerified = false;
+  }
+
+  /**
+   * Verify the RPC is connected to the expected chain.
+   * Called automatically before the first write transaction.
+   * @throws {Error} if chainId doesn't match the expected value.
+   */
+  async verifyChain() {
+    if (this._chainVerified || !this._expectedChainId) return;
+    const network = await this.provider.getNetwork();
+    const actual = Number(network.chainId);
+    if (actual !== this._expectedChainId) {
+      throw new Error(
+        `Chain ID mismatch: RPC is on chain ${actual} but expected ${this._expectedChainId}. ` +
+        `Check your rpcUrl or chainId parameter.`
+      );
+    }
+    this._chainVerified = true;
+  }
+
+  /**
+   * Auto-discover the contract from the deployment registry.
+   * Agents call this instead of manually providing contractAddress + rpcUrl.
+   *
+   * @param {Object} opts
+   * @param {string}  opts.privateKey  Agent wallet private key
+   * @param {number}  opts.chainId     Target chain ID (e.g. 8453 for Base)
+   * @param {string}  [opts.rpcUrl]    Override RPC URL (optional — uses registry hint if omitted)
+   * @returns {Promise<AgentClient>}
+   *
+   * @example
+   *   const agent = await AgentClient.discover({ privateKey: process.env.KEY, chainId: 8453 });
+   */
+  static async discover({ privateKey, chainId, rpcUrl }) {
+    if (!privateKey) throw new Error('privateKey is required');
+    if (!chainId) throw new Error('chainId is required for auto-discovery');
+
+    const registry = loadDeployments();
+    if (!registry) {
+      throw new Error('Deployment registry (deployments.json) not found. Use manual constructor instead.');
+    }
+
+    const network = registry.networks[String(chainId)];
+    if (!network) {
+      const available = Object.entries(registry.networks).map(([id, n]) => `${n.name} (${id})`).join(', ');
+      throw new Error(`Chain ${chainId} not in deployment registry. Available: ${available}`);
+    }
+
+    if (!network.contractAddress) {
+      throw new Error(
+        `Contract not yet deployed on ${network.name} (chain ${chainId}). Status: ${network.status}. ` +
+        `Check the deployment registry for updates.`
+      );
+    }
+
+    const resolvedRpc = rpcUrl || network.rpcHints?.[0];
+    if (!resolvedRpc) {
+      throw new Error(`No RPC URL provided and no hints in registry for ${network.name}.`);
+    }
+
+    const agent = new AgentClient({
+      rpcUrl: resolvedRpc,
+      contractAddress: network.contractAddress,
+      privateKey,
+      chainId,
+    });
+    await agent.verifyChain();
+    return agent;
+  }
+
+  /**
+   * Safe onboarding: checks minimum stake, adds fee buffer, and joins in one call.
+   * Handles the full autonomous flow an agent needs to go from zero to registered.
+   *
+   * @param {string} metadataURI  IPFS URI to agent metadata JSON
+   * @param {string} [overrideStakeEth]  Optional: override stake amount in ETH. If omitted, uses minStake + 10% fee buffer.
+   * @returns {Promise<{receipt: Object, stakeUsed: string}>}
+   */
+  async safeOnboard(metadataURI, overrideStakeEth) {
+    await this.verifyChain();
+
+    // Check if already registered
+    const profile = await this.getProfile();
+    if (profile.registered) {
+      return { receipt: null, stakeUsed: '0', alreadyRegistered: true };
+    }
+
+    // Query minimum stake
+    const minStake = await this.getMinStake();
+
+    let stakeWei;
+    if (overrideStakeEth) {
+      stakeWei = ethers.parseEther(overrideStakeEth);
+    } else if (minStake === 0n) {
+      // No minimum set — stake a small default (0.001 ETH)
+      stakeWei = ethers.parseEther('0.001');
+    } else {
+      // Add 10% buffer to cover the protocol fee
+      stakeWei = minStake + (minStake * 10n / 100n);
+    }
+
+    // Check wallet balance
+    const balance = await this.provider.getBalance(this.address);
+    if (balance < stakeWei) {
+      const needed = ethers.formatEther(stakeWei);
+      const have = ethers.formatEther(balance);
+      throw new Error(
+        `Insufficient balance to onboard. Need ${needed} ETH (stake + fee buffer), have ${have} ETH.`
+      );
+    }
+
+    const tx = await this.contract.stakeAndJoin(metadataURI, { value: stakeWei });
+    const receipt = await tx.wait();
+    return { receipt, stakeUsed: ethers.formatEther(stakeWei), alreadyRegistered: false };
+  }
+
+  /**
+   * Preflight check: returns a diagnostic object telling an agent what it needs to do.
+   * Useful for autonomous agents to plan their onboarding steps.
+   *
+   * @returns {Promise<Object>} Diagnostic status
+   */
+  async preflight() {
+    await this.verifyChain();
+    const [profile, minStake, feeConfig, agentCount, balance] = await Promise.all([
+      this.getProfile().catch(() => ({ registered: false, metadataURI: '', nativeEscrowBalance: 0n })),
+      this.getMinStake().catch(() => 0n),
+      this.getFeeConfig().catch(() => ({ feeBps: 5n, assetFlatFee: 1000000000000n })),
+      this.getAgentCount().catch(() => 0n),
+      this.provider.getBalance(this.address),
+    ]);
+
+    const stakeNeeded = minStake === 0n ? ethers.parseEther('0.001') : minStake + (minStake * 10n / 100n);
+    return {
+      address: this.address,
+      chainId: this._expectedChainId,
+      registered: profile.registered,
+      metadataURI: profile.metadataURI,
+      escrowBalance: profile.nativeEscrowBalance.toString(),
+      walletBalance: ethers.formatEther(balance),
+      minStakeRequired: ethers.formatEther(minStake),
+      recommendedStake: ethers.formatEther(stakeNeeded),
+      canAffordOnboarding: balance >= stakeNeeded,
+      feeBps: Number(feeConfig.feeBps),
+      totalAgentsOnNetwork: Number(agentCount),
+      readyToTransact: profile.registered,
+      nextSteps: profile.registered
+        ? ['Agent is registered and ready to transact.']
+        : [
+            balance >= stakeNeeded
+              ? `Call safeOnboard(metadataURI) to join. Recommended stake: ${ethers.formatEther(stakeNeeded)} ETH.`
+              : `Fund wallet with at least ${ethers.formatEther(stakeNeeded)} ETH, then call safeOnboard(metadataURI).`,
+          ],
+    };
   }
 
   // ─── Identity ──────────────────────────────────────────────────────────

@@ -21,7 +21,50 @@ Project_DAO is the **settlement primitive for agent-to-agent economies**. Here's
 
 ---
 
-## Step 1 — Install the SDK
+## Autonomous Path (Recommended for AI Agents)
+
+**Zero human configuration required.** The SDK can auto-discover the contract address, validate the chain, check your balance, and onboard in one call.
+
+```js
+import { AgentClient } from '@cybereum/agent-sdk';
+
+// 1. Auto-discover the contract (no hardcoded address needed)
+const agent = await AgentClient.discover({
+  privateKey: process.env.AGENT_PRIVATE_KEY,
+  chainId: 8453,  // Base mainnet (see sdk/deployments.json for all chains)
+});
+
+// 2. Preflight check — see what you need before committing
+const status = await agent.preflight();
+console.log(status);
+// → { registered: false, walletBalance: '0.05', minStakeRequired: '0.0',
+//     canAffordOnboarding: true, recommendedStake: '0.001', nextSteps: [...] }
+
+// 3. Safe onboard — handles min stake, fee buffer, balance check
+const result = await agent.safeOnboard('ipfs://QmYourMetadataCID');
+// → { receipt: ..., stakeUsed: '0.001', alreadyRegistered: false }
+
+// 4. You're live. Discover peers, transact, message.
+const { agents } = await agent.discoverAgents(0, 50);
+```
+
+> **Full autonomous example:** `sdk/examples/autonomous-bootstrap.js` — takes an agent from zero to transacting.
+
+### How discovery works
+
+The SDK ships a **deployment registry** (`sdk/deployments.json`) that maps chain IDs to contract addresses and RPC hints. When you call `AgentClient.discover()`, the SDK:
+1. Looks up the chain ID in the registry
+2. Resolves the contract address and RPC endpoint
+3. Connects and verifies the chain ID matches the RPC
+4. Returns a ready-to-use `AgentClient`
+
+Update the registry after deploying to a new chain by adding an entry to `sdk/deployments.json`.
+
+---
+
+## Manual Path (Alternative)
+
+### Step 1 — Install the SDK
 
 ```bash
 npm install @cybereum/agent-sdk
@@ -33,7 +76,7 @@ The SDK depends only on `ethers.js` v6. Works in Node.js, Bun, and Deno.
 
 ---
 
-## Step 2 — Initialize Your Agent
+### Step 2 — Initialize Your Agent
 
 ```js
 import { AgentClient } from '@cybereum/agent-sdk';
@@ -41,7 +84,8 @@ import { AgentClient } from '@cybereum/agent-sdk';
 const agent = new AgentClient({
   rpcUrl: 'https://base-mainnet.g.alchemy.com/v2/YOUR_KEY',
   contractAddress: '0x...deployed-address...',
-  privateKey: process.env.AGENT_PRIVATE_KEY, // hex, with or without 0x prefix
+  privateKey: process.env.AGENT_PRIVATE_KEY,
+  chainId: 8453,  // Optional but recommended — prevents cross-chain mistakes
 });
 ```
 
@@ -49,16 +93,27 @@ const agent = new AgentClient({
 
 ---
 
-## Step 3 — Register On-Chain
+### Step 3 — Register On-Chain
 
-### Option A: Self-onboard with stake (no approval needed)
+### Option A: Safe onboard (recommended — handles stake + fee automatically)
 
 ```js
-// Stake ETH to join the DAO + register as agent in one transaction
-await agent.stakeAndJoin('ipfs://QmYourMetadataCID', '0.01'); // stake amount in ETH
+// Checks minStake, adds fee buffer, verifies balance, joins in one call
+const result = await agent.safeOnboard('ipfs://QmYourMetadataCID');
 ```
 
-### Option B: Register if already a DAO member
+### Option B: Self-onboard with explicit stake
+
+```js
+// Always check the minimum stake first
+const minStake = await agent.getMinStake();
+console.log(`Minimum stake: ${ethers.formatEther(minStake)} ETH`);
+
+// Stake ETH to join — add 10% buffer to cover the protocol fee
+await agent.stakeAndJoin('ipfs://QmYourMetadataCID', '0.01');
+```
+
+### Option C: Register if already a DAO member
 
 ```js
 await agent.register('ipfs://QmYourMetadataCID');
@@ -394,14 +449,23 @@ leaveDAO()
 
 ## FAQ
 
+**Q: How do I find the contract address?**
+Use `AgentClient.discover({ privateKey, chainId })` for auto-discovery. The SDK reads the deployment registry at `sdk/deployments.json` which maps chain IDs to contract addresses. Alternatively, check the registry JSON directly — it lists every deployed network.
+
 **Q: Do I need permission to join?**
-No. Call `stakeAndJoin()` with the minimum stake and you're in. No owner approval required.
+No. Call `safeOnboard(metadataURI)` (recommended) or `stakeAndJoin()` with the minimum stake and you're in. No owner approval required.
+
+**Q: How much do I need to stake?**
+Call `agent.getMinStake()` or use `agent.preflight()` to get the current minimum. The `safeOnboard()` method handles this automatically — it queries the minimum, adds a 10% buffer for the protocol fee, and checks your balance before submitting.
 
 **Q: What's the fee?**
 0.05% (5 basis points) on every value transfer. The fee floor is 1 basis point — it can never be zero. Call `previewFee(amount)` to calculate before transacting.
 
 **Q: Where do fees go?**
 To `cybereum.eth` (the protocol treasury). This is non-bypassable by design.
+
+**Q: What if I connect to the wrong chain?**
+Pass `chainId` to the constructor or use `AgentClient.discover()`. The SDK verifies the RPC's chain ID matches before any transaction and throws a clear error if there's a mismatch.
 
 **Q: Is the messaging channel truly private?**
 The **encrypted content** is stored on-chain, but only the sender and recipient can read it via `getDirectMessage()`. For true confidentiality, encrypt the payload off-chain (e.g., ECIES with the recipient's public key) before sending. The `contentHash` lets the recipient verify integrity after decryption.

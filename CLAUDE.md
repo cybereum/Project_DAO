@@ -26,7 +26,28 @@
 
 ## 2. QUICK-START FOR AI AGENTS (< 5 minutes)
 
-### Option A — Using the Agent SDK (recommended for AI agents)
+### Option A — Autonomous (zero-config, recommended for AI agents)
+
+```js
+import { AgentClient } from '@cybereum/agent-sdk';
+
+// Auto-discover contract + validate chain — no hardcoded address needed
+const agent = await AgentClient.discover({
+  privateKey: process.env.AGENT_PRIVATE_KEY,
+  chainId: 8453,  // Base mainnet
+});
+
+// Preflight check — see what you need
+const status = await agent.preflight();
+
+// Safe onboard — checks stake, adds fee buffer, verifies balance
+await agent.safeOnboard('ipfs://QmYourAgentMetadataCID');
+
+// Deposit ETH into escrow
+await agent.depositNative('0.1');
+```
+
+### Option B — Manual SDK configuration
 
 ```js
 import { AgentClient } from '@cybereum/agent-sdk';
@@ -35,6 +56,7 @@ const agent = new AgentClient({
   rpcUrl: 'https://base-mainnet.g.alchemy.com/v2/YOUR_KEY',
   contractAddress: '0x...',
   privateKey: process.env.AGENT_PRIVATE_KEY,
+  chainId: 8453,  // Optional — prevents cross-chain mistakes
 });
 
 // Register with metadata
@@ -561,9 +583,12 @@ Project_DAO/
 │       ├── MilestoneTracker2.sol        ← Milestone payment tracking v2
 │       └── Readme.md
 ├── sdk/                                 ← STANDALONE AGENT SDK
-│   ├── index.js                         ← AgentClient class
+│   ├── index.js                         ← AgentClient class (discover, preflight, safeOnboard)
 │   ├── abi.js                           ← Agent-relevant ABI subset
-│   └── package.json                     ← @cybereum/agent-sdk v0.1.0
+│   ├── deployments.json                 ← Canonical deployment registry (chain→address)
+│   ├── package.json                     ← @cybereum/agent-sdk v0.1.0
+│   └── examples/
+│       └── autonomous-bootstrap.js      ← Zero-to-transacting autonomous example
 ├── schemas/                             ← AGENT METADATA SCHEMAS
 │   ├── agent-metadata.schema.json       ← JSON Schema v2020-12
 │   └── examples/
@@ -726,6 +751,17 @@ The standalone SDK at `sdk/` lets AI agents interact without a browser.
 ```bash
 cd sdk && npm install
 ```
+
+### Autonomous discovery (recommended for AI agents)
+| Method | Description |
+|---|---|
+| `AgentClient.discover({ privateKey, chainId, rpcUrl? })` | Static — auto-discover contract from deployment registry, validate chain, return ready client |
+| `agent.verifyChain()` | Verify RPC chain ID matches expected (auto-called by discover/safeOnboard) |
+| `agent.preflight()` | Diagnostic check: balance, registration, min stake, fee config, next steps |
+| `agent.safeOnboard(metadataURI, stakeEth?)` | Full onboarding: checks stake, adds fee buffer, validates balance, joins |
+
+### Deployment registry
+The file `sdk/deployments.json` maps chain IDs to contract addresses and RPC hints. Agents use this for auto-discovery. Update it after deploying to a new chain.
 
 ### All methods
 | Method | Description |
