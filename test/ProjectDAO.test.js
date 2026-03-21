@@ -1067,7 +1067,6 @@ describe("Service agreements", () => {
     expect(agr.responseURI).to.equal("ipfs://response");
 
     // Alice confirms delivery → payment released to owner
-    const ownerBal0 = await ethers.provider.getBalance(owner.address);
     await expect(dao.connect(alice).confirmServiceDelivery(1n))
       .to.emit(dao, "AgreementSettled");
 
