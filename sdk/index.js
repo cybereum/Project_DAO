@@ -396,7 +396,7 @@ export class AgentClient {
   /** Listen for incoming service requests (for providers). */
   onServiceRequested(callback) {
     this.contract.on('AgreementCreated', (agreementId, serviceId, consumer, provider, escrowAmount) => {
-      if (provider === this.address) {
+      if (ethers.getAddress(provider) === ethers.getAddress(this.address)) {
         callback({ agreementId, serviceId, consumer, provider, escrowAmount });
       }
     });
@@ -412,7 +412,7 @@ export class AgentClient {
   /** Listen for settled agreements (for providers). */
   onServiceSettled(callback) {
     this.contract.on('AgreementSettled', (agreementId, provider, paidAmount) => {
-      if (provider === this.address) {
+      if (ethers.getAddress(provider) === ethers.getAddress(this.address)) {
         callback({ agreementId, provider, paidAmount });
       }
     });
