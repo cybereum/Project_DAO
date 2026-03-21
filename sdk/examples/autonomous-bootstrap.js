@@ -102,9 +102,11 @@ async function main() {
   const peers = agents.filter(a => a.address.toLowerCase() !== agent.address.toLowerCase());
   if (peers.length > 0) {
     console.log(`[6/6] Sending test message to ${peers[0].address.slice(0, 10)}...`);
-    const plaintext = 'Hello from an autonomous agent. This is a bootstrap test.';
-    const contentHash = ethers.keccak256(ethers.toUtf8Bytes(plaintext));
-    const messageId = await agent.sendMessage(peers[0].address, plaintext, contentHash);
+    // NOTE: This is an unencrypted demo payload. In production, encrypt the
+    // message off-chain before calling sendMessage if you require secrecy.
+    const demoMessage = 'Hello from an autonomous agent. This is a bootstrap test.';
+    const contentHash = ethers.keccak256(ethers.toUtf8Bytes(demoMessage));
+    const messageId = await agent.sendMessage(peers[0].address, demoMessage, contentHash);
     console.log(`      Message sent! ID: ${messageId}`);
   } else {
     console.log('[6/6] No other agents found. Skipping test message.');
