@@ -1,12 +1,14 @@
 /**
  * Canonical deployment registry for Project_DAO.
  *
- * Exported as a plain ES module so it can be statically imported by any
- * runtime (Node.js, Bun, Deno, bundlers) without requiring `createRequire`
- * or JSON import assertions.
+ * Exported as a plain ESM module so it can be imported without Node-specific
+ * APIs (createRequire / require) — this ensures compatibility with Node.js,
+ * Deno, Bun, and all modern bundlers.
  *
- * The companion `deployments.json` file remains in the package for consumers
- * who need to fetch or validate it as JSON (e.g. IPFS pinning, schema tools).
+ * AI agents use this file to auto-discover the contract address for their
+ * target chain via AgentClient.discover().
+ *
+ * Update this file after deploying to a new network.
  */
 export const deployments = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
