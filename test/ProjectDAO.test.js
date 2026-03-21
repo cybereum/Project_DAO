@@ -1106,7 +1106,7 @@ describe("Service agreements", () => {
   });
 
   it("consumer can dispute a fulfilled agreement", async () => {
-    const { dao, alice } = await setupService();
+    const { dao, owner, alice } = await setupService();
     const price = ethers.parseEther("0.01");
     const expiresAt = Math.floor(Date.now() / 1000) + 3600;
     await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
@@ -1115,9 +1115,7 @@ describe("Service agreements", () => {
       .to.emit(dao, "AgreementDisputed");
 
     // Provider dispute count increases
-    const rep = await dao.getProviderReputation(dao.target ? await dao.getAddress() : (await deploy()).owner.address);
-    // Check via direct mapping
-    expect(await dao.providerDisputedServices((await ethers.getSigners())[0].address)).to.equal(1n);
+    expect(await dao.providerDisputedServices(owner.address)).to.equal(1n);
 
     // Service dispute count increases
     const svc = await dao.getServiceListing(1n);

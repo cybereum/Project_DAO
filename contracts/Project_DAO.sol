@@ -1461,9 +1461,9 @@ contract Project_DAO {
     // ─── Service Discovery View Functions ───────────────────────────────────
 
     /// @notice Get a single service listing by ID.
-    function getServiceListing(uint256 serviceId) external view returns (ServiceListing memory) {
-        require(serviceCatalog[serviceId].id != 0, "Service not found.");
-        return serviceCatalog[serviceId];
+    function getServiceListing(uint256 serviceId) external view returns (ServiceListing memory svc) {
+        svc = serviceCatalog[serviceId];
+        require(svc.id != 0, "Service not found.");
     }
 
     /// @notice Find services by type (paginated). Returns only active listings.
@@ -1674,9 +1674,10 @@ contract Project_DAO {
         require(agr.consumer == msg.sender, "Not the consumer.");
         require(agr.status == AgreementStatus.Requested, "Can only cancel Requested agreements.");
 
+        uint256 refund = agr.escrowAmount;
         agr.status = AgreementStatus.Cancelled;
 
-        (bool ok,) = payable(msg.sender).call{value: agr.escrowAmount}("");
+        (bool ok,) = payable(msg.sender).call{value: refund}("");
         require(ok, "Refund failed.");
 
         emit AgreementCancelled(agreementId);
@@ -1697,20 +1698,21 @@ contract Project_DAO {
         );
         require(block.timestamp >= agr.expiresAt, "Agreement has not expired.");
 
+        uint256 refund = agr.escrowAmount;
         agr.status = AgreementStatus.Expired;
 
-        (bool ok,) = payable(msg.sender).call{value: agr.escrowAmount}("");
+        (bool ok,) = payable(msg.sender).call{value: refund}("");
         require(ok, "Refund failed.");
 
-        emit AgreementExpired(agreementId, msg.sender, agr.escrowAmount);
+        emit AgreementExpired(agreementId, msg.sender, refund);
     }
 
     // ─── Service Agreement View Functions ───────────────────────────────────
 
     /// @notice Get a single service agreement by ID.
-    function getServiceAgreement(uint256 agreementId) external view returns (ServiceAgreement memory) {
-        require(serviceAgreements[agreementId].id != 0, "Agreement not found.");
-        return serviceAgreements[agreementId];
+    function getServiceAgreement(uint256 agreementId) external view returns (ServiceAgreement memory agr) {
+        agr = serviceAgreements[agreementId];
+        require(agr.id != 0, "Agreement not found.");
     }
 
     /// @notice Get provider reputation stats.

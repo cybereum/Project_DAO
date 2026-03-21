@@ -35,6 +35,17 @@ export class AgentClient {
     this.address = this.wallet.address;
   }
 
+  /** @private Extract a named arg from the first matching event in a receipt. */
+  _extractEvent(receipt, eventName, argName) {
+    for (const log of receipt.logs) {
+      try {
+        const parsed = this.contract.interface.parseLog(log);
+        if (parsed?.name === eventName) return parsed.args[argName];
+      } catch { /* skip non-matching logs */ }
+    }
+    return null;
+  }
+
   // ─── Identity ──────────────────────────────────────────────────────────
 
   /** Register this agent on-chain with an IPFS metadata URI. */
@@ -153,14 +164,7 @@ export class AgentClient {
   async createPaymentRequest(payerAddress, amount, { isNative = true, tokenAddress = ethers.ZeroAddress, description = '' } = {}) {
     const tx = await this.contract.createAgentPaymentRequest(payerAddress, tokenAddress, amount, isNative, description);
     const receipt = await tx.wait();
-    // Extract requestId from event
-    const event = receipt.logs.find(l => {
-      try { return this.contract.interface.parseLog(l)?.name === 'AgentPaymentRequestCreated'; } catch { return false; }
-    });
-    if (event) {
-      return this.contract.interface.parseLog(event).args.requestId;
-    }
-    return receipt;
+    return this._extractEvent(receipt, 'AgentPaymentRequestCreated', 'requestId') ?? receipt;
   }
 
   /** Settle (pay) a payment request. For native requests, sends ETH. */
@@ -214,13 +218,7 @@ export class AgentClient {
   async createProject(metadataURI, targetBudgetWei, deadlineUnix) {
     const tx = await this.contract.createEconomicProject(metadataURI, targetBudgetWei, deadlineUnix);
     const receipt = await tx.wait();
-    const event = receipt.logs.find(l => {
-      try { return this.contract.interface.parseLog(l)?.name === 'EconomicProjectCreated'; } catch { return false; }
-    });
-    if (event) {
-      return this.contract.interface.parseLog(event).args.projectId;
-    }
-    return receipt;
+    return this._extractEvent(receipt, 'EconomicProjectCreated', 'projectId') ?? receipt;
   }
 
   /** Fund a project with ETH. */
@@ -255,13 +253,7 @@ export class AgentClient {
     const typeHash = ethers.id(serviceType);
     const tx = await this.contract.listService(typeHash, metadataURI, pricePerCallWei);
     const receipt = await tx.wait();
-    const event = receipt.logs.find(l => {
-      try { return this.contract.interface.parseLog(l)?.name === 'ServiceListed'; } catch { return false; }
-    });
-    if (event) {
-      return this.contract.interface.parseLog(event).args.serviceId;
-    }
-    return receipt;
+    return this._extractEvent(receipt, 'ServiceListed', 'serviceId') ?? receipt;
   }
 
   /** Update an existing service listing. */
@@ -333,13 +325,7 @@ export class AgentClient {
     }
     const tx = await this.contract.createServiceAgreement(serviceId, requestURI, expiresAt, { value });
     const receipt = await tx.wait();
-    const event = receipt.logs.find(l => {
-      try { return this.contract.interface.parseLog(l)?.name === 'AgreementCreated'; } catch { return false; }
-    });
-    if (event) {
-      return this.contract.interface.parseLog(event).args.agreementId;
-    }
-    return receipt;
+    return this._extractEvent(receipt, 'AgreementCreated', 'agreementId') ?? receipt;
   }
 
   /** Fulfill a service agreement (provider submits response). */
