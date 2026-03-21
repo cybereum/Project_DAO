@@ -1241,6 +1241,11 @@ contract Project_DAO {
         DirectMessage storage m = directMessages[_messageId];
         require(m.id != 0, "Message not found.");
         require(m.recipient == msg.sender, "Only recipient can mark as read.");
+
+        // Only update state and emit event on the first transition to "read"
+        if (m.readByRecipient) {
+            return;
+        }
         m.readByRecipient = true;
         emit DirectMessageRead(_messageId, msg.sender);
     }
