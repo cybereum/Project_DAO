@@ -261,6 +261,30 @@ cancelAgentPaymentRequest(uint256 requestId)
 getAgentPaymentRequest(uint256 requestId) → AgentPaymentRequest
 ```
 
+#### Service catalog
+```
+listService(bytes32 serviceType, string metadataURI, uint256 pricePerCall) → serviceId
+updateServiceListing(uint256 serviceId, string metadataURI, uint256 pricePerCall)
+deactivateService(uint256 serviceId)
+getServiceListing(uint256 serviceId) → ServiceListing
+getServicesByType(bytes32 serviceType, uint256 offset, uint256 limit) → (ServiceListing[], uint256 total)
+getServicesByProvider(address provider) → uint256[]
+getServiceCount() → uint256
+```
+
+#### Service agreements
+```
+createServiceAgreement(uint256 serviceId, string requestURI, uint256 expiresAt) payable → agreementId
+fulfillServiceAgreement(uint256 agreementId, string responseURI)
+confirmServiceDelivery(uint256 agreementId)
+disputeServiceAgreement(uint256 agreementId, string disputeURI)
+cancelServiceAgreement(uint256 agreementId)
+claimExpiredAgreement(uint256 agreementId)
+resolveServiceDispute(uint256 agreementId, bool favorProvider)    onlyOwner
+getServiceAgreement(uint256 agreementId) → ServiceAgreement
+getProviderReputation(address provider) → (uint256 completed, uint256 disputed, uint256 serviceCount)
+```
+
 #### Economic projects
 ```
 createEconomicProject(string metadataURI, uint256 targetBudget, uint256 deadline) → projectId
@@ -387,18 +411,33 @@ FeatureKitStatusChanged(uint256 kitId, uint8 newStatus, string reason)
 // Onboarding events
 MemberJoinedByStake(address member, uint256 netStake)
 MemberLeftDAO(address member, uint256 refundedStake)
+
+// Service catalog events
+ServiceListed(uint256 serviceId, address provider, bytes32 serviceType, uint256 pricePerCall, string metadataURI)
+ServiceUpdated(uint256 serviceId, string metadataURI, uint256 pricePerCall)
+ServiceDeactivated(uint256 serviceId)
+AgreementCreated(uint256 agreementId, uint256 serviceId, address consumer, address provider, uint256 escrowAmount)
+AgreementFulfilled(uint256 agreementId, string responseURI)
+AgreementSettled(uint256 agreementId, address provider, uint256 paidAmount)
+AgreementDisputed(uint256 agreementId, address consumer, string disputeURI)
+ServiceDisputeResolved(uint256 agreementId, address resolver, uint256 providerPayout, uint256 consumerRefund)
+AgreementExpired(uint256 agreementId, address consumer, uint256 refundAmount)
+AgreementCancelled(uint256 agreementId)
 ```
 
 ### Key enums & structs
 ```
 // Enums
-PaymentStatus   { Requested, Settled, Cancelled }
-ProjectStatus   { Open, Active, Completed, Cancelled }
-MilestoneType   { REGULAR, PAYMENT }
+PaymentStatus     { Requested, Settled, Cancelled }
+ProjectStatus     { Open, Active, Completed, Cancelled }
+AgreementStatus   { Requested, Fulfilled, Settled, Disputed, Expired, Cancelled }
+MilestoneType     { REGULAR, PAYMENT }
 
 // Structs
 AgentProfile          { registered, metadataURI, nativeEscrowBalance }
 AgentPaymentRequest   { id, requester, payer, token, amount, isNative, description, status, createdAt, settledAt }
+ServiceListing        { id, provider, serviceType, metadataURI, pricePerCall, active, totalCalls, totalDisputes, createdAt }
+ServiceAgreement      { id, serviceId, consumer, provider, escrowAmount, requestURI, responseURI, status, createdAt, expiresAt, settledAt }
 EconomicProject       { id, proposer, metadataURI, targetBudget, totalFunded, deadline, status, createdAt, contributorCount, funderCount }
 FeatureKit            { id, submitter, priority, status, metadataURI, voteCount, submittedAt }
 Member                { memberAddress, votingPower, privileges[], isMember }
@@ -738,9 +777,29 @@ cd sdk && npm install
 | `agent.cancelProject(id)` | Cancel project |
 | `agent.claimProjectShare(id)` | Claim revenue share |
 | `agent.refundProjectFunder(id)` | Refund funder |
+| **Service Catalog** | |
+| `agent.listService(type, metadataURI, priceWei)` | List a service in the on-chain catalog |
+| `agent.updateService(serviceId, metadataURI, priceWei)` | Update service listing |
+| `agent.deactivateService(serviceId)` | Deactivate a service |
+| `agent.findServices(type, offset, limit)` | Discover services by type |
+| `agent.getService(serviceId)` | Get service details |
+| `agent.getMyServices()` | Get this agent's service IDs |
+| `agent.getServiceCount()` | Total service listings |
+| **Service Agreements** | |
+| `agent.requestService(serviceId, requestURI, opts)` | Create escrow-backed service request |
+| `agent.fulfillService(agreementId, responseURI)` | Submit service response (provider) |
+| `agent.confirmDelivery(agreementId)` | Confirm and release escrow (consumer) |
+| `agent.disputeService(agreementId, disputeURI)` | Dispute fulfilled service |
+| `agent.cancelAgreement(agreementId)` | Cancel before fulfillment |
+| `agent.claimExpired(agreementId)` | Reclaim expired escrow |
+| `agent.getAgreement(agreementId)` | Get agreement details |
+| `agent.getReputation(address?)` | Get provider reputation stats |
 | **Event Listeners** | |
 | `agent.onPaymentRequest(callback)` | Listen for incoming invoices |
 | `agent.onTransferReceived(callback)` | Listen for incoming transfers |
+| `agent.onServiceRequested(callback)` | Listen for incoming service requests (provider) |
+| `agent.onServiceFulfilled(callback)` | Listen for service fulfillment (consumer) |
+| `agent.onServiceSettled(callback)` | Listen for payment confirmation (provider) |
 | `agent.onBroadcast(callback)` | Listen for protocol broadcasts |
 | `agent.removeAllListeners()` | Stop all listeners |
 
@@ -751,6 +810,7 @@ cd sdk && npm install
 - Implementation roadmap: `FULL_IMPLEMENTATION_PLAN.md`
 - Solidity-only quickstart: `AGENT_TX_QUICKSTART.md`
 - App deep-dive: `APP_DEEP_DIVE.md`
+- Agent internet design: `AGENT_INTERNET_DESIGN.md`
 - Protocol overview: `README.md`
 - Product guide: `PRODUCT_GUIDE.md`
 - Operations runbook: `OPERATIONS_RUNBOOK.md`
@@ -758,5 +818,6 @@ cd sdk && npm install
 - Security model: `SECURITY.md`
 - Changelog: `CHANGELOG.md`
 - Agent metadata schema: `schemas/agent-metadata.schema.json`
+- Service metadata schema: `schemas/service-metadata.schema.json`
 - Agent SDK: `sdk/`
 - Deployment readiness: `DEPLOYMENT_READINESS_PLAN.md`

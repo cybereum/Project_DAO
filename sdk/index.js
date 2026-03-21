@@ -35,6 +35,17 @@ export class AgentClient {
     this.address = this.wallet.address;
   }
 
+  /** @private Extract a named arg from the first matching event in a receipt. */
+  _extractEvent(receipt, eventName, argName) {
+    for (const log of receipt.logs) {
+      try {
+        const parsed = this.contract.interface.parseLog(log);
+        if (parsed?.name === eventName) return parsed.args[argName];
+      } catch { /* skip non-matching logs */ }
+    }
+    return null;
+  }
+
   // ─── Identity ──────────────────────────────────────────────────────────
 
   /** Register this agent on-chain with an IPFS metadata URI. */
@@ -153,14 +164,7 @@ export class AgentClient {
   async createPaymentRequest(payerAddress, amount, { isNative = true, tokenAddress = ethers.ZeroAddress, description = '' } = {}) {
     const tx = await this.contract.createAgentPaymentRequest(payerAddress, tokenAddress, amount, isNative, description);
     const receipt = await tx.wait();
-    // Extract requestId from event
-    const event = receipt.logs.find(l => {
-      try { return this.contract.interface.parseLog(l)?.name === 'AgentPaymentRequestCreated'; } catch { return false; }
-    });
-    if (event) {
-      return this.contract.interface.parseLog(event).args.requestId;
-    }
-    return receipt;
+    return this._extractEvent(receipt, 'AgentPaymentRequestCreated', 'requestId') ?? receipt;
   }
 
   /** Settle (pay) a payment request. For native requests, sends ETH. */
@@ -214,13 +218,7 @@ export class AgentClient {
   async createProject(metadataURI, targetBudgetWei, deadlineUnix) {
     const tx = await this.contract.createEconomicProject(metadataURI, targetBudgetWei, deadlineUnix);
     const receipt = await tx.wait();
-    const event = receipt.logs.find(l => {
-      try { return this.contract.interface.parseLog(l)?.name === 'EconomicProjectCreated'; } catch { return false; }
-    });
-    if (event) {
-      return this.contract.interface.parseLog(event).args.projectId;
-    }
-    return receipt;
+    return this._extractEvent(receipt, 'EconomicProjectCreated', 'projectId') ?? receipt;
   }
 
   /** Fund a project with ETH. */
@@ -242,6 +240,141 @@ export class AgentClient {
     return tx.wait();
   }
 
+  // ─── Service Catalog ──────────────────────────────────────────────────
+
+  /**
+   * List a new service in the on-chain catalog.
+   * @param {string} serviceType  Human-readable type (e.g. 'price-feed'). Hashed to bytes32.
+   * @param {string} metadataURI  IPFS URI with service spec
+   * @param {bigint|string} pricePerCallWei  Price per invocation in wei
+   * @returns {bigint} serviceId
+   */
+  async listService(serviceType, metadataURI, pricePerCallWei) {
+    const typeHash = ethers.id(serviceType);
+    const tx = await this.contract.listService(typeHash, metadataURI, pricePerCallWei);
+    const receipt = await tx.wait();
+    return this._extractEvent(receipt, 'ServiceListed', 'serviceId') ?? receipt;
+  }
+
+  /** Update an existing service listing. */
+  async updateService(serviceId, metadataURI, pricePerCallWei) {
+    const tx = await this.contract.updateServiceListing(serviceId, metadataURI, pricePerCallWei);
+    return tx.wait();
+  }
+
+  /** Deactivate a service listing. */
+  async deactivateService(serviceId) {
+    const tx = await this.contract.deactivateService(serviceId);
+    return tx.wait();
+  }
+
+  /**
+   * Find services by type (paginated).
+   * @param {string} serviceType  Human-readable type (e.g. 'price-feed')
+   * @returns {{ services: Object[], total: bigint }}
+   */
+  async findServices(serviceType, offset = 0, limit = 50) {
+    const typeHash = ethers.id(serviceType);
+    const [page, total] = await this.contract.getServicesByType(typeHash, offset, limit);
+    return {
+      services: page.map(s => ({
+        id: s.id, provider: s.provider, serviceType: s.serviceType,
+        metadataURI: s.metadataURI, pricePerCall: s.pricePerCall,
+        active: s.active, totalCalls: s.totalCalls, totalDisputes: s.totalDisputes,
+        createdAt: s.createdAt,
+      })),
+      total,
+    };
+  }
+
+  /** Get a single service listing. */
+  async getService(serviceId) {
+    const s = await this.contract.getServiceListing(serviceId);
+    return {
+      id: s.id, provider: s.provider, serviceType: s.serviceType,
+      metadataURI: s.metadataURI, pricePerCall: s.pricePerCall,
+      active: s.active, totalCalls: s.totalCalls, totalDisputes: s.totalDisputes,
+      createdAt: s.createdAt,
+    };
+  }
+
+  /** Get all service IDs for this agent. */
+  async getMyServices() {
+    return this.contract.getServicesByProvider(this.address);
+  }
+
+  /** Get total service listings count. */
+  async getServiceCount() {
+    return this.contract.getServiceCount();
+  }
+
+  // ─── Service Agreements ──────────────────────────────────────────────
+
+  /**
+   * Request a service by creating an escrow-backed agreement.
+   * @param {bigint|number} serviceId
+   * @param {string} requestURI  IPFS URI with request parameters
+   * @param {{ expiresAt?: number, value?: bigint }} opts
+   * @returns {bigint} agreementId
+   */
+  async requestService(serviceId, requestURI, { expiresAt, value } = {}) {
+    if (!expiresAt) expiresAt = Math.floor(Date.now() / 1000) + 3600; // 1h default
+    if (value == null) {
+      const svc = await this.getService(serviceId);
+      value = svc.pricePerCall;
+    }
+    const tx = await this.contract.createServiceAgreement(serviceId, requestURI, expiresAt, { value });
+    const receipt = await tx.wait();
+    return this._extractEvent(receipt, 'AgreementCreated', 'agreementId') ?? receipt;
+  }
+
+  /** Fulfill a service agreement (provider submits response). */
+  async fulfillService(agreementId, responseURI) {
+    const tx = await this.contract.fulfillServiceAgreement(agreementId, responseURI);
+    return tx.wait();
+  }
+
+  /** Confirm delivery and release escrow to provider. */
+  async confirmDelivery(agreementId) {
+    const tx = await this.contract.confirmServiceDelivery(agreementId);
+    return tx.wait();
+  }
+
+  /** Dispute a fulfilled service. */
+  async disputeService(agreementId, disputeURI) {
+    const tx = await this.contract.disputeServiceAgreement(agreementId, disputeURI);
+    return tx.wait();
+  }
+
+  /** Cancel an unfulfilled agreement and reclaim escrow. */
+  async cancelAgreement(agreementId) {
+    const tx = await this.contract.cancelServiceAgreement(agreementId);
+    return tx.wait();
+  }
+
+  /** Reclaim escrow from an expired agreement. */
+  async claimExpired(agreementId) {
+    const tx = await this.contract.claimExpiredAgreement(agreementId);
+    return tx.wait();
+  }
+
+  /** Get a service agreement by ID. */
+  async getAgreement(agreementId) {
+    const a = await this.contract.getServiceAgreement(agreementId);
+    return {
+      id: a.id, serviceId: a.serviceId, consumer: a.consumer, provider: a.provider,
+      escrowAmount: a.escrowAmount, requestURI: a.requestURI, responseURI: a.responseURI,
+      status: Number(a.status), createdAt: a.createdAt, expiresAt: a.expiresAt,
+      settledAt: a.settledAt,
+    };
+  }
+
+  /** Get provider reputation (completed, disputed, serviceCount). */
+  async getReputation(address = this.address) {
+    const [completed, disputed, serviceCount] = await this.contract.getProviderReputation(address);
+    return { completed, disputed, serviceCount };
+  }
+
   // ─── Event Listening ───────────────────────────────────────────────────
 
   /** Listen for incoming payment requests addressed to this agent. */
@@ -257,6 +390,31 @@ export class AgentClient {
     const filter = this.contract.filters.AgentToAgentNativeTransfer(null, this.address);
     this.contract.on(filter, (from, to, amount, memo) => {
       callback({ from, to, amount, memo });
+    });
+  }
+
+  /** Listen for incoming service requests (for providers). */
+  onServiceRequested(callback) {
+    this.contract.on('AgreementCreated', (agreementId, serviceId, consumer, provider, escrowAmount) => {
+      if (provider === this.address) {
+        callback({ agreementId, serviceId, consumer, provider, escrowAmount });
+      }
+    });
+  }
+
+  /** Listen for fulfilled agreements (for consumers). */
+  onServiceFulfilled(callback) {
+    this.contract.on('AgreementFulfilled', (agreementId, responseURI) => {
+      callback({ agreementId, responseURI });
+    });
+  }
+
+  /** Listen for settled agreements (for providers). */
+  onServiceSettled(callback) {
+    this.contract.on('AgreementSettled', (agreementId, provider, paidAmount) => {
+      if (provider === this.address) {
+        callback({ agreementId, provider, paidAmount });
+      }
     });
   }
 

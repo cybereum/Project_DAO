@@ -1338,6 +1338,394 @@ contract Project_DAO {
         emit MemberLeftDAO(msg.sender, stake);
     }
 
+    // ─── Agent Service Catalog ──────────────────────────────────────────────
+
+    enum AgreementStatus { Requested, Fulfilled, Settled, Disputed, Expired, Cancelled }
+
+    struct ServiceListing {
+        uint256 id;
+        address provider;
+        bytes32 serviceType;       // keccak256("price-feed"), keccak256("translation"), etc.
+        string  metadataURI;       // IPFS: full service spec (params, response schema, SLA)
+        uint256 pricePerCall;      // wei per invocation (0 = free)
+        bool    active;
+        uint256 totalCalls;
+        uint256 totalDisputes;
+        uint256 createdAt;
+    }
+
+    struct ServiceAgreement {
+        uint256 id;
+        uint256 serviceId;
+        address consumer;
+        address provider;
+        uint256 escrowAmount;      // locked payment
+        string  requestURI;        // IPFS: request parameters
+        string  responseURI;       // IPFS: response data (set by provider)
+        AgreementStatus status;
+        uint256 createdAt;
+        uint256 expiresAt;         // auto-refund deadline
+        uint256 settledAt;
+    }
+
+    uint256 public currentServiceId = 1;
+    mapping(uint256 => ServiceListing) public serviceCatalog;
+    mapping(bytes32 => uint256[]) private servicesByType;
+    mapping(address => uint256[]) private servicesByProvider;
+
+    uint256 public currentAgreementId = 1;
+    mapping(uint256 => ServiceAgreement) public serviceAgreements;
+
+    // Reputation counters
+    mapping(address => uint256) public providerCompletedServices;
+    mapping(address => uint256) public providerDisputedServices;
+
+    event ServiceListed(uint256 indexed serviceId, address indexed provider, bytes32 indexed serviceType, uint256 pricePerCall, string metadataURI);
+    event ServiceUpdated(uint256 indexed serviceId, string metadataURI, uint256 pricePerCall);
+    event ServiceDeactivated(uint256 indexed serviceId);
+    event AgreementCreated(uint256 indexed agreementId, uint256 indexed serviceId, address indexed consumer, address provider, uint256 escrowAmount);
+    event AgreementFulfilled(uint256 indexed agreementId, string responseURI);
+    event AgreementSettled(uint256 indexed agreementId, address indexed provider, uint256 paidAmount);
+    event AgreementDisputed(uint256 indexed agreementId, address indexed consumer, string disputeURI);
+    event AgreementExpired(uint256 indexed agreementId, address indexed consumer, uint256 refundAmount);
+    event AgreementCancelled(uint256 indexed agreementId);
+    event ServiceDisputeResolved(uint256 indexed agreementId, bool favorProvider);
+
+    // ─── Service Catalog Functions ──────────────────────────────────────────
+
+    /**
+     * @notice List a new service in the on-chain catalog.
+     * @param serviceType   keccak256 hash of a service category (e.g. keccak256("price-feed"))
+     * @param metadataURI   IPFS URI pointing to the full service specification
+     * @param pricePerCall  Price in wei per invocation (0 = free)
+     */
+    function listService(
+        bytes32 serviceType,
+        string calldata metadataURI,
+        uint256 pricePerCall
+    ) external onlyRegisteredAgent whenNotPaused returns (uint256 serviceId) {
+        require(bytes(metadataURI).length > 0, "metadataURI required.");
+        require(serviceType != bytes32(0), "serviceType required.");
+
+        serviceId = currentServiceId++;
+        serviceCatalog[serviceId] = ServiceListing({
+            id: serviceId,
+            provider: msg.sender,
+            serviceType: serviceType,
+            metadataURI: metadataURI,
+            pricePerCall: pricePerCall,
+            active: true,
+            totalCalls: 0,
+            totalDisputes: 0,
+            createdAt: block.timestamp
+        });
+
+        servicesByType[serviceType].push(serviceId);
+        servicesByProvider[msg.sender].push(serviceId);
+
+        emit ServiceListed(serviceId, msg.sender, serviceType, pricePerCall, metadataURI);
+    }
+
+    /**
+     * @notice Update an existing service listing's metadata or price.
+     */
+    function updateServiceListing(
+        uint256 serviceId,
+        string calldata metadataURI,
+        uint256 pricePerCall
+    ) external onlyRegisteredAgent whenNotPaused {
+        ServiceListing storage svc = serviceCatalog[serviceId];
+        require(svc.id != 0, "Service not found.");
+        require(svc.provider == msg.sender, "Not service owner.");
+        require(bytes(metadataURI).length > 0, "metadataURI required.");
+
+        svc.metadataURI = metadataURI;
+        svc.pricePerCall = pricePerCall;
+
+        emit ServiceUpdated(serviceId, metadataURI, pricePerCall);
+    }
+
+    /**
+     * @notice Deactivate a service listing. Does not affect existing agreements.
+     */
+    function deactivateService(uint256 serviceId) external onlyRegisteredAgent whenNotPaused {
+        ServiceListing storage svc = serviceCatalog[serviceId];
+        require(svc.id != 0, "Service not found.");
+        require(svc.provider == msg.sender, "Not service owner.");
+        require(svc.active, "Already inactive.");
+
+        svc.active = false;
+        emit ServiceDeactivated(serviceId);
+    }
+
+    // ─── Service Discovery View Functions ───────────────────────────────────
+
+    /// @notice Get a single service listing by ID.
+    function getServiceListing(uint256 serviceId) external view returns (ServiceListing memory svc) {
+        svc = serviceCatalog[serviceId];
+        require(svc.id != 0, "Service not found.");
+    }
+
+    /// @notice Find services by type (paginated). Returns only active listings.
+    function getServicesByType(bytes32 serviceType, uint256 offset, uint256 limit)
+        external view returns (ServiceListing[] memory page, uint256 total)
+    {
+        uint256[] storage ids = servicesByType[serviceType];
+        // Count active services
+        uint256 activeCount = 0;
+        for (uint256 i = 0; i < ids.length; i++) {
+            if (serviceCatalog[ids[i]].active) activeCount++;
+        }
+        total = activeCount;
+        if (total == 0 || offset >= total) return (new ServiceListing[](0), total);
+
+        uint256 end = offset + limit;
+        if (end > total) end = total;
+        page = new ServiceListing[](end - offset);
+
+        uint256 found = 0;
+        uint256 written = 0;
+        for (uint256 i = 0; i < ids.length && written < page.length; i++) {
+            if (serviceCatalog[ids[i]].active) {
+                if (found >= offset) {
+                    page[written++] = serviceCatalog[ids[i]];
+                }
+                found++;
+            }
+        }
+    }
+
+    /// @notice Get all service IDs for a provider.
+    function getServicesByProvider(address provider) external view returns (uint256[] memory) {
+        return servicesByProvider[provider];
+    }
+
+    /// @notice Get total number of service listings (including inactive).
+    function getServiceCount() external view returns (uint256) {
+        return currentServiceId - 1;
+    }
+
+    // ─── Service Agreement Functions ────────────────────────────────────────
+
+    /**
+     * @notice Consumer creates a service agreement, locking payment in escrow.
+     * @param serviceId   ID of the service to consume
+     * @param requestURI  IPFS URI with request parameters
+     * @param expiresAt   Unix timestamp after which consumer can reclaim escrow
+     */
+    function createServiceAgreement(
+        uint256 serviceId,
+        string calldata requestURI,
+        uint256 expiresAt
+    ) external payable onlyRegisteredAgent whenNotPaused returns (uint256 agreementId) {
+        ServiceListing storage svc = serviceCatalog[serviceId];
+        require(svc.id != 0, "Service not found.");
+        require(svc.active, "Service is inactive.");
+        require(svc.provider != msg.sender, "Cannot consume own service.");
+        require(bytes(requestURI).length > 0, "requestURI required.");
+        require(expiresAt > block.timestamp, "Expiry must be in the future.");
+        require(msg.value >= svc.pricePerCall, "Insufficient payment.");
+
+        agreementId = currentAgreementId++;
+        serviceAgreements[agreementId] = ServiceAgreement({
+            id: agreementId,
+            serviceId: serviceId,
+            consumer: msg.sender,
+            provider: svc.provider,
+            escrowAmount: msg.value,
+            requestURI: requestURI,
+            responseURI: "",
+            status: AgreementStatus.Requested,
+            createdAt: block.timestamp,
+            expiresAt: expiresAt,
+            settledAt: 0
+        });
+
+        emit AgreementCreated(agreementId, serviceId, msg.sender, svc.provider, msg.value);
+    }
+
+    /**
+     * @notice Provider submits their response to fulfill the agreement.
+     * @param agreementId  ID of the agreement
+     * @param responseURI  IPFS URI with the response data
+     */
+    function fulfillServiceAgreement(
+        uint256 agreementId,
+        string calldata responseURI
+    ) external onlyRegisteredAgent whenNotPaused {
+        ServiceAgreement storage agr = serviceAgreements[agreementId];
+        require(agr.id != 0, "Agreement not found.");
+        require(agr.provider == msg.sender, "Not the service provider.");
+        require(agr.status == AgreementStatus.Requested, "Agreement not in Requested status.");
+        require(bytes(responseURI).length > 0, "responseURI required.");
+
+        agr.responseURI = responseURI;
+        agr.status = AgreementStatus.Fulfilled;
+
+        emit AgreementFulfilled(agreementId, responseURI);
+    }
+
+    /**
+     * @notice Consumer confirms delivery, releasing escrowed payment to the provider (minus fee).
+     */
+    function confirmServiceDelivery(uint256 agreementId) external onlyRegisteredAgent whenNotPaused nonReentrant {
+        ServiceAgreement storage agr = serviceAgreements[agreementId];
+        require(agr.id != 0, "Agreement not found.");
+        require(agr.consumer == msg.sender, "Not the consumer.");
+        require(agr.status == AgreementStatus.Fulfilled, "Agreement not fulfilled.");
+
+        uint256 escrow = agr.escrowAmount;
+
+        // Update state before external calls (CEI)
+        agr.status = AgreementStatus.Settled;
+        agr.settledAt = block.timestamp;
+        serviceCatalog[agr.serviceId].totalCalls++;
+        providerCompletedServices[agr.provider]++;
+
+        // External calls: fee transfer + provider payment
+        uint256 fee = _collectNativeFee(escrow, "serviceAgreement");
+        uint256 payout = escrow - fee;
+
+        (bool ok,) = payable(agr.provider).call{value: payout}("");
+        require(ok, "Provider payment failed.");
+
+        emit AgreementSettled(agreementId, agr.provider, payout);
+    }
+
+    /**
+     * @notice Consumer disputes the quality of a fulfilled service.
+     * @param disputeURI  IPFS URI describing the dispute reason
+     */
+    function disputeServiceAgreement(
+        uint256 agreementId,
+        string calldata disputeURI
+    ) external onlyRegisteredAgent whenNotPaused {
+        ServiceAgreement storage agr = serviceAgreements[agreementId];
+        require(agr.id != 0, "Agreement not found.");
+        require(agr.consumer == msg.sender, "Not the consumer.");
+        require(agr.status == AgreementStatus.Fulfilled, "Agreement not fulfilled.");
+        require(bytes(disputeURI).length > 0, "disputeURI required.");
+
+        agr.status = AgreementStatus.Disputed;
+        serviceCatalog[agr.serviceId].totalDisputes++;
+        providerDisputedServices[agr.provider]++;
+
+        emit AgreementDisputed(agreementId, msg.sender, disputeURI);
+    }
+
+    /**
+     * @notice Owner resolves a disputed agreement, releasing escrow to consumer or provider.
+     * @param agreementId  ID of the disputed agreement
+     * @param favorProvider  If true, pay provider (minus fee). If false, refund consumer.
+     */
+    function resolveServiceDispute(
+        uint256 agreementId,
+        bool favorProvider
+    ) external onlyOwner whenNotPaused nonReentrant {
+        ServiceAgreement storage agr = serviceAgreements[agreementId];
+        require(agr.id != 0, "Agreement not found.");
+        require(agr.status == AgreementStatus.Disputed, "Agreement not disputed.");
+
+        uint256 escrow = agr.escrowAmount;
+        address provider = agr.provider;
+        address consumer = agr.consumer;
+        uint256 serviceId = agr.serviceId;
+
+        // Update state before external calls (CEI)
+        agr.status = AgreementStatus.Settled;
+        agr.settledAt = block.timestamp;
+
+        if (favorProvider) {
+            // Provider was right: fix reputation
+            serviceCatalog[serviceId].totalCalls++;
+            providerCompletedServices[provider]++;
+            if (providerDisputedServices[provider] > 0) {
+                providerDisputedServices[provider]--;
+            }
+            if (serviceCatalog[serviceId].totalDisputes > 0) {
+                serviceCatalog[serviceId].totalDisputes--;
+            }
+
+            // External calls: fee + payment
+            uint256 fee = _collectNativeFee(escrow, "disputeResolution");
+            uint256 payout = escrow - fee;
+
+            (bool ok,) = payable(provider).call{value: payout}("");
+            require(ok, "Provider payment failed.");
+
+            emit AgreementSettled(agreementId, provider, payout);
+        } else {
+            // Consumer was right: refund
+            (bool ok,) = payable(consumer).call{value: escrow}("");
+            require(ok, "Consumer refund failed.");
+
+            emit AgreementExpired(agreementId, consumer, escrow);
+        }
+
+        emit ServiceDisputeResolved(agreementId, favorProvider);
+    }
+
+    /**
+     * @notice Consumer cancels an agreement before it is fulfilled. Refunds escrow.
+     */
+    function cancelServiceAgreement(uint256 agreementId) external onlyRegisteredAgent whenNotPaused nonReentrant {
+        ServiceAgreement storage agr = serviceAgreements[agreementId];
+        require(agr.id != 0, "Agreement not found.");
+        require(agr.consumer == msg.sender, "Not the consumer.");
+        require(agr.status == AgreementStatus.Requested, "Can only cancel Requested agreements.");
+
+        uint256 refund = agr.escrowAmount;
+        agr.status = AgreementStatus.Cancelled;
+
+        (bool ok,) = payable(msg.sender).call{value: refund}("");
+        require(ok, "Refund failed.");
+
+        emit AgreementCancelled(agreementId);
+    }
+
+    /**
+     * @notice Reclaim escrow from an expired agreement that was never fulfilled or is disputed.
+     */
+    function claimExpiredAgreement(uint256 agreementId) external onlyRegisteredAgent whenNotPaused nonReentrant {
+        ServiceAgreement storage agr = serviceAgreements[agreementId];
+        require(agr.id != 0, "Agreement not found.");
+        require(agr.consumer == msg.sender, "Not the consumer.");
+        require(
+            agr.status == AgreementStatus.Requested ||
+            agr.status == AgreementStatus.Fulfilled ||
+            agr.status == AgreementStatus.Disputed,
+            "Agreement not reclaimable."
+        );
+        require(block.timestamp >= agr.expiresAt, "Agreement has not expired.");
+
+        uint256 refund = agr.escrowAmount;
+        agr.status = AgreementStatus.Expired;
+
+        (bool ok,) = payable(msg.sender).call{value: refund}("");
+        require(ok, "Refund failed.");
+
+        emit AgreementExpired(agreementId, msg.sender, refund);
+    }
+
+    // ─── Service Agreement View Functions ───────────────────────────────────
+
+    /// @notice Get a single service agreement by ID.
+    function getServiceAgreement(uint256 agreementId) external view returns (ServiceAgreement memory agr) {
+        agr = serviceAgreements[agreementId];
+        require(agr.id != 0, "Agreement not found.");
+    }
+
+    /// @notice Get provider reputation stats.
+    function getProviderReputation(address provider) external view returns (
+        uint256 completed,
+        uint256 disputed,
+        uint256 serviceCount
+    ) {
+        completed = providerCompletedServices[provider];
+        disputed = providerDisputedServices[provider];
+        serviceCount = servicesByProvider[provider].length;
+    }
+
     // ─── Economic Project Primitives ─────────────────────────────────────────
 
     enum ProjectStatus { Open, Active, Completed, Cancelled }

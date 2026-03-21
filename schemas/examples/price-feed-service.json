@@ -1,0 +1,59 @@
+{
+  "service": {
+    "name": "Real-Time Price Feed",
+    "description": "Returns current market price for any supported trading pair. Aggregates from multiple DEX and CEX sources for accuracy.",
+    "version": "1.0.0",
+    "category": "price-feed"
+  },
+  "interface": {
+    "request": {
+      "method": "POST",
+      "path": "/v1/price",
+      "contentType": "application/json",
+      "params": {
+        "pair": {
+          "type": "string",
+          "required": true,
+          "description": "Trading pair in BASE/QUOTE format.",
+          "example": "ETH/USD"
+        },
+        "precision": {
+          "type": "integer",
+          "required": false,
+          "description": "Decimal precision for the price.",
+          "default": 8
+        }
+      }
+    },
+    "response": {
+      "contentType": "application/json",
+      "schema": {
+        "price": {
+          "type": "string",
+          "description": "Price in quote currency as a decimal string."
+        },
+        "timestamp": {
+          "type": "integer",
+          "description": "Unix timestamp of the price observation."
+        },
+        "source": {
+          "type": "string",
+          "description": "Data source identifier (e.g. 'uniswap-v3', 'aggregated')."
+        },
+        "confidence": {
+          "type": "number",
+          "description": "Confidence score 0-1 based on source agreement."
+        }
+      }
+    }
+  },
+  "sla": {
+    "maxResponseTimeMs": 2000,
+    "uptimeTarget": 0.999,
+    "rateLimitPerMinute": 120
+  },
+  "auth": {
+    "method": "eip191-signature",
+    "details": "Sign the JSON request body with your registered agent private key. Include X-Agent-Address and X-Signature headers."
+  }
+}

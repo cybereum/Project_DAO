@@ -55,6 +55,27 @@ export const PROJECT_DAO_ABI = [
   'function submitFeatureKit(string calldata metadataURI, uint8 priority) external',
   'function upvoteFeatureKit(uint256 kitId) external',
 
+  // ─── Service catalog ─────────────────────────────────────────────────
+  'function listService(bytes32 serviceType, string calldata metadataURI, uint256 pricePerCall) external returns (uint256)',
+  'function updateServiceListing(uint256 serviceId, string calldata metadataURI, uint256 pricePerCall) external',
+  'function deactivateService(uint256 serviceId) external',
+  'function getServiceListing(uint256 serviceId) external view returns (tuple(uint256 id, address provider, bytes32 serviceType, string metadataURI, uint256 pricePerCall, bool active, uint256 totalCalls, uint256 totalDisputes, uint256 createdAt))',
+  'function getServicesByType(bytes32 serviceType, uint256 offset, uint256 limit) external view returns (tuple(uint256 id, address provider, bytes32 serviceType, string metadataURI, uint256 pricePerCall, bool active, uint256 totalCalls, uint256 totalDisputes, uint256 createdAt)[] page, uint256 total)',
+  'function getServicesByProvider(address provider) external view returns (uint256[])',
+  'function getServiceCount() external view returns (uint256)',
+
+  // ─── Service agreements ──────────────────────────────────────────────
+  'function createServiceAgreement(uint256 serviceId, string calldata requestURI, uint256 expiresAt) external payable returns (uint256)',
+  'function fulfillServiceAgreement(uint256 agreementId, string calldata responseURI) external',
+  'function confirmServiceDelivery(uint256 agreementId) external',
+  'function disputeServiceAgreement(uint256 agreementId, string calldata disputeURI) external',
+  'function cancelServiceAgreement(uint256 agreementId) external',
+  'function claimExpiredAgreement(uint256 agreementId) external',
+  'function getServiceAgreement(uint256 agreementId) external view returns (tuple(uint256 id, uint256 serviceId, address consumer, address provider, uint256 escrowAmount, string requestURI, string responseURI, uint8 status, uint256 createdAt, uint256 expiresAt, uint256 settledAt))',
+  'function getProviderReputation(address provider) external view returns (uint256 completed, uint256 disputed, uint256 serviceCount)',
+  'function providerCompletedServices(address) external view returns (uint256)',
+  'function providerDisputedServices(address) external view returns (uint256)',
+
   // ─── Events ────────────────────────────────────────────────────────────
   'event AgentRegistered(address indexed agent, string metadataURI)',
   'event AgentToAgentNativeTransfer(address indexed from, address indexed to, uint256 amount, string memo)',
@@ -63,4 +84,12 @@ export const PROJECT_DAO_ABI = [
   'event AgentPaymentRequestSettled(uint256 indexed requestId, address indexed payer, address indexed requester, uint256 settledAt)',
   'event CybereumFeePaid(address indexed payer, address indexed token, uint256 amount, string context)',
   'event AgentBroadcast(uint256 indexed broadcastId, address indexed sender, uint8 broadcastType, string messageURI, uint256 timestamp)',
+  'event ServiceListed(uint256 indexed serviceId, address indexed provider, bytes32 indexed serviceType, uint256 pricePerCall, string metadataURI)',
+  'event AgreementCreated(uint256 indexed agreementId, uint256 indexed serviceId, address indexed consumer, address provider, uint256 escrowAmount)',
+  'event AgreementFulfilled(uint256 indexed agreementId, string responseURI)',
+  'event AgreementSettled(uint256 indexed agreementId, address indexed provider, uint256 paidAmount)',
+  'event AgreementDisputed(uint256 indexed agreementId, address indexed consumer, string disputeURI)',
+  'event AgreementExpired(uint256 indexed agreementId, address indexed consumer, uint256 refundAmount)',
+  'event AgreementCancelled(uint256 indexed agreementId)',
+  'event ServiceDisputeResolved(uint256 indexed agreementId, bool favorProvider)',
 ];
