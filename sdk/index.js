@@ -86,7 +86,7 @@ export class AgentClient {
 
     const network = registry.networks[String(chainId)];
     if (!network) {
-      const available = Object.entries(registry.networks).map(([id, n]) => `${n.name} (${id})`).join(', ');
+      const available = Object.entries(deployments.networks).map(([id, n]) => `${n.name} (${id})`).join(', ');
       throw new Error(`Chain ${chainId} not in deployment registry. Available: ${available}`);
     }
 
