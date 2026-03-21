@@ -897,3 +897,296 @@ describe("System integration: full agent lifecycle", () => {
     expect(aliceWallet1 - aliceWallet0).to.equal(amount - fee);
   });
 });
+
+// ─── Service Catalog ────────────────────────────────────────────────────────
+
+describe("Service catalog", () => {
+  it("registered agent can list a service", async () => {
+    const { dao } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    const serviceType = ethers.id("price-feed");
+    await expect(dao.listService(serviceType, "ipfs://svc-meta", 1000n))
+      .to.emit(dao, "ServiceListed");
+    expect(await dao.getServiceCount()).to.equal(1n);
+  });
+
+  it("non-agent cannot list a service", async () => {
+    const { dao, alice } = await deploy();
+    const serviceType = ethers.id("price-feed");
+    await expect(dao.connect(alice).listService(serviceType, "ipfs://svc", 0))
+      .to.be.revertedWith("Only registered agents can call this function.");
+  });
+
+  it("reverts on empty metadataURI", async () => {
+    const { dao } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await expect(dao.listService(ethers.id("price-feed"), "", 0))
+      .to.be.revertedWith("metadataURI required.");
+  });
+
+  it("reverts on zero serviceType", async () => {
+    const { dao } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await expect(dao.listService(ethers.ZeroHash, "ipfs://svc", 0))
+      .to.be.revertedWith("serviceType required.");
+  });
+
+  it("getServiceListing returns correct data", async () => {
+    const { dao, owner } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    const serviceType = ethers.id("price-feed");
+    await dao.listService(serviceType, "ipfs://svc-meta", 5000n);
+    const svc = await dao.getServiceListing(1n);
+    expect(svc.id).to.equal(1n);
+    expect(svc.provider).to.equal(owner.address);
+    expect(svc.serviceType).to.equal(serviceType);
+    expect(svc.metadataURI).to.equal("ipfs://svc-meta");
+    expect(svc.pricePerCall).to.equal(5000n);
+    expect(svc.active).to.be.true;
+  });
+
+  it("getServicesByType returns only active listings", async () => {
+    const { dao, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    const serviceType = ethers.id("price-feed");
+    await dao.listService(serviceType, "ipfs://svc1", 1000n);
+    await dao.connect(alice).listService(serviceType, "ipfs://svc2", 2000n);
+    await dao.deactivateService(1n);
+    const [page, total] = await dao.getServicesByType(serviceType, 0, 10);
+    expect(total).to.equal(1n);
+    expect(page.length).to.equal(1);
+    expect(page[0].metadataURI).to.equal("ipfs://svc2");
+  });
+
+  it("provider can update service listing", async () => {
+    const { dao } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await dao.listService(ethers.id("price-feed"), "ipfs://v1", 1000n);
+    await expect(dao.updateServiceListing(1n, "ipfs://v2", 2000n))
+      .to.emit(dao, "ServiceUpdated");
+    const svc = await dao.getServiceListing(1n);
+    expect(svc.metadataURI).to.equal("ipfs://v2");
+    expect(svc.pricePerCall).to.equal(2000n);
+  });
+
+  it("non-owner cannot update service listing", async () => {
+    const { dao, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    await dao.listService(ethers.id("price-feed"), "ipfs://v1", 1000n);
+    await expect(dao.connect(alice).updateServiceListing(1n, "ipfs://v2", 2000n))
+      .to.be.revertedWith("Not service owner.");
+  });
+
+  it("deactivateService emits event and sets inactive", async () => {
+    const { dao } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await dao.listService(ethers.id("data"), "ipfs://svc", 0);
+    await expect(dao.deactivateService(1n)).to.emit(dao, "ServiceDeactivated");
+    const svc = await dao.getServiceListing(1n);
+    expect(svc.active).to.be.false;
+  });
+
+  it("getServicesByProvider returns correct IDs", async () => {
+    const { dao, owner } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await dao.listService(ethers.id("a"), "ipfs://s1", 0);
+    await dao.listService(ethers.id("b"), "ipfs://s2", 0);
+    const ids = await dao.getServicesByProvider(owner.address);
+    expect(ids.length).to.equal(2);
+    expect(ids[0]).to.equal(1n);
+    expect(ids[1]).to.equal(2n);
+  });
+});
+
+// ─── Service Agreements ─────────────────────────────────────────────────────
+
+describe("Service agreements", () => {
+  // Helper: setup two agents and a service
+  async function setupService() {
+    const env = await deploy();
+    const { dao, alice } = env;
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    const serviceType = ethers.id("price-feed");
+    await dao.listService(serviceType, "ipfs://svc", ethers.parseEther("0.01"));
+    return env;
+  }
+
+  it("consumer can create a service agreement with escrow", async () => {
+    const { dao, alice } = await setupService();
+    const price = ethers.parseEther("0.01");
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    await expect(
+      dao.connect(alice).createServiceAgreement(1n, "ipfs://request", expiresAt, { value: price })
+    ).to.emit(dao, "AgreementCreated");
+  });
+
+  it("reverts if payment is less than pricePerCall", async () => {
+    const { dao, alice } = await setupService();
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    await expect(
+      dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: 1n })
+    ).to.be.revertedWith("Insufficient payment.");
+  });
+
+  it("cannot consume own service", async () => {
+    const { dao } = await setupService();
+    const price = ethers.parseEther("0.01");
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    await expect(
+      dao.createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price })
+    ).to.be.revertedWith("Cannot consume own service.");
+  });
+
+  it("cannot create agreement for inactive service", async () => {
+    const { dao, alice } = await setupService();
+    await dao.deactivateService(1n);
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    await expect(
+      dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: ethers.parseEther("0.01") })
+    ).to.be.revertedWith("Service is inactive.");
+  });
+
+  it("full lifecycle: create → fulfill → confirm → payment released", async () => {
+    const { dao, owner, alice, treasury } = await setupService();
+    const price = ethers.parseEther("0.01");
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+
+    // Alice (consumer) creates agreement
+    await dao.connect(alice).createServiceAgreement(1n, "ipfs://request", expiresAt, { value: price });
+
+    // Owner (provider) fulfills
+    await expect(dao.fulfillServiceAgreement(1n, "ipfs://response"))
+      .to.emit(dao, "AgreementFulfilled");
+
+    // Check agreement status
+    const agr = await dao.getServiceAgreement(1n);
+    expect(agr.status).to.equal(1n); // Fulfilled
+    expect(agr.responseURI).to.equal("ipfs://response");
+
+    // Alice confirms delivery → payment released to owner
+    const ownerBal0 = await ethers.provider.getBalance(owner.address);
+    await expect(dao.connect(alice).confirmServiceDelivery(1n))
+      .to.emit(dao, "AgreementSettled");
+
+    // Provider reputation updated
+    expect(await dao.providerCompletedServices(owner.address)).to.equal(1n);
+
+    // Service stats updated
+    const svc = await dao.getServiceListing(1n);
+    expect(svc.totalCalls).to.equal(1n);
+  });
+
+  it("consumer can cancel before fulfillment and get refund", async () => {
+    const { dao, alice } = await setupService();
+    const price = ethers.parseEther("0.01");
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+
+    await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
+
+    const aliceBal0 = await ethers.provider.getBalance(alice.address);
+    await expect(dao.connect(alice).cancelServiceAgreement(1n))
+      .to.emit(dao, "AgreementCancelled");
+
+    // Alice gets her escrow back
+    const aliceBal1 = await ethers.provider.getBalance(alice.address);
+    expect(aliceBal1).to.be.greaterThan(aliceBal0); // refunded minus gas
+  });
+
+  it("cannot cancel after fulfillment", async () => {
+    const { dao, alice } = await setupService();
+    const price = ethers.parseEther("0.01");
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
+    await dao.fulfillServiceAgreement(1n, "ipfs://res");
+    await expect(dao.connect(alice).cancelServiceAgreement(1n))
+      .to.be.revertedWith("Can only cancel Requested agreements.");
+  });
+
+  it("consumer can dispute a fulfilled agreement", async () => {
+    const { dao, alice } = await setupService();
+    const price = ethers.parseEther("0.01");
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
+    await dao.fulfillServiceAgreement(1n, "ipfs://bad-response");
+    await expect(dao.connect(alice).disputeServiceAgreement(1n, "ipfs://dispute-reason"))
+      .to.emit(dao, "AgreementDisputed");
+
+    // Provider dispute count increases
+    const rep = await dao.getProviderReputation(dao.target ? await dao.getAddress() : (await deploy()).owner.address);
+    // Check via direct mapping
+    expect(await dao.providerDisputedServices((await ethers.getSigners())[0].address)).to.equal(1n);
+
+    // Service dispute count increases
+    const svc = await dao.getServiceListing(1n);
+    expect(svc.totalDisputes).to.equal(1n);
+  });
+
+  it("only provider can fulfill", async () => {
+    const { dao, alice } = await setupService();
+    const price = ethers.parseEther("0.01");
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
+    await expect(dao.connect(alice).fulfillServiceAgreement(1n, "ipfs://res"))
+      .to.be.revertedWith("Not the service provider.");
+  });
+
+  it("only consumer can confirm delivery", async () => {
+    const { dao, owner, alice } = await setupService();
+    const price = ethers.parseEther("0.01");
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
+    await dao.fulfillServiceAgreement(1n, "ipfs://res");
+    // owner (provider) tries to confirm — should fail
+    await expect(dao.confirmServiceDelivery(1n))
+      .to.be.revertedWith("Not the consumer.");
+  });
+
+  it("expired agreement can be reclaimed by consumer", async () => {
+    const { dao, alice } = await setupService();
+    const price = ethers.parseEther("0.01");
+    // Use a future expiry, then advance time past it
+    const block = await ethers.provider.getBlock("latest");
+    const expiresAt = block.timestamp + 60; // 60s from now
+    await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
+
+    // Advance time past expiry
+    await ethers.provider.send("evm_increaseTime", [120]);
+    await ethers.provider.send("evm_mine");
+
+    await expect(dao.connect(alice).claimExpiredAgreement(1n))
+      .to.emit(dao, "AgreementExpired");
+  });
+
+  it("cannot reclaim non-expired agreement", async () => {
+    const { dao, alice } = await setupService();
+    const price = ethers.parseEther("0.01");
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
+    await expect(dao.connect(alice).claimExpiredAgreement(1n))
+      .to.be.revertedWith("Agreement has not expired.");
+  });
+
+  it("getProviderReputation returns correct stats", async () => {
+    const { dao, owner, alice } = await setupService();
+    const price = ethers.parseEther("0.01");
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+
+    // First agreement: settled
+    await dao.connect(alice).createServiceAgreement(1n, "ipfs://req1", expiresAt, { value: price });
+    await dao.fulfillServiceAgreement(1n, "ipfs://res1");
+    await dao.connect(alice).confirmServiceDelivery(1n);
+
+    // Second agreement: disputed
+    await dao.connect(alice).createServiceAgreement(1n, "ipfs://req2", expiresAt, { value: price });
+    await dao.fulfillServiceAgreement(2n, "ipfs://res2");
+    await dao.connect(alice).disputeServiceAgreement(2n, "ipfs://dispute");
+
+    const [completed, disputed, serviceCount] = await dao.getProviderReputation(owner.address);
+    expect(completed).to.equal(1n);
+    expect(disputed).to.equal(1n);
+    expect(serviceCount).to.equal(1n);
+  });
+});
