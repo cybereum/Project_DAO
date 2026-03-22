@@ -570,7 +570,8 @@ describe("Economic projects", () => {
   it("agent can create a project", async () => {
     const { dao, owner } = await deploy();
     await dao.registerAgent("ipfs://owner");
-    const deadline = Math.floor(Date.now() / 1000) + 86400;
+    const block = await ethers.provider.getBlock("latest");
+    const deadline = block.timestamp + 86400;
     await dao.createEconomicProject("ipfs://proj", ethers.parseEther("1"), deadline);
     const proj = await dao.economicProjects(1n);
     expect(proj.id).to.equal(1n);
@@ -581,7 +582,8 @@ describe("Economic projects", () => {
   it("anyone can fund a project", async () => {
     const { dao, owner, alice } = await deploy();
     await dao.registerAgent("ipfs://owner");
-    const deadline = Math.floor(Date.now() / 1000) + 86400;
+    const block = await ethers.provider.getBlock("latest");
+    const deadline = block.timestamp + 86400;
     await dao.createEconomicProject("ipfs://proj", ethers.parseEther("1"), deadline);
 
     const fundAmt = ethers.parseEther("0.5");
@@ -597,7 +599,8 @@ describe("Economic projects", () => {
     await dao.registerAgent("ipfs://owner");
     await memberAgent(dao, alice);
 
-    const deadline = Math.floor(Date.now() / 1000) + 86400;
+    const block = await ethers.provider.getBlock("latest");
+    const deadline = block.timestamp + 86400;
     await dao.createEconomicProject("ipfs://proj", ethers.parseEther("1"), deadline);
 
     // Fund it
@@ -634,7 +637,8 @@ describe("Economic projects", () => {
     const { dao, owner, alice } = await deploy();
     await dao.registerAgent("ipfs://owner");
     await memberAgent(dao, alice);
-    const deadline = Math.floor(Date.now() / 1000) + 86400;
+    const block = await ethers.provider.getBlock("latest");
+    const deadline = block.timestamp + 86400;
     await dao.createEconomicProject("ipfs://proj", ethers.parseEther("1"), deadline);
     await dao.connect(owner).fundProject(1n, { value: ethers.parseEther("1") });
     await dao.connect(alice).applyToProject(1n);
@@ -649,7 +653,8 @@ describe("Economic projects", () => {
   it("reverts funding cancelled project", async () => {
     const { dao, owner, alice } = await deploy();
     await dao.registerAgent("ipfs://owner");
-    const deadline = Math.floor(Date.now() / 1000) + 86400;
+    const block = await ethers.provider.getBlock("latest");
+    const deadline = block.timestamp + 86400;
     await dao.createEconomicProject("ipfs://proj", ethers.parseEther("1"), deadline);
     await dao.cancelProject(1n);
     await expect(
@@ -1017,7 +1022,8 @@ describe("Service agreements", () => {
   it("consumer can create a service agreement with escrow", async () => {
     const { dao, alice } = await setupService();
     const price = ethers.parseEther("0.01");
-    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    const block = await ethers.provider.getBlock("latest");
+    const expiresAt = block.timestamp + 3600;
     await expect(
       dao.connect(alice).createServiceAgreement(1n, "ipfs://request", expiresAt, { value: price })
     ).to.emit(dao, "AgreementCreated");
@@ -1025,7 +1031,8 @@ describe("Service agreements", () => {
 
   it("reverts if payment is less than pricePerCall", async () => {
     const { dao, alice } = await setupService();
-    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    const block = await ethers.provider.getBlock("latest");
+    const expiresAt = block.timestamp + 3600;
     await expect(
       dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: 1n })
     ).to.be.revertedWith("Insufficient payment.");
@@ -1034,7 +1041,8 @@ describe("Service agreements", () => {
   it("cannot consume own service", async () => {
     const { dao } = await setupService();
     const price = ethers.parseEther("0.01");
-    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    const block = await ethers.provider.getBlock("latest");
+    const expiresAt = block.timestamp + 3600;
     await expect(
       dao.createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price })
     ).to.be.revertedWith("Cannot consume own service.");
@@ -1043,7 +1051,8 @@ describe("Service agreements", () => {
   it("cannot create agreement for inactive service", async () => {
     const { dao, alice } = await setupService();
     await dao.deactivateService(1n);
-    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    const block = await ethers.provider.getBlock("latest");
+    const expiresAt = block.timestamp + 3600;
     await expect(
       dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: ethers.parseEther("0.01") })
     ).to.be.revertedWith("Service is inactive.");
@@ -1052,7 +1061,8 @@ describe("Service agreements", () => {
   it("full lifecycle: create → fulfill → confirm → payment released", async () => {
     const { dao, owner, alice, treasury } = await setupService();
     const price = ethers.parseEther("0.01");
-    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    const block = await ethers.provider.getBlock("latest");
+    const expiresAt = block.timestamp + 3600;
 
     // Alice (consumer) creates agreement
     await dao.connect(alice).createServiceAgreement(1n, "ipfs://request", expiresAt, { value: price });
@@ -1081,7 +1091,8 @@ describe("Service agreements", () => {
   it("consumer can cancel before fulfillment and get refund", async () => {
     const { dao, alice } = await setupService();
     const price = ethers.parseEther("0.01");
-    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    const block = await ethers.provider.getBlock("latest");
+    const expiresAt = block.timestamp + 3600;
 
     await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
 
@@ -1097,7 +1108,8 @@ describe("Service agreements", () => {
   it("cannot cancel after fulfillment", async () => {
     const { dao, alice } = await setupService();
     const price = ethers.parseEther("0.01");
-    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    const block = await ethers.provider.getBlock("latest");
+    const expiresAt = block.timestamp + 3600;
     await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
     await dao.fulfillServiceAgreement(1n, "ipfs://res");
     await expect(dao.connect(alice).cancelServiceAgreement(1n))
@@ -1107,7 +1119,8 @@ describe("Service agreements", () => {
   it("consumer can dispute a fulfilled agreement", async () => {
     const { dao, owner, alice } = await setupService();
     const price = ethers.parseEther("0.01");
-    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    const block = await ethers.provider.getBlock("latest");
+    const expiresAt = block.timestamp + 3600;
     await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
     await dao.fulfillServiceAgreement(1n, "ipfs://bad-response");
     await expect(dao.connect(alice).disputeServiceAgreement(1n, "ipfs://dispute-reason"))
@@ -1124,7 +1137,8 @@ describe("Service agreements", () => {
   it("only provider can fulfill", async () => {
     const { dao, alice } = await setupService();
     const price = ethers.parseEther("0.01");
-    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    const block = await ethers.provider.getBlock("latest");
+    const expiresAt = block.timestamp + 3600;
     await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
     await expect(dao.connect(alice).fulfillServiceAgreement(1n, "ipfs://res"))
       .to.be.revertedWith("Not the service provider.");
@@ -1133,7 +1147,8 @@ describe("Service agreements", () => {
   it("only consumer can confirm delivery", async () => {
     const { dao, owner, alice } = await setupService();
     const price = ethers.parseEther("0.01");
-    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    const block = await ethers.provider.getBlock("latest");
+    const expiresAt = block.timestamp + 3600;
     await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
     await dao.fulfillServiceAgreement(1n, "ipfs://res");
     // owner (provider) tries to confirm — should fail
@@ -1160,7 +1175,8 @@ describe("Service agreements", () => {
   it("cannot reclaim non-expired agreement", async () => {
     const { dao, alice } = await setupService();
     const price = ethers.parseEther("0.01");
-    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    const block = await ethers.provider.getBlock("latest");
+    const expiresAt = block.timestamp + 3600;
     await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
     await expect(dao.connect(alice).claimExpiredAgreement(1n))
       .to.be.revertedWith("Agreement has not expired.");
@@ -1169,7 +1185,8 @@ describe("Service agreements", () => {
   it("getProviderReputation returns correct stats", async () => {
     const { dao, owner, alice } = await setupService();
     const price = ethers.parseEther("0.01");
-    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    const block = await ethers.provider.getBlock("latest");
+    const expiresAt = block.timestamp + 3600;
 
     // First agreement: settled
     await dao.connect(alice).createServiceAgreement(1n, "ipfs://req1", expiresAt, { value: price });
@@ -1190,7 +1207,8 @@ describe("Service agreements", () => {
   it("owner can resolve dispute in favor of provider", async () => {
     const { dao, owner, alice } = await setupService();
     const price = ethers.parseEther("0.01");
-    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    const block = await ethers.provider.getBlock("latest");
+    const expiresAt = block.timestamp + 3600;
     await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
     await dao.fulfillServiceAgreement(1n, "ipfs://res");
     await dao.connect(alice).disputeServiceAgreement(1n, "ipfs://dispute");
@@ -1212,7 +1230,8 @@ describe("Service agreements", () => {
   it("owner can resolve dispute in favor of consumer (refund)", async () => {
     const { dao, alice } = await setupService();
     const price = ethers.parseEther("0.01");
-    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    const block = await ethers.provider.getBlock("latest");
+    const expiresAt = block.timestamp + 3600;
     await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
     await dao.fulfillServiceAgreement(1n, "ipfs://res");
     await dao.connect(alice).disputeServiceAgreement(1n, "ipfs://dispute");
@@ -1228,7 +1247,8 @@ describe("Service agreements", () => {
   it("non-owner cannot resolve dispute", async () => {
     const { dao, alice } = await setupService();
     const price = ethers.parseEther("0.01");
-    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    const block = await ethers.provider.getBlock("latest");
+    const expiresAt = block.timestamp + 3600;
     await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
     await dao.fulfillServiceAgreement(1n, "ipfs://res");
     await dao.connect(alice).disputeServiceAgreement(1n, "ipfs://dispute");
@@ -1255,7 +1275,8 @@ describe("Service agreements", () => {
 
   it("agreement for nonexistent service reverts", async () => {
     const { dao, alice } = await setupService();
-    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    const block = await ethers.provider.getBlock("latest");
+    const expiresAt = block.timestamp + 3600;
     await expect(
       dao.connect(alice).createServiceAgreement(999n, "ipfs://req", expiresAt, { value: 1000n })
     ).to.be.revertedWith("Service not found.");
@@ -1264,7 +1285,8 @@ describe("Service agreements", () => {
   it("provider cannot fulfill twice", async () => {
     const { dao, alice } = await setupService();
     const price = ethers.parseEther("0.01");
-    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    const block = await ethers.provider.getBlock("latest");
+    const expiresAt = block.timestamp + 3600;
     await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
     await dao.fulfillServiceAgreement(1n, "ipfs://res");
     await expect(dao.fulfillServiceAgreement(1n, "ipfs://res2"))
@@ -1278,7 +1300,8 @@ describe("Service agreements", () => {
     await memberAgent(dao, alice);
     await dao.listService(ethers.id("free-service"), "ipfs://free", 0n);
 
-    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    const block = await ethers.provider.getBlock("latest");
+    const expiresAt = block.timestamp + 3600;
     await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: 0n });
     await dao.fulfillServiceAgreement(1n, "ipfs://res");
     await dao.connect(alice).confirmServiceDelivery(1n);
@@ -1290,7 +1313,8 @@ describe("Service agreements", () => {
   it("cannot cancel a settled agreement", async () => {
     const { dao, alice } = await setupService();
     const price = ethers.parseEther("0.01");
-    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    const block = await ethers.provider.getBlock("latest");
+    const expiresAt = block.timestamp + 3600;
     await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
     await dao.fulfillServiceAgreement(1n, "ipfs://res");
     await dao.connect(alice).confirmServiceDelivery(1n);
@@ -1301,7 +1325,8 @@ describe("Service agreements", () => {
   it("cannot dispute a settled agreement", async () => {
     const { dao, alice } = await setupService();
     const price = ethers.parseEther("0.01");
-    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    const block = await ethers.provider.getBlock("latest");
+    const expiresAt = block.timestamp + 3600;
     await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
     await dao.fulfillServiceAgreement(1n, "ipfs://res");
     await dao.connect(alice).confirmServiceDelivery(1n);
@@ -1320,7 +1345,8 @@ describe("Service agreements", () => {
     await dao.addMember(bob.address, 10);
     await dao.connect(bob).registerAgent("ipfs://bob");
     const price = ethers.parseEther("0.01");
-    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    const block = await ethers.provider.getBlock("latest");
+    const expiresAt = block.timestamp + 3600;
     await dao.connect(alice).createServiceAgreement(1n, "ipfs://req", expiresAt, { value: price });
     await expect(dao.connect(bob).cancelServiceAgreement(1n))
       .to.be.revertedWith("Not the consumer.");
