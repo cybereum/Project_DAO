@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { useState, useRef, createContext, useContext, useCallback, useMemo } from 'react';
+import { useState, useRef, createContext, useContext, useCallback, useMemo, useEffect } from 'react';
 import { BrowserProvider, Contract, isAddress } from 'ethers';
 import { PROJECT_DAO_ABI, PROJECT_DAO_ADDRESS, hasContractConfig } from '../config/contract';
 
@@ -101,9 +101,21 @@ export function useAppState() {
   const [tasks] = useState(MOCK_TASKS);
   const [walletConnected, setWalletConnected] = useState(false);
   const [walletAddress, setWalletAddress] = useState('');
+  const [walletChainId, setWalletChainId] = useState(null);
+  const [walletNetworkName, setWalletNetworkName] = useState('Wallet not connected');
+  const [latestBlockNumber, setLatestBlockNumber] = useState(null);
   const [walletError, setWalletError] = useState('');
   const [txPending, setTxPending] = useState(false);
   const [syncingProposals, setSyncingProposals] = useState(false);
+
+  const resolveNetworkName = useCallback((chainId) => ({
+    1: 'Ethereum Mainnet',
+    10: 'Optimism',
+    8453: 'Base',
+    84532: 'Base Sepolia',
+    11155111: 'Sepolia',
+    31337: 'Hardhat',
+  }[Number(chainId)] || `Chain ${chainId}`), []);
 
   const getBrowserProvider = useCallback(() => {
     if (!window?.ethereum) return null;
@@ -125,6 +137,21 @@ export function useAppState() {
     return new Contract(PROJECT_DAO_ADDRESS, PROJECT_DAO_ABI, signer);
   }, [getBrowserProvider]);
 
+  const refreshWalletContext = useCallback(async () => {
+    const provider = getBrowserProvider();
+    if (!provider) {
+      setWalletChainId(null);
+      setWalletNetworkName('Wallet not connected');
+      setLatestBlockNumber(null);
+      return;
+    }
+
+    const network = await provider.getNetwork();
+    setWalletChainId(Number(network.chainId));
+    setWalletNetworkName(resolveNetworkName(network.chainId));
+    setLatestBlockNumber(await provider.getBlockNumber());
+  }, [getBrowserProvider, resolveNetworkName]);
+
   const connectWallet = useCallback(async () => {
     setWalletError('');
     const provider = getBrowserProvider();
@@ -139,11 +166,68 @@ export function useAppState() {
       if (!address) throw new Error('No account returned from wallet provider.');
       setWalletAddress(address);
       setWalletConnected(true);
+      await refreshWalletContext();
     } catch (error) {
       setWalletError(error?.message || 'Wallet connection failed.');
       setWalletConnected(false);
+      setWalletChainId(null);
+      setWalletNetworkName('Wallet not connected');
+      setLatestBlockNumber(null);
     }
-  }, [getBrowserProvider]);
+  }, [getBrowserProvider, refreshWalletContext]);
+
+  useEffect(() => {
+    if (!window?.ethereum) return undefined;
+
+    const syncExistingWallet = async () => {
+      try {
+        const provider = getBrowserProvider();
+        if (!provider) return;
+        const accounts = await provider.send('eth_accounts', []);
+        const address = accounts?.[0] || '';
+        if (!address) return;
+        setWalletAddress(address);
+        setWalletConnected(true);
+        await refreshWalletContext();
+      } catch {
+        // no-op
+      }
+    };
+
+    const handleChainChanged = () => {
+      refreshWalletContext().catch(() => {
+        setWalletChainId(null);
+        setWalletNetworkName('Wallet not connected');
+        setLatestBlockNumber(null);
+      });
+    };
+
+    const handleAccountsChanged = (accounts) => {
+      const address = accounts?.[0] || '';
+      setWalletAddress(address);
+      setWalletConnected(Boolean(address));
+      if (!address) {
+        setWalletChainId(null);
+        setWalletNetworkName('Wallet not connected');
+        setLatestBlockNumber(null);
+        return;
+      }
+      refreshWalletContext().catch(() => {
+        setWalletChainId(null);
+        setWalletNetworkName('Wallet not connected');
+        setLatestBlockNumber(null);
+      });
+    };
+
+    syncExistingWallet();
+    window.ethereum.on?.('chainChanged', handleChainChanged);
+    window.ethereum.on?.('accountsChanged', handleAccountsChanged);
+
+    return () => {
+      window.ethereum.removeListener?.('chainChanged', handleChainChanged);
+      window.ethereum.removeListener?.('accountsChanged', handleAccountsChanged);
+    };
+  }, [getBrowserProvider, refreshWalletContext]);
 
   const castVote = useCallback(async (proposalId, vote) => {
     setWalletError('');
@@ -939,7 +1023,8 @@ export function useAppState() {
 
   const appState = useMemo(() => ({
     projects, milestones, proposals, members, companies, nfts, tasks,
-    walletConnected, walletAddress, walletError, txPending, syncingProposals,
+    walletConnected, walletAddress, walletChainId, walletNetworkName, latestBlockNumber,
+    walletError, txPending, syncingProposals,
     connectWallet, castVote, syncProposalsFromChain,
     addProject, addProposal, addCompany, addNft,
     // agent economy
@@ -966,7 +1051,8 @@ export function useAppState() {
     cancelEconomicProject, refundFromEconomicProject,
   }), [
     projects, milestones, proposals, members, companies, nfts, tasks,
-    walletConnected, walletAddress, walletError, txPending, syncingProposals,
+    walletConnected, walletAddress, walletChainId, walletNetworkName, latestBlockNumber,
+    walletError, txPending, syncingProposals,
     connectWallet, castVote, syncProposalsFromChain,
     addProject, addProposal, addCompany, addNft,
     agentProfile, agentPaymentRequests, agentFeeBps, agentFlatFeeWei,

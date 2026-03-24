@@ -9,9 +9,37 @@
 //   FEE_BPS            - Fee in basis points (optional, default: 5)
 //   ASSET_FEE_WEI      - Flat fee for NFT transfers in wei (optional, default: 1e12)
 
-const { ethers } = require("hardhat");
+const hre = require("hardhat");
+const { ethers } = hre;
+
+const EIP170_RUNTIME_LIMIT_BYTES = 24_576;
+const L1_CHAIN_IDS = new Set([1]);
+
+async function getRuntimeSizeBytes(contractName) {
+  const artifact = await hre.artifacts.readArtifact(contractName);
+  return artifact.deployedBytecode.replace(/^0x/, "").length / 2;
+}
 
 async function main() {
+  const runtimeSizeBytes = await getRuntimeSizeBytes("Project_DAO");
+  const network = await ethers.provider.getNetwork();
+  const chainId = Number(network.chainId);
+
+  console.log(`Target network: ${hre.network.name} (chain ${chainId})`);
+  console.log(`Project_DAO runtime size: ${runtimeSizeBytes} bytes`);
+
+  if (runtimeSizeBytes > EIP170_RUNTIME_LIMIT_BYTES) {
+    const warning =
+      `Project_DAO runtime size (${runtimeSizeBytes} bytes) exceeds the EIP-170 L1 limit ` +
+      `(${EIP170_RUNTIME_LIMIT_BYTES} bytes). Prefer Base / Base Sepolia / another L2.`;
+
+    if (L1_CHAIN_IDS.has(chainId) && process.env.ALLOW_UNSAFE_L1_DEPLOY !== "true") {
+      throw new Error(`${warning} Refusing L1 deploy. Set ALLOW_UNSAFE_L1_DEPLOY=true to override.`);
+    }
+
+    console.warn(`WARNING: ${warning}`);
+  }
+
   const [deployer] = await ethers.getSigners();
   console.log("Deploying Project_DAO with account:", deployer.address);
   console.log("Account balance:", ethers.formatEther(await ethers.provider.getBalance(deployer.address)), "ETH");

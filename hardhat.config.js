@@ -2,6 +2,8 @@ require("@nomicfoundation/hardhat-toolbox");
 const { subtask } = require("hardhat/config");
 const { TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD } = require("hardhat/builtin-tasks/task-names");
 
+const sharedAccounts = process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [];
+
 // Use bundled solcjs to avoid network download in restricted environments
 subtask(TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD, async () => {
   return {
@@ -25,15 +27,22 @@ module.exports = {
     hardhat: {
       allowUnlimitedContractSize: true,
     },
-    // Uncomment and configure for deployment:
-    // sepolia: {
-    //   url: process.env.SEPOLIA_RPC_URL || "",
-    //   accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
-    // },
-    // mainnet: {
-    //   url: process.env.MAINNET_RPC_URL || "",
-    //   accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
-    // },
+    baseSepolia: {
+      url: process.env.BASE_SEPOLIA_RPC_URL || "",
+      accounts: sharedAccounts,
+    },
+    base: {
+      url: process.env.BASE_RPC_URL || "",
+      accounts: sharedAccounts,
+    },
+    sepolia: {
+      url: process.env.SEPOLIA_RPC_URL || "",
+      accounts: sharedAccounts,
+    },
+    mainnet: {
+      url: process.env.MAINNET_RPC_URL || "",
+      accounts: sharedAccounts,
+    },
   },
   paths: {
     sources: "./contracts",

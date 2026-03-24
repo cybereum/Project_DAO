@@ -73,6 +73,28 @@ Changing the treasury address redirects all future fee revenue. This is a high-i
 
 **Risk:** Currently no timelock or multisig guard exists. The owner can change the treasury immediately. Consider implementing governance delay for production.
 
+### 2.4 Lightweight Monitoring / Alerting
+
+For environments without a full subgraph or metrics stack yet, run the lightweight polling monitor:
+
+```bash
+PROJECT_DAO_ADDRESS=0x<contract-address> \
+WITHDRAW_ALERT_WEI=1000000000000000000 \
+POLL_INTERVAL_MS=30000 \
+npx hardhat run scripts/ops/monitor.js --network base
+```
+
+What it watches:
+- `CybereumTreasuryUpdated`
+- `CybereumFeeConfigUpdated`
+- `AgentNativeEscrowWithdrawn` above the configured threshold
+- heartbeat values for treasury, fee config, and registered agent count
+
+Suggested initial alert thresholds:
+- Large withdrawal: `>= 1 ETH` on Base / Sepolia equivalents
+- Treasury change: always page an operator
+- Fee config change: always page an operator
+
 ---
 
 ## 3. Fee Configuration
