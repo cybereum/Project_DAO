@@ -16,8 +16,9 @@ import {
   Brain, Zap, Shield, Eye, TrendingUp, RefreshCw,
   AlertTriangle, CheckCircle, XCircle, Clock, FileText,
   ChevronDown, ChevronUp, ExternalLink, Sparkles, Server,
-  Copy, Play, Lightbulb, SendHorizonal
+  Copy, Play, Lightbulb, SendHorizonal, Wallet
 } from 'lucide-react';
+import { BrowserProvider, formatEther } from 'ethers';
 import { nexusAI } from '../services/nexusAI';
 import { trackEvent } from '../lib/analytics';
 import { useApp } from '../store/appStore';
@@ -223,13 +224,16 @@ function SuggestionCard({ item, onApply, applying, onSubmitKit, submittingKit })
 // ─── Main page ────────────────────────────────────────────────────────────
 
 export default function NexusAI() {
-  const { submitFeatureKit, txPending } = useApp();
+  const { submitFeatureKit, txPending, walletConnected, connectWallet } = useApp();
   const [serverOk, setServerOk] = useState(null); // null=checking, true, false
+  const [serverHealth, setServerHealth] = useState(null);
   const [activeMode, setActiveMode] = useState(null);
   const [loading, setLoading] = useState(false);
   const [streamText, setStreamText] = useState('');
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+  const [paymentPending, setPaymentPending] = useState(false);
+  const [paymentTxHash, setPaymentTxHash] = useState('');
   const [applyingPatch, setApplyingPatch] = useState(false);
   const [feedbackForm, setFeedbackForm] = useState({
     sourceType: 'human',
@@ -242,16 +246,67 @@ export default function NexusAI() {
   const [feedbackSubmitMsg, setFeedbackSubmitMsg] = useState('');
   const [feedbackInsights, setFeedbackInsights] = useState(null);
   const streamRef = useRef('');
+  const paymentConfig = serverHealth?.payment || null;
+  const paymentRequired = Boolean(paymentConfig?.required);
+  const paymentConfigured = Boolean(paymentConfig?.configured);
+  const paymentAmountLabel = paymentConfig?.amountWei ? Number(formatEther(BigInt(paymentConfig.amountWei))).toFixed(4) : null;
+  const modelLabel = serverHealth?.model || 'configured Anthropic model';
 
   // Check server reachability on mount
   useEffect(() => {
-    nexusAI.ping().then(r => setServerOk(!!r?.ok));
+    nexusAI.ping().then((r) => {
+      setServerHealth(r || null);
+      setServerOk(!!r?.ok);
+    });
   }, []);
 
   const refreshFeedbackInsights = useCallback(async () => {
     const insight = await nexusAI.getFeedbackInsights();
     if (!insight?.error) setFeedbackInsights(insight);
   }, []);
+
+  const ensureAnalysisPayment = useCallback(async (mode) => {
+    if (!paymentRequired) return '';
+    if (!paymentConfigured || !paymentConfig?.recipient || !paymentConfig?.amountWei) {
+      setError('NexusAI payment is enabled but the server payment config is incomplete.');
+      return null;
+    }
+
+    try {
+      setPaymentPending(true);
+      setError('');
+
+      if (!window?.ethereum) {
+        setError('Connect a wallet to pay Cybereum.eth for NexusAI runs.');
+        return null;
+      }
+
+      if (!walletConnected) {
+        await connectWallet();
+      }
+
+      const provider = new BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const tx = await signer.sendTransaction({
+        to: paymentConfig.recipient,
+        value: BigInt(paymentConfig.amountWei),
+      });
+      await tx.wait();
+      setPaymentTxHash(tx.hash);
+      trackEvent('nexus_ai_payment_sent', {
+        mode,
+        txHash: tx.hash,
+        amountWei: paymentConfig.amountWei,
+        recipient: paymentConfig.recipientLabel || paymentConfig.recipient,
+      });
+      return tx.hash;
+    } catch (paymentError) {
+      setError(paymentError?.shortMessage || paymentError?.message || 'AI payment failed.');
+      return null;
+    } finally {
+      setPaymentPending(false);
+    }
+  }, [connectWallet, paymentConfig, paymentConfigured, paymentRequired, walletConnected]);
 
   const runAnalysis = useCallback(async (mode) => {
     if (mode === 'feedback') {
@@ -265,11 +320,21 @@ export default function NexusAI() {
     streamRef.current = '';
     trackEvent('nexus_ai_analyse', { mode });
 
+    let analysisPaymentTxHash = '';
+    if (paymentRequired) {
+      const paidTxHash = await ensureAnalysisPayment(mode);
+      if (!paidTxHash) {
+        setLoading(false);
+        return;
+      }
+      analysisPaymentTxHash = paidTxHash;
+    }
+
     // Use streaming so the user sees tokens as they arrive
     const raw = await nexusAI.analyseStream(mode, (chunk) => {
       streamRef.current += chunk;
       setStreamText(streamRef.current);
-    });
+    }, analysisPaymentTxHash);
 
     setLoading(false);
 
@@ -284,7 +349,7 @@ export default function NexusAI() {
       // Not valid JSON — show raw (happens if server error leaked into stream)
       setResult({ raw });
     }
-  }, [refreshFeedbackInsights]);
+  }, [ensureAnalysisPayment, paymentRequired, refreshFeedbackInsights]);
 
   const submitFeedback = useCallback(async (e) => {
     e.preventDefault();
@@ -491,8 +556,8 @@ export default function NexusAI() {
             </span>
           </div>
           <p className="text-sm text-nexus-text-dim max-w-xl">
-            Claude claude-opus-4-6 analyses the live codebase and generates prioritised improvement suggestions.
-            Findings include security audits, UX reviews, plan gaps, and net-new ideas.
+            {modelLabel} analyses the live codebase and generates prioritised improvement suggestions.
+            For the quickest path to production, each paid analysis can be sent straight to <span className="font-mono text-nexus-cyan">cybereum.eth</span>.
           </p>
         </div>
 
@@ -527,6 +592,30 @@ export default function NexusAI() {
         </div>
       )}
 
+      {serverOk && paymentRequired && paymentConfigured && (
+        <div className="p-4 rounded-xl border border-nexus-cyan/20 bg-nexus-cyan/5 space-y-3">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <Wallet size={14} className="text-nexus-cyan" />
+            Pay-per-run AI billing
+          </div>
+          <p className="text-xs text-nexus-text-dim">
+            Each NexusAI run sends <span className="text-nexus-cyan font-mono">{paymentAmountLabel} ETH</span> to{' '}
+            <span className="text-nexus-cyan font-mono">{paymentConfig.recipientLabel || paymentConfig.recipient}</span>, then the server verifies the confirmed payment transaction before running analysis.
+          </p>
+          {paymentTxHash && (
+            <p className="text-xs text-nexus-text-dim break-all">
+              Last paid tx: <span className="font-mono text-nexus-cyan">{paymentTxHash}</span>
+            </p>
+          )}
+        </div>
+      )}
+
+      {serverOk && paymentRequired && !paymentConfigured && (
+        <div className="p-4 rounded-xl border border-red-500/30 bg-red-500/10 text-sm text-red-400">
+          NexusAI payment is enabled but the server is missing its payment recipient, amount, or RPC configuration.
+        </div>
+      )}
+
       {/* Mode selection grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {MODES.map(m => {
@@ -535,7 +624,7 @@ export default function NexusAI() {
           return (
             <button
               key={m.id}
-              disabled={loading || !serverOk}
+              disabled={loading || paymentPending || !serverOk}
               onClick={() => runAnalysis(m.id)}
               className={`relative p-5 rounded-2xl border text-left transition-all disabled:opacity-50 disabled:cursor-not-allowed
                 ${isActive
@@ -553,6 +642,11 @@ export default function NexusAI() {
               </div>
               <div className="font-semibold text-sm mb-1">{m.label}</div>
               <div className="text-xs text-nexus-text-dim leading-relaxed">{m.description}</div>
+              {paymentRequired && paymentConfigured && (
+                <div className="mt-3 text-[11px] text-nexus-cyan/80">
+                  {paymentPending && activeMode === m.id ? 'Waiting for payment confirmation…' : `Pay ${paymentAmountLabel} ETH to run`}
+                </div>
+              )}
             </button>
           );
         })}
@@ -663,9 +757,9 @@ export default function NexusAI() {
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
             {[
               { step: '01', title: 'Read', desc: 'Server reads live source files from the repo — contract, store, pages, config.' },
-              { step: '02', title: 'Analyse', desc: 'Claude claude-opus-4-6 with adaptive thinking processes the code against the selected mode.' },
-              { step: '03', title: 'Suggest', desc: 'Returns typed JSON: suggestions with priority, effort estimates, and patch diffs.' },
-              { step: '04', title: 'Apply', desc: 'Patches can be applied directly to files on disk for 1-click improvements.' },
+              { step: '02', title: 'Pay', desc: 'Each production run can trigger a wallet payment to cybereum.eth before the server starts work.' },
+              { step: '03', title: 'Analyse', desc: `${modelLabel} processes the code against the selected mode after payment verification.` },
+              { step: '04', title: 'Suggest', desc: 'Returns typed JSON: suggestions with priority, effort estimates, and patch diffs.' },
             ].map(s => (
               <div key={s.step} className="flex gap-3">
                 <span className="text-2xl font-black text-nexus-cyan/20 font-mono w-8 flex-shrink-0">{s.step}</span>

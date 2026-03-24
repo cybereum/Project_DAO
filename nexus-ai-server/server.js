@@ -4,7 +4,7 @@
  * A lightweight Express proxy that:
  *   1. Accepts analysis requests from the NEXUS frontend
  *   2. Reads relevant source files from the Project_DAO repo
- *   3. Calls Claude (claude-opus-4-6 with adaptive thinking) to generate
+ *   3. Calls Claude (configured via ANTHROPIC_MODEL) to generate
  *      structured improvement suggestions
  *   4. Returns typed suggestion objects the frontend can render + act on
  *
@@ -24,6 +24,14 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const FEEDBACK_STORE_PATH = path.join(__dirname, 'data', 'feedback-memory.json');
+const AI_PAYMENT_STORE_PATH = path.join(__dirname, 'data', 'ai-payments.json');
+const MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-6';
+const AI_PAYMENT_REQUIRED = process.env.AI_PAYMENT_REQUIRED === 'true';
+const AI_PAYMENT_RECIPIENT = (process.env.AI_PAYMENT_RECIPIENT || '').toLowerCase();
+const AI_PAYMENT_RECIPIENT_LABEL = process.env.AI_PAYMENT_RECIPIENT_LABEL || 'cybereum.eth';
+const AI_PAYMENT_AMOUNT_WEI = BigInt(process.env.AI_PAYMENT_AMOUNT_WEI || '0');
+const AI_PAYMENT_RPC_URL = process.env.AI_PAYMENT_RPC_URL || '';
+const inFlightPaymentTxHashes = new Set();
 
 const app = express();
 app.use(cors());
@@ -42,6 +50,10 @@ const DEFAULT_FEEDBACK_STORE = {
   items: [],
 };
 
+const DEFAULT_AI_PAYMENT_STORE = {
+  used: {},
+};
+
 async function loadFeedbackStore() {
   try {
     const raw = await fs.readFile(FEEDBACK_STORE_PATH, 'utf-8');
@@ -56,6 +68,160 @@ async function loadFeedbackStore() {
 async function saveFeedbackStore(store) {
   await fs.mkdir(path.dirname(FEEDBACK_STORE_PATH), { recursive: true });
   await fs.writeFile(FEEDBACK_STORE_PATH, JSON.stringify(store, null, 2), 'utf-8');
+}
+
+async function loadAiPaymentStore() {
+  try {
+    const raw = await fs.readFile(AI_PAYMENT_STORE_PATH, 'utf-8');
+    return { ...DEFAULT_AI_PAYMENT_STORE, ...JSON.parse(raw) };
+  } catch {
+    await fs.mkdir(path.dirname(AI_PAYMENT_STORE_PATH), { recursive: true });
+    await fs.writeFile(AI_PAYMENT_STORE_PATH, JSON.stringify(DEFAULT_AI_PAYMENT_STORE, null, 2), 'utf-8');
+    return { ...DEFAULT_AI_PAYMENT_STORE };
+  }
+}
+
+async function saveAiPaymentStore(store) {
+  await fs.mkdir(path.dirname(AI_PAYMENT_STORE_PATH), { recursive: true });
+  await fs.writeFile(AI_PAYMENT_STORE_PATH, JSON.stringify(store, null, 2), 'utf-8');
+}
+
+function getPaymentConfig() {
+  return {
+    required: AI_PAYMENT_REQUIRED,
+    configured: Boolean(AI_PAYMENT_RECIPIENT && AI_PAYMENT_RPC_URL && AI_PAYMENT_AMOUNT_WEI > 0n),
+    recipient: AI_PAYMENT_RECIPIENT || null,
+    recipientLabel: AI_PAYMENT_RECIPIENT_LABEL,
+    amountWei: AI_PAYMENT_AMOUNT_WEI.toString(),
+  };
+}
+
+async function rpcCall(method, params = []) {
+  const response = await fetch(AI_PAYMENT_RPC_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      method,
+      params,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Payment RPC failed with HTTP ${response.status}`);
+  }
+
+  const payload = await response.json();
+  if (payload.error) {
+    throw new Error(payload.error.message || `Payment RPC error for ${method}`);
+  }
+  return payload.result;
+}
+
+async function verifyPaymentTx(paymentTxHash) {
+  const [tx, receipt] = await Promise.all([
+    rpcCall('eth_getTransactionByHash', [paymentTxHash]),
+    rpcCall('eth_getTransactionReceipt', [paymentTxHash]),
+  ]);
+
+  if (!tx || !receipt) {
+    return { ok: false, error: 'Payment transaction not found or not yet confirmed.' };
+  }
+
+  if ((receipt.status || '').toLowerCase() !== '0x1') {
+    return { ok: false, error: 'Payment transaction failed on-chain.' };
+  }
+
+  if (!tx.to || tx.to.toLowerCase() !== AI_PAYMENT_RECIPIENT) {
+    return { ok: false, error: `Payment must be sent to ${AI_PAYMENT_RECIPIENT_LABEL}.` };
+  }
+
+  const amountWei = BigInt(tx.value || '0x0');
+  if (amountWei < AI_PAYMENT_AMOUNT_WEI) {
+    return {
+      ok: false,
+      error: `Payment is below the required amount. Need at least ${AI_PAYMENT_AMOUNT_WEI} wei.`,
+    };
+  }
+
+  return {
+    ok: true,
+    txHash: tx.hash,
+    from: tx.from,
+    to: tx.to,
+    amountWei: amountWei.toString(),
+    blockNumber: receipt.blockNumber ? parseInt(receipt.blockNumber, 16) : null,
+  };
+}
+
+async function ensureAnalysisPayment(paymentTxHash, mode) {
+  if (!AI_PAYMENT_REQUIRED) {
+    return { ok: true, payment: null };
+  }
+
+  const paymentConfig = getPaymentConfig();
+  if (!paymentConfig.configured) {
+    return {
+      ok: false,
+      status: 500,
+      error: 'AI payment is enabled but the server payment configuration is incomplete.',
+    };
+  }
+
+  if (!paymentTxHash) {
+    return {
+      ok: false,
+      status: 402,
+      error: `Payment required. Send at least ${paymentConfig.amountWei} wei to ${paymentConfig.recipientLabel}, then retry with the payment transaction hash.`,
+    };
+  }
+
+  if (inFlightPaymentTxHashes.has(paymentTxHash)) {
+    return {
+      ok: false,
+      status: 409,
+      error: 'That payment is already being consumed by another NexusAI request.',
+    };
+  }
+
+  const paymentStore = await loadAiPaymentStore();
+  if (paymentStore.used[paymentTxHash]) {
+    return {
+      ok: false,
+      status: 409,
+      error: 'That payment transaction hash has already been used for a NexusAI run.',
+    };
+  }
+
+  const verified = await verifyPaymentTx(paymentTxHash);
+  if (!verified.ok) {
+    return { ok: false, status: 402, error: verified.error };
+  }
+
+  inFlightPaymentTxHashes.add(paymentTxHash);
+  return { ok: true, payment: { ...verified, mode } };
+}
+
+async function recordPaymentUsage(payment) {
+  if (!payment?.txHash) return;
+  const store = await loadAiPaymentStore();
+  store.used[payment.txHash] = {
+    from: payment.from,
+    to: payment.to,
+    amountWei: payment.amountWei,
+    blockNumber: payment.blockNumber,
+    mode: payment.mode,
+    usedAt: new Date().toISOString(),
+  };
+  await saveAiPaymentStore(store);
+  inFlightPaymentTxHashes.delete(payment.txHash);
+}
+
+function releaseInFlightPayment(payment) {
+  if (payment?.txHash) {
+    inFlightPaymentTxHashes.delete(payment.txHash);
+  }
 }
 
 function qualityFilter(item) {
@@ -374,7 +540,7 @@ ${files.map(f => `=== ${f.path} ===\n${f.content}`).join('\n\n')}`,
 // ─── /api/analyse — main analysis endpoint ───────────────────────────────
 
 app.post('/api/analyse', async (req, res) => {
-  const { mode = 'health', stream: doStream = false, kits = [] } = req.body;
+  const { mode = 'health', stream: doStream = false, kits = [], paymentTxHash = '' } = req.body;
   const modeConfig = ANALYSIS_MODES[mode];
   if (!modeConfig) {
     return res.status(400).json({ error: `Unknown mode: ${mode}. Valid: ${Object.keys(ANALYSIS_MODES).join(', ')}` });
@@ -395,6 +561,13 @@ app.post('/api/analyse', async (req, res) => {
     : mode === 'feedback'
       ? modeConfig.userTemplate(files, kits, feedbackInsights)
       : modeConfig.userTemplate(files);
+  const paymentGate = await ensureAnalysisPayment(paymentTxHash, mode);
+  if (!paymentGate.ok) {
+    return res.status(paymentGate.status || 402).json({
+      error: paymentGate.error,
+      payment: getPaymentConfig(),
+    });
+  }
 
   try {
     if (doStream) {
@@ -404,7 +577,7 @@ app.post('/api/analyse', async (req, res) => {
       res.setHeader('Connection', 'keep-alive');
 
       const stream = client.messages.stream({
-        model: 'claude-opus-4-6',
+        model: MODEL,
         max_tokens: 4096,
         thinking: { type: 'adaptive' },
         system: modeConfig.systemPrompt,
@@ -419,11 +592,12 @@ app.post('/api/analyse', async (req, res) => {
 
       const final = await stream.finalMessage();
       const raw = final.content.find(b => b.type === 'text')?.text || '{}';
+      await recordPaymentUsage(paymentGate.payment);
       res.write(`data: ${JSON.stringify({ done: true, raw })}\n\n`);
       res.end();
     } else {
       const response = await client.messages.create({
-        model: 'claude-opus-4-6',
+        model: MODEL,
         max_tokens: 4096,
         thinking: { type: 'adaptive' },
         system: modeConfig.systemPrompt,
@@ -437,18 +611,21 @@ app.post('/api/analyse', async (req, res) => {
       } catch {
         parsed = { raw };
       }
+      await recordPaymentUsage(paymentGate.payment);
 
       res.json({
         mode,
         label: modeConfig.label,
-        model: 'claude-opus-4-6',
+        model: MODEL,
         filesAnalysed: files.map(f => f.path),
         feedbackInsights,
+        payment: paymentGate.payment,
         result: parsed,
         usage: response.usage,
       });
     }
   } catch (err) {
+    releaseInFlightPayment(paymentGate.payment);
     console.error('Claude API error:', err);
     res.status(500).json({ error: err.message || 'Claude API call failed.' });
   }
@@ -473,7 +650,7 @@ app.post('/api/apply-suggestion', async (req, res) => {
     }
 
     const response = await client.messages.create({
-      model: 'claude-opus-4-6',
+      model: MODEL,
       max_tokens: 8192,
       thinking: { type: 'adaptive' },
       system: 'You are a precise code editor. Apply the provided patch to the file and return ONLY the complete updated file content with no explanation, no markdown fences, no extra text.',
@@ -516,7 +693,12 @@ app.get('/api/modes', (_req, res) => {
 
 // ─── /api/health ──────────────────────────────────────────────────────────
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, version: '1.0.0' }));
+app.get('/api/health', (_req, res) => res.json({
+  ok: true,
+  version: '1.0.0',
+  model: MODEL,
+  payment: getPaymentConfig(),
+}));
 
 // ─── Feedback memory endpoints (consider, filter, rank, self-improve) ───
 
@@ -579,5 +761,7 @@ app.post('/api/feedback/outcome', async (req, res) => {
 const PORT = process.env.PORT || 3737;
 app.listen(PORT, () => {
   console.log(`NexusAI server listening on http://localhost:${PORT}`);
+  console.log('ANTHROPIC_MODEL:', MODEL);
   console.log('ANTHROPIC_API_KEY:', process.env.ANTHROPIC_API_KEY ? 'set ✓' : 'NOT SET ✗');
+  console.log('AI payment required:', AI_PAYMENT_REQUIRED ? 'yes' : 'no');
 });

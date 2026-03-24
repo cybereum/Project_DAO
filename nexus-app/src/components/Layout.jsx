@@ -2,6 +2,7 @@ import { createElement, useState } from 'react';
 import { NavLink, Link, useLocation } from 'react-router-dom';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { useApp } from '../store/appStore';
+import { PROJECT_DAO_ADDRESS } from '../config/contract';
 import {
   LayoutDashboard, FolderKanban, Milestone, Vote, ShieldCheck,
   Trophy, Gem, Wallet, Zap, ChevronRight, Globe,
@@ -94,21 +95,30 @@ function Sidebar({ collapsed, onToggle }) {
   );
 }
 
-function DemoBanner({ walletConnected }) {
+function ProductModeBanner({ walletConnected }) {
   const [dismissed, setDismissed] = useState(false);
-  if (walletConnected || dismissed) return null;
+  if (dismissed) return null;
+
+  const hasLiveContract = Boolean(PROJECT_DAO_ADDRESS);
+  const title = hasLiveContract ? 'Hybrid Beta' : 'Demo Mode';
+  const message = hasLiveContract
+    ? 'Wallet connect, proposal sync/voting, agent rails, messaging, feature kits, and on-chain project flows use the live contract. Verification, reputation, NFT minting, and some workspace flows still use simulated UX.'
+    : 'No contract address is configured, so the app is running in full simulation mode. Connect a wallet after configuring VITE_PROJECT_DAO_ADDRESS to enable live contract actions.';
+
   return (
     <div className="bg-nexus-cyan/10 border-b border-nexus-cyan/20 px-6 py-2 flex items-center justify-between gap-4">
       <div className="flex items-center gap-2 text-xs text-nexus-cyan">
         <AlertTriangle size={13} />
         <span>
-          <strong>Demo Mode</strong> — All data is simulated. Connect a wallet to interact on-chain, or explore freely without one.
+          <strong>{title}</strong> — {message}
         </span>
       </div>
       <div className="flex items-center gap-3 flex-shrink-0">
-        <Link to="/" className="text-xs text-nexus-cyan/70 hover:text-nexus-cyan flex items-center gap-1 transition-colors">
-          <ArrowLeft size={11} /> Back to home
-        </Link>
+        {!walletConnected && (
+          <Link to="/" className="text-xs text-nexus-cyan/70 hover:text-nexus-cyan flex items-center gap-1 transition-colors">
+            <ArrowLeft size={11} /> Back to home
+          </Link>
+        )}
         <button onClick={() => setDismissed(true)} className="text-xs text-nexus-text-dim hover:text-nexus-text transition-colors">
           Dismiss
         </button>
@@ -118,18 +128,28 @@ function DemoBanner({ walletConnected }) {
 }
 
 function TopBar() {
-  const { walletConnected, walletAddress, walletError, txPending, connectWallet } = useApp();
+  const {
+    walletConnected, walletAddress, walletChainId, walletNetworkName, latestBlockNumber,
+    walletError, txPending, connectWallet,
+  } = useApp();
+  const networkLabel = walletConnected && walletChainId
+    ? `${walletNetworkName} (${walletChainId})`
+    : PROJECT_DAO_ADDRESS
+    ? 'Hybrid / wallet disconnected'
+    : 'Simulation only';
+
+  const blockLabel = latestBlockNumber != null ? `BLOCK: #${latestBlockNumber.toLocaleString()}` : 'BLOCK: —';
   return (
     <>
       <header className="h-16 border-b border-nexus-border bg-nexus-surface/80 backdrop-blur-md flex items-center justify-between px-6 sticky top-0 z-30">
         <div className="flex items-center gap-3">
           <Globe size={16} className="text-nexus-cyan animate-pulse-glow" />
-          <span className="text-xs text-nexus-text-dim font-mono">NETWORK: ETHEREUM MAINNET</span>
-          <span className="w-2 h-2 rounded-full bg-nexus-green animate-pulse" />
+          <span className="text-xs text-nexus-text-dim font-mono">NETWORK: {networkLabel}</span>
+          <span className={`w-2 h-2 rounded-full ${walletConnected ? 'bg-nexus-green animate-pulse' : 'bg-amber-400'}`} />
         </div>
         <div className="flex items-center gap-4">
           <div className="text-xs text-nexus-text-dim font-mono hidden sm:block">
-            BLOCK: #19,847,293
+            {blockLabel}
           </div>
           {walletConnected ? (
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-nexus-cyan/10 border border-nexus-cyan/20">
@@ -146,7 +166,7 @@ function TopBar() {
         </div>
       </header>
 
-      <DemoBanner walletConnected={walletConnected} />
+      <ProductModeBanner walletConnected={walletConnected} />
 
       {(txPending || walletError) && (
         <div className="px-6 pt-2">

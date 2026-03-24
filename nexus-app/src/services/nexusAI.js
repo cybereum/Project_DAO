@@ -55,10 +55,10 @@ export const nexusAI = {
    * @param {'health'|'security'|'ux'|'growth'|'feedback'} mode
    * @returns {{ mode, label, model, filesAnalysed, result, usage } | { error }}
    */
-  async analyse(mode = 'health') {
+  async analyse(mode = 'health', paymentTxHash = '') {
     return safeFetch('/api/analyse', {
       method: 'POST',
-      body: JSON.stringify({ mode }),
+      body: JSON.stringify({ mode, paymentTxHash }),
     });
   },
 
@@ -69,13 +69,13 @@ export const nexusAI = {
    * @param {(text: string) => void} onChunk
    * @returns {Promise<string>}
    */
-  async analyseStream(mode = 'health', onChunk) {
+  async analyseStream(mode = 'health', onChunk, paymentTxHash = '') {
     let raw = '';
     try {
       const res = await fetch(`${BASE_URL}/api/analyse`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode, stream: true }),
+        body: JSON.stringify({ mode, stream: true, paymentTxHash }),
       });
 
       if (!res.ok) {

@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "test": "hardhat test",
-    "test:coverage": "hardhat coverage"
+    "test:coverage": "hardhat coverage",
+    "check:contract-size": "node scripts/check-contract-size.js"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
