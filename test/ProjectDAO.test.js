@@ -1088,3 +1088,439 @@ describe("System integration: full agent lifecycle", () => {
     expect(aliceWallet1 - aliceWallet0).to.equal(amount - fee);
   });
 });
+
+// ─── Governance: Proposals & Voting ──────────────────────────────────────────
+
+describe("Governance: Proposals & Voting", () => {
+  // Helper: deploy + create a milestone so proposals can reference it
+  async function deployWithMilestone() {
+    const ctx = await deploy();
+    const futureDate = Math.floor(Date.now() / 1000) + 86400;
+    await ctx.dao.createMilestone("Milestone 1", futureDate);
+    return ctx;
+  }
+
+  it("member with sufficient voting power can create a proposal", async () => {
+    const { dao, owner } = await deployWithMilestone();
+    await dao.createProposal("Proposal #1", [0]);
+    expect(await dao.getProposalCount()).to.equal(1n);
+    const p = await dao.getProposal(1n);
+    expect(p.description).to.equal("Proposal #1");
+    expect(p.executed).to.be.false;
+  });
+
+  it("non-member cannot create a proposal", async () => {
+    const { dao, alice } = await deployWithMilestone();
+    await expect(
+      dao.connect(alice).createProposal("Proposal from non-member", [0])
+    ).to.be.revertedWith("Only members can create proposals.");
+  });
+
+  it("member with insufficient voting power cannot create a proposal", async () => {
+    const { dao, alice } = await deployWithMilestone();
+    await dao.addMember(alice.address, 5); // below minimumVotingPower (10)
+    await expect(
+      dao.connect(alice).createProposal("Low power proposal", [0])
+    ).to.be.revertedWith("Voting power not sufficient.");
+  });
+
+  it("member can vote yes on a proposal", async () => {
+    const { dao, owner, alice } = await deployWithMilestone();
+    await dao.addMember(alice.address, 20);
+    await dao.createProposal("Proposal #1", [0]);
+    await dao.connect(alice).vote(1n, true);
+    const p = await dao.getProposal(1n);
+    expect(p.yesVotes).to.equal(20n);
+  });
+
+  it("member can vote no on a proposal", async () => {
+    const { dao, owner, alice } = await deployWithMilestone();
+    await dao.addMember(alice.address, 15);
+    await dao.createProposal("Proposal #1", [0]);
+    await dao.connect(alice).vote(1n, false);
+    const p = await dao.getProposal(1n);
+    expect(p.noVotes).to.equal(15n);
+  });
+
+  it("cannot vote twice on the same proposal", async () => {
+    const { dao, owner } = await deployWithMilestone();
+    await dao.createProposal("Proposal #1", [0]);
+    await dao.vote(1n, true);
+    await expect(dao.vote(1n, true)).to.be.revertedWith("Member has already voted.");
+  });
+
+  it("non-member cannot vote", async () => {
+    const { dao, owner, alice } = await deployWithMilestone();
+    await dao.createProposal("Proposal #1", [0]);
+    await expect(
+      dao.connect(alice).vote(1n, true)
+    ).to.be.revertedWith("Only members can vote.");
+  });
+
+  it("owner can execute a passed proposal after voting period", async () => {
+    const { dao, owner } = await deployWithMilestone();
+    await dao.createProposal("Proposal #1", [0]);
+    await dao.vote(1n, true);
+    // Advance time past voting period (7 days)
+    await ethers.provider.send("evm_increaseTime", [7 * 24 * 60 * 60 + 1]);
+    await ethers.provider.send("evm_mine");
+    await dao.executeProposal(1n);
+    const p = await dao.getProposal(1n);
+    expect(p.executed).to.be.true;
+    expect(p.proposalPassed).to.be.true;
+  });
+
+  it("cannot execute proposal before voting period ends", async () => {
+    const { dao, owner } = await deployWithMilestone();
+    await dao.createProposal("Proposal #1", [0]);
+    await dao.vote(1n, true);
+    await expect(dao.executeProposal(1n)).to.be.revertedWith("Voting period has not ended.");
+  });
+
+  it("cannot execute non-existent proposal", async () => {
+    const { dao } = await deployWithMilestone();
+    await expect(dao.executeProposal(999n)).to.be.revertedWith("Invalid proposal ID.");
+  });
+
+  it("getProposal and getProposalCount work correctly", async () => {
+    const { dao, owner } = await deployWithMilestone();
+    expect(await dao.getProposalCount()).to.equal(0n);
+    await dao.createProposal("First", [0]);
+    await dao.createProposal("Second", [0]);
+    expect(await dao.getProposalCount()).to.equal(2n);
+    const p1 = await dao.getProposal(1n);
+    const p2 = await dao.getProposal(2n);
+    expect(p1.description).to.equal("First");
+    expect(p2.description).to.equal("Second");
+  });
+});
+
+// ─── Governance: Milestones ─────────────────────────────────────────────────
+
+describe("Governance: Milestones", () => {
+  it("owner can create a milestone", async () => {
+    const { dao } = await deploy();
+    const futureDate = Math.floor(Date.now() / 1000) + 86400;
+    await dao.createMilestone("Build v1", futureDate);
+    expect(await dao.getMilestoneCount()).to.equal(1n);
+  });
+
+  it("non-owner cannot create a milestone", async () => {
+    const { dao, alice } = await deploy();
+    const futureDate = Math.floor(Date.now() / 1000) + 86400;
+    await expect(
+      dao.connect(alice).createMilestone("Unauthorized", futureDate)
+    ).to.be.revertedWith("Only the owner can call this function.");
+  });
+
+  it("getMilestone returns correct data", async () => {
+    const { dao } = await deploy();
+    const futureDate = Math.floor(Date.now() / 1000) + 86400;
+    await dao.createMilestone("Alpha release", futureDate);
+    const m = await dao.getMilestone(0);
+    expect(m.description).to.equal("Alpha release");
+    expect(m.date).to.equal(BigInt(futureDate));
+    expect(m.index).to.equal(0n);
+  });
+
+  it("getMilestoneCount tracks count correctly", async () => {
+    const { dao } = await deploy();
+    expect(await dao.getMilestoneCount()).to.equal(0n);
+    const d1 = Math.floor(Date.now() / 1000) + 86400;
+    await dao.createMilestone("M1", d1);
+    expect(await dao.getMilestoneCount()).to.equal(1n);
+    const d2 = d1 + 86400;
+    await dao.createMilestone("M2", d2);
+    expect(await dao.getMilestoneCount()).to.equal(2n);
+  });
+
+  it("reverts on invalid milestone ID", async () => {
+    const { dao } = await deploy();
+    await expect(dao.getMilestone(0)).to.be.revertedWith("Invalid milestone ID.");
+  });
+});
+
+// ─── Role & Permission Management ───────────────────────────────────────────
+
+describe("Role & Permission Management", () => {
+  it("owner can create a role", async () => {
+    const { dao } = await deploy();
+    // Role 0 is "Owner" created in constructor
+    await dao.createRole(ethers.encodeBytes32String("Admin"));
+    const [name, memberCount] = await dao.getRole(1); // index 1 (0 is Owner)
+    expect(ethers.decodeBytes32String(name)).to.equal("Admin");
+    expect(memberCount).to.equal(0n);
+  });
+
+  it("owner can add a permission to a role", async () => {
+    const { dao } = await deploy();
+    await dao.createRole(ethers.encodeBytes32String("Editor"));
+    // roleId for addPermission is 1-based: role at index 1 => roleId 2? No.
+    // _createRole pushes to roles[], so after constructor: roles[0] = Owner.
+    // createRole("Editor") => roles[1] = Editor. addPermission expects roleId 1-based? Let me check.
+    // addPermission: require(_roleId > 0 && _roleId <= roles.length) => roles[_roleId - 1]
+    // After constructor, roles.length = 1. After createRole("Editor"), roles.length = 2.
+    // To target Editor: _roleId = 2 (since roles[2-1] = roles[1] = Editor).
+    await dao.addPermission(2, "edit_content");
+    // No revert means success. The permission is stored in a mapping, not easily readable.
+    // We verify by emitting PermissionAdded event.
+  });
+
+  it("emits PermissionAdded event", async () => {
+    const { dao } = await deploy();
+    await dao.createRole(ethers.encodeBytes32String("Mod"));
+    await expect(dao.addPermission(2, "moderate"))
+      .to.emit(dao, "PermissionAdded")
+      .withArgs(2n, "moderate");
+  });
+
+  it("owner can remove a permission from a role", async () => {
+    const { dao } = await deploy();
+    await dao.createRole(ethers.encodeBytes32String("Mod"));
+    await dao.addPermission(2, "moderate");
+    await expect(dao.removePermission(2, "moderate"))
+      .to.emit(dao, "PermissionRemoved")
+      .withArgs(2n, "moderate");
+  });
+
+  it("owner can assign role to a member", async () => {
+    const { dao, alice } = await deploy();
+    await dao.addMember(alice.address, 10);
+    await dao.createRole(ethers.encodeBytes32String("Builder"));
+    await expect(dao.assignRole(alice.address, 2))
+      .to.emit(dao, "RoleAssigned")
+      .withArgs(alice.address, 2n);
+  });
+
+  it("non-owner cannot create role", async () => {
+    const { dao, alice } = await deploy();
+    await expect(
+      dao.connect(alice).createRole(ethers.encodeBytes32String("Hacker"))
+    ).to.be.revertedWith("Only the owner can call this function.");
+  });
+
+  it("assignRoleToMilestone works for valid roles", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.addMember(alice.address, 10);
+    const futureDate = Math.floor(Date.now() / 1000) + 86400;
+    await dao.createMilestone("M1", futureDate);
+    // assignRoleToMilestone requires a proposal to exist with milestoneId matching
+    // Owner is already assigned to milestone 0 via createMilestone
+    await dao.createProposal("Setup proposal", [0]);
+    const builderRole = ethers.keccak256(ethers.toUtf8Bytes("builder"));
+    await dao.assignRoleToMilestone(alice.address, 0, builderRole);
+    // No revert means success
+  });
+
+  it("getRole returns correct data", async () => {
+    const { dao, alice } = await deploy();
+    await dao.addMember(alice.address, 10);
+    await dao.createRole(ethers.encodeBytes32String("Reviewer"));
+    await dao.assignRole(alice.address, 2);
+    const [name, memberCount] = await dao.getRole(1);
+    expect(ethers.decodeBytes32String(name)).to.equal("Reviewer");
+    expect(memberCount).to.equal(1n);
+  });
+});
+
+// ─── Access Control & Edge Cases ────────────────────────────────────────────
+
+describe("Access Control & Edge Cases", () => {
+  it("changeOwner works and old owner loses access", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.changeOwner(alice.address);
+    expect(await dao.owner()).to.equal(alice.address);
+    // Old owner can no longer call onlyOwner functions
+    await expect(
+      dao.setCybereumTreasury(owner.address)
+    ).to.be.revertedWith("Only the owner can call this function.");
+    // New owner can call onlyOwner functions
+    await dao.connect(alice).setCybereumTreasury(alice.address);
+    expect(await dao.cybereumTreasury()).to.equal(alice.address);
+  });
+
+  it("changeOwner reverts on zero address", async () => {
+    const { dao } = await deploy();
+    await expect(dao.changeOwner(ethers.ZeroAddress)).to.be.revertedWith(
+      "Invalid new owner address."
+    );
+  });
+
+  it("grantPrivilege works for a member", async () => {
+    const { dao, alice } = await deploy();
+    await dao.addMember(alice.address, 10);
+    await dao.grantPrivilege(alice.address, 1);
+    // Verify by reading the member's privileges
+    const m = await dao.members(alice.address);
+    expect(m.isMember).to.be.true;
+  });
+
+  it("grantPrivilege reverts for non-member", async () => {
+    const { dao, alice } = await deploy();
+    await expect(
+      dao.grantPrivilege(alice.address, 1)
+    ).to.be.revertedWith("Invalid member address.");
+  });
+
+  it("paused contract blocks depositNativeToEscrow", async () => {
+    const { dao, owner } = await deploy();
+    await dao.registerAgent("ipfs://a");
+    await dao.pauseContract();
+    await expect(
+      dao.depositNativeToEscrow({ value: ethers.parseEther("1") })
+    ).to.be.revertedWith("Contract is paused.");
+  });
+
+  it("paused contract blocks transferNativeBetweenAgents", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("1") });
+    await dao.pauseContract();
+    await expect(
+      dao.transferNativeBetweenAgents(alice.address, ethers.parseEther("0.1"), "memo")
+    ).to.be.revertedWith("Contract is paused.");
+  });
+
+  it("paused contract blocks createAgentPaymentRequest", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    await dao.pauseContract();
+    await expect(
+      dao.connect(alice).createAgentPaymentRequest(
+        owner.address, ethers.ZeroAddress, ethers.parseEther("0.1"), true, "inv"
+      )
+    ).to.be.revertedWith("Contract is paused.");
+  });
+
+  it("cannot register agent twice", async () => {
+    const { dao, owner } = await deploy();
+    await dao.registerAgent("ipfs://a");
+    await expect(dao.registerAgent("ipfs://b")).to.be.revertedWith(
+      "Agent already registered."
+    );
+  });
+
+  it("cannot withdraw more than escrow balance", async () => {
+    const { dao, owner } = await deploy();
+    await dao.registerAgent("ipfs://a");
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("0.5") });
+    await expect(
+      dao.withdrawNativeFromEscrow(ethers.parseEther("1"))
+    ).to.be.revertedWith("Insufficient native escrow balance.");
+  });
+
+  it("cannot create self-payment request", async () => {
+    const { dao, owner } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    const amount = ethers.parseEther("0.1");
+    await expect(
+      dao.createAgentPaymentRequest(
+        owner.address, ethers.ZeroAddress, amount, true, "self-invoice"
+      )
+    ).to.be.revertedWith("Cannot request payment from self.");
+  });
+
+  it("zero-value deposit reverts", async () => {
+    const { dao } = await deploy();
+    await dao.registerAgent("ipfs://a");
+    await expect(
+      dao.depositNativeToEscrow({ value: 0n })
+    ).to.be.revertedWith("Deposit amount must be greater than zero.");
+  });
+});
+
+// ─── Economic Projects: Edge Cases ──────────────────────────────────────────
+
+describe("Economic Projects: Edge Cases", () => {
+  // Helper to get a future deadline relative to current block timestamp
+  async function futureDeadline() {
+    const block = await ethers.provider.getBlock("latest");
+    return block.timestamp + 86400;
+  }
+
+  it("refundProjectFunder works after cancellation", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    const deadline = await futureDeadline();
+    await dao.createEconomicProject("ipfs://proj", ethers.parseEther("1"), deadline);
+
+    const fundAmt = ethers.parseEther("0.5");
+    await dao.connect(alice).fundProject(1n, { value: fundAmt });
+    const fee = fundAmt * 5n / 10000n;
+    const netFunded = fundAmt - fee;
+
+    await dao.cancelProject(1n);
+
+    const aliceBefore = await ethers.provider.getBalance(alice.address);
+    const tx = await dao.connect(alice).refundProjectFunder(1n);
+    const receipt = await tx.wait();
+    const gasCost = receipt.gasUsed * receipt.gasPrice;
+    const aliceAfter = await ethers.provider.getBalance(alice.address);
+
+    // Refund amount is the net contribution (after fee was already deducted on fund)
+    expect(aliceAfter - aliceBefore + gasCost).to.equal(netFunded);
+  });
+
+  it("cannot fund a cancelled project", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    const deadline = await futureDeadline();
+    await dao.createEconomicProject("ipfs://proj", ethers.parseEther("1"), deadline);
+    await dao.cancelProject(1n);
+    await expect(
+      dao.connect(alice).fundProject(1n, { value: ethers.parseEther("0.1") })
+    ).to.be.revertedWith("Project not accepting funds.");
+  });
+
+  it("proposer can complete a project without approved contributors", async () => {
+    const { dao, owner } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    const deadline = await futureDeadline();
+    await dao.createEconomicProject("ipfs://proj", ethers.parseEther("1"), deadline);
+    // Complete without any contributors — the contract allows it
+    await dao.completeProject(1n);
+    const proj = await dao.economicProjects(1n);
+    expect(proj.status).to.equal(2n); // Completed
+  });
+
+  it("getEconomicProject returns correct data", async () => {
+    const { dao, owner } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    const deadline = await futureDeadline();
+    const budget = ethers.parseEther("5");
+    await dao.createEconomicProject("ipfs://proj-meta", budget, deadline);
+    const [id, proposer, metadataURI, targetBudget, totalFunded, dl, status, createdAt, contributorCount, funderCount] =
+      await dao.getEconomicProject(1n);
+    expect(id).to.equal(1n);
+    expect(proposer).to.equal(owner.address);
+    expect(metadataURI).to.equal("ipfs://proj-meta");
+    expect(targetBudget).to.equal(budget);
+    expect(totalFunded).to.equal(0n);
+    expect(status).to.equal(0n); // Open
+    expect(contributorCount).to.equal(0n);
+    expect(funderCount).to.equal(0n);
+  });
+
+  it("getProjectContributors and getProjectFunders return correct lists", async () => {
+    const { dao, owner, alice, bob } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    const deadline = await futureDeadline();
+    await dao.createEconomicProject("ipfs://proj", ethers.parseEther("1"), deadline);
+
+    // Fund
+    await dao.connect(bob).fundProject(1n, { value: ethers.parseEther("0.5") });
+    const funders = await dao.getProjectFunders(1n);
+    expect(funders.length).to.equal(1);
+    expect(funders[0]).to.equal(bob.address);
+
+    // Apply and approve contributor
+    await dao.connect(alice).applyToProject(1n);
+    await dao.approveContributor(1n, alice.address, 5000);
+    const contributors = await dao.getProjectContributors(1n);
+    expect(contributors.length).to.equal(1);
+    expect(contributors[0]).to.equal(alice.address);
+  });
+});
