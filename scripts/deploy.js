@@ -9,7 +9,8 @@
 //   FEE_BPS            - Fee in basis points (optional, default: 5)
 //   ASSET_FEE_WEI      - Flat fee for NFT transfers in wei (optional, default: 1e12)
 
-const { ethers } = require("hardhat");
+const hre = require("hardhat");
+const { ethers } = hre;
 
 async function main() {
   const [deployer] = await ethers.getSigners();
@@ -89,7 +90,7 @@ async function main() {
   }
 
   // Verify final state
-  console.log("\n=== Deployment Summary ===");
+  console.log("\n=== Verifying Deployment ===");
   const finalTreasury = await dao.cybereumTreasury();
   const finalFeeBps = await dao.cybereumFeeBps();
   const finalAssetFee = await dao.assetTransferFlatFeeWei();
@@ -106,8 +107,41 @@ async function main() {
     console.warn("WARNING: Owner is not the deployer!");
   }
   if (!isLocalNetwork && finalTreasury === ethers.ZeroAddress) {
-    console.warn("WARNING: Treasury is still zero address!");
+    throw new Error("FATAL: Treasury is zero address on non-local network. Deployment unsafe.");
   }
+  if (!isLocalNetwork && finalFeeBps < 1n) {
+    throw new Error("FATAL: Fee BPS is zero on non-local network. Protocol fee rail is inactive.");
+  }
+
+  // Verify contract on Etherscan (non-local only)
+  if (!isLocalNetwork) {
+    console.log("\n=== Contract Verification ===");
+    try {
+      await hre.run("verify:verify", {
+        address,
+        constructorArguments: [],
+      });
+      console.log("Contract verified on block explorer.");
+    } catch (verifyErr) {
+      if (verifyErr.message?.includes("Already Verified") || verifyErr.message?.includes("already verified") || verifyErr.message?.includes("Contract source code already verified")) {
+        console.log("Contract already verified.");
+      } else {
+        console.warn("Verification failed (non-fatal):", verifyErr.message);
+        console.warn("Run manually: npx hardhat verify --network <network>", address);
+      }
+    }
+  }
+
+  console.log("\n=== Deployment Summary ===");
+  console.log(JSON.stringify({
+    chainId,
+    contractAddress: address,
+    owner: finalOwner,
+    treasury: finalTreasury,
+    feeBps: Number(finalFeeBps),
+    assetTransferFlatFeeWei: finalAssetFee.toString(),
+    deployedAt: new Date().toISOString(),
+  }, null, 2));
 
   console.log("\nNext steps:");
   console.log(`  1. Set VITE_PROJECT_DAO_ADDRESS=${address} in nexus-app/.env`);

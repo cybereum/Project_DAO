@@ -5,6 +5,39 @@ import { PROJECT_DAO_ABI, PROJECT_DAO_ADDRESS, hasContractConfig } from '../conf
 
 const AppContext = createContext(null);
 
+/** Default timeout for on-chain transactions (ms). */
+const TX_TIMEOUT_MS = 120_000;
+
+/**
+ * Wrap a tx.wait() promise with a timeout so the UI doesn't hang indefinitely.
+ * Returns the receipt on success, or throws on timeout.
+ */
+function waitWithTimeout(txPromise, ms = TX_TIMEOUT_MS) {
+  let timeoutId;
+  let settled = false;
+
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      reject(new Error('Transaction timed out. It may still confirm — check your wallet.'));
+    }, ms);
+  });
+
+  const wrappedTxPromise = txPromise.finally(() => {
+    if (!settled) {
+      settled = true;
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+      }
+    }
+  });
+
+  return Promise.race([wrappedTxPromise, timeoutPromise]);
+}
+
 const MOCK_PROJECTS = [
   {
     id: 1, name: 'Orbital Station Alpha', status: 'Active', type: 'Infrastructure',
@@ -190,7 +223,7 @@ export function useAppState() {
         setTxPending(true);
         const tx = await contract.vote(proposalId, vote);
         txHash = tx.hash;
-        await tx.wait();
+        await waitWithTimeout(tx.wait());
         voteCommittedOnChain = true;
       } catch (error) {
         setWalletError(error?.shortMessage || error?.message || 'On-chain vote failed.');
@@ -350,7 +383,7 @@ export function useAppState() {
     try {
       setTxPending(true);
       const tx = await contract.registerAgent(metadataURI);
-      await tx.wait();
+      await waitWithTimeout(tx.wait());
       await loadAgentProfile();
     } catch (error) {
       setWalletError(error?.shortMessage || error?.message || 'Agent registration failed.');
@@ -366,7 +399,7 @@ export function useAppState() {
     try {
       setTxPending(true);
       const tx = await contract.depositNativeToEscrow({ value: amountWei });
-      const receipt = await tx.wait();
+      const receipt = await waitWithTimeout(tx.wait());
       await loadAgentProfile();
       return receipt.hash;
     } catch (error) {
@@ -384,7 +417,7 @@ export function useAppState() {
     try {
       setTxPending(true);
       const tx = await contract.withdrawNativeFromEscrow(amountWei);
-      const receipt = await tx.wait();
+      const receipt = await waitWithTimeout(tx.wait());
       await loadAgentProfile();
       return receipt.hash;
     } catch (error) {
@@ -397,13 +430,16 @@ export function useAppState() {
 
   const agentTransferNative = useCallback(async (toAddress, amountWei, memo) => {
     setWalletError('');
+    if (!isAddress(toAddress)) { setWalletError('Invalid recipient address.'); return null; }
+    if (!amountWei || amountWei <= 0n) { setWalletError('Amount must be greater than zero.'); return null; }
     const contract = await getDaoWriteContract();
     if (!contract) { setWalletError('Wallet not connected or contract not configured.'); return null; }
     try {
       setTxPending(true);
       const tx = await contract.transferNativeBetweenAgents(toAddress, amountWei, memo || '');
-      const receipt = await tx.wait();
+      const receipt = await waitWithTimeout(tx.wait());
       await loadAgentProfile();
+      loadAgentActivity();
       return receipt.hash;
     } catch (error) {
       setWalletError(error?.shortMessage || error?.message || 'Transfer failed.');
@@ -411,16 +447,18 @@ export function useAppState() {
     } finally {
       setTxPending(false);
     }
-  }, [getDaoWriteContract, loadAgentProfile]);
+  }, [getDaoWriteContract, loadAgentProfile, loadAgentActivity]);
 
   const agentCreatePaymentRequest = useCallback(async (payer, token, amount, isNative, description) => {
     setWalletError('');
+    if (!isAddress(payer)) { setWalletError('Invalid payer address.'); return null; }
+    if (!amount || amount <= 0n) { setWalletError('Amount must be greater than zero.'); return null; }
     const contract = await getDaoWriteContract();
     if (!contract) { setWalletError('Wallet not connected or contract not configured.'); return null; }
     try {
       setTxPending(true);
       const tx = await contract.createAgentPaymentRequest(payer, token, amount, isNative, description);
-      const receipt = await tx.wait();
+      const receipt = await waitWithTimeout(tx.wait());
       return receipt.hash;
     } catch (error) {
       setWalletError(error?.shortMessage || error?.message || 'Payment request creation failed.');
@@ -439,7 +477,9 @@ export function useAppState() {
       const tx = valueWei
         ? await contract.settleAgentPaymentRequest(requestId, { value: valueWei })
         : await contract.settleAgentPaymentRequest(requestId);
-      const receipt = await tx.wait();
+      const receipt = await waitWithTimeout(tx.wait());
+      await loadAgentProfile();
+      loadAgentActivity();
       return receipt.hash;
     } catch (error) {
       setWalletError(error?.shortMessage || error?.message || 'Settlement failed.');
@@ -447,14 +487,14 @@ export function useAppState() {
     } finally {
       setTxPending(false);
     }
-  }, [getDaoWriteContract]);
+  }, [getDaoWriteContract, loadAgentProfile, loadAgentActivity]);
 
   const agentLoadTokenBalance = useCallback(async (tokenAddress) => {
     if (!walletAddress || !tokenAddress) return;
     const contract = getDaoReadContract();
     if (!contract) return;
     try {
-      const bal = await contract.agentTokenEscrowBalances(walletAddress, tokenAddress);
+      const bal = await contract.getAgentTokenBalance(walletAddress, tokenAddress);
       setAgentTokenBalances(prev => ({ ...prev, [tokenAddress.toLowerCase()]: bal.toString() }));
     } catch (err) { console.error('agentLoadTokenBalance failed:', err); }
   }, [walletAddress, getDaoReadContract]);
@@ -543,7 +583,7 @@ export function useAppState() {
     try {
       setTxPending(true);
       const tx = await contract.depositTokenToEscrow(tokenAddress, amountWei);
-      const receipt = await tx.wait();
+      const receipt = await waitWithTimeout(tx.wait());
       await agentLoadTokenBalance(tokenAddress);
       return receipt.hash;
     } catch (error) {
@@ -561,7 +601,7 @@ export function useAppState() {
     try {
       setTxPending(true);
       const tx = await contract.withdrawTokenFromEscrow(tokenAddress, amountWei);
-      const receipt = await tx.wait();
+      const receipt = await waitWithTimeout(tx.wait());
       await agentLoadTokenBalance(tokenAddress);
       return receipt.hash;
     } catch (error) {
@@ -579,8 +619,9 @@ export function useAppState() {
     try {
       setTxPending(true);
       const tx = await contract.transferTokenBetweenAgents(tokenAddress, toAddress, amountWei, memo || '');
-      const receipt = await tx.wait();
+      const receipt = await waitWithTimeout(tx.wait());
       await agentLoadTokenBalance(tokenAddress);
+      loadAgentActivity();
       return receipt.hash;
     } catch (error) {
       setWalletError(error?.shortMessage || error?.message || 'Token transfer failed.');
@@ -588,7 +629,7 @@ export function useAppState() {
     } finally {
       setTxPending(false);
     }
-  }, [getDaoWriteContract, agentLoadTokenBalance]);
+  }, [getDaoWriteContract, agentLoadTokenBalance, loadAgentActivity]);
 
   const agentTransferAsset = useCallback(async (assetContract, toAddress, tokenId, memo, flatFeeWei) => {
     setWalletError('');
@@ -597,7 +638,7 @@ export function useAppState() {
     try {
       setTxPending(true);
       const tx = await contract.transferAssetBetweenAgents(assetContract, toAddress, tokenId, memo || '', { value: flatFeeWei });
-      const receipt = await tx.wait();
+      const receipt = await waitWithTimeout(tx.wait());
       return receipt.hash;
     } catch (error) {
       setWalletError(error?.shortMessage || error?.message || 'Asset transfer failed.');
@@ -614,7 +655,7 @@ export function useAppState() {
     try {
       setTxPending(true);
       const tx = await contract.cancelAgentPaymentRequest(requestId);
-      const receipt = await tx.wait();
+      const receipt = await waitWithTimeout(tx.wait());
       return receipt.hash;
     } catch (error) {
       setWalletError(error?.shortMessage || error?.message || 'Cancel failed.');
@@ -632,7 +673,7 @@ export function useAppState() {
     try {
       setTxPending(true);
       const tx = await contract.stakeAndJoin(metadataURI, { value: stakeWei });
-      const receipt = await tx.wait();
+      const receipt = await waitWithTimeout(tx.wait());
       await loadAgentProfile();
       return receipt.hash;
     } catch (error) {
@@ -650,7 +691,7 @@ export function useAppState() {
     try {
       setTxPending(true);
       const tx = await contract.leaveDAO();
-      const receipt = await tx.wait();
+      const receipt = await waitWithTimeout(tx.wait());
       await loadAgentProfile();
       return receipt.hash;
     } catch (error) {
@@ -697,7 +738,7 @@ export function useAppState() {
     try {
       setTxPending(true);
       const tx = await contract.createEconomicProject(metadataURI, targetBudgetWei, deadlineTs);
-      const receipt = await tx.wait();
+      const receipt = await waitWithTimeout(tx.wait());
       await loadEconomicProjects();
       return receipt.hash;
     } catch (error) {
@@ -715,7 +756,7 @@ export function useAppState() {
     try {
       setTxPending(true);
       const tx = await contract.fundProject(projectId, { value: amountWei });
-      const receipt = await tx.wait();
+      const receipt = await waitWithTimeout(tx.wait());
       await loadEconomicProjects();
       return receipt.hash;
     } catch (error) {
@@ -733,7 +774,7 @@ export function useAppState() {
     try {
       setTxPending(true);
       const tx = await contract.applyToProject(projectId);
-      const receipt = await tx.wait();
+      const receipt = await waitWithTimeout(tx.wait());
       return receipt.hash;
     } catch (error) {
       setWalletError(error?.shortMessage || error?.message || 'Application failed.');
@@ -750,7 +791,7 @@ export function useAppState() {
     try {
       setTxPending(true);
       const tx = await contract.approveContributor(projectId, contributor, sharesBps);
-      const receipt = await tx.wait();
+      const receipt = await waitWithTimeout(tx.wait());
       await loadEconomicProjects();
       return receipt.hash;
     } catch (error) {
@@ -768,7 +809,7 @@ export function useAppState() {
     try {
       setTxPending(true);
       const tx = await contract.completeProject(projectId);
-      const receipt = await tx.wait();
+      const receipt = await waitWithTimeout(tx.wait());
       await loadEconomicProjects();
       return receipt.hash;
     } catch (error) {
@@ -786,7 +827,7 @@ export function useAppState() {
     try {
       setTxPending(true);
       const tx = await contract.claimProjectShare(projectId);
-      const receipt = await tx.wait();
+      const receipt = await waitWithTimeout(tx.wait());
       return receipt.hash;
     } catch (error) {
       setWalletError(error?.shortMessage || error?.message || 'Claim failed.');
@@ -803,7 +844,7 @@ export function useAppState() {
     try {
       setTxPending(true);
       const tx = await contract.cancelProject(projectId);
-      const receipt = await tx.wait();
+      const receipt = await waitWithTimeout(tx.wait());
       await loadEconomicProjects();
       return receipt.hash;
     } catch (error) {
@@ -821,7 +862,7 @@ export function useAppState() {
     try {
       setTxPending(true);
       const tx = await contract.refundProjectFunder(projectId);
-      const receipt = await tx.wait();
+      const receipt = await waitWithTimeout(tx.wait());
       return receipt.hash;
     } catch (error) {
       setWalletError(error?.shortMessage || error?.message || 'Refund failed.');
@@ -886,7 +927,7 @@ export function useAppState() {
     try {
       setTxPending(true);
       const tx = await contract.sendDirectMessage(toAddress, encryptedContent, contentHash);
-      const receipt = await tx.wait();
+      const receipt = await waitWithTimeout(tx.wait());
       return receipt.hash;
     } catch (error) {
       setWalletError(error?.shortMessage || error?.message || 'Message send failed.');
@@ -903,7 +944,7 @@ export function useAppState() {
     try {
       setTxPending(true);
       const tx = await contract.markMessageRead(messageId);
-      const receipt = await tx.wait();
+      const receipt = await waitWithTimeout(tx.wait());
       return receipt.hash;
     } catch (error) {
       setWalletError(error?.shortMessage || error?.message || 'Mark read failed.');
@@ -946,7 +987,7 @@ export function useAppState() {
     try {
       setTxPending(true);
       const tx = await contract.submitFeatureKit(metadataURI, priority);
-      const receipt = await tx.wait();
+      const receipt = await waitWithTimeout(tx.wait());
       await loadFeatureKits();
       return receipt.hash;
     } catch (error) {
@@ -964,7 +1005,7 @@ export function useAppState() {
     try {
       setTxPending(true);
       const tx = await contract.upvoteFeatureKit(kitId);
-      const receipt = await tx.wait();
+      const receipt = await waitWithTimeout(tx.wait());
       await loadFeatureKits();
       return receipt.hash;
     } catch (error) {
@@ -1031,7 +1072,7 @@ export function useAppState() {
   return appState;
 }
 
-export { AppContext };
+export { AppContext, waitWithTimeout };
 
 export function AppProvider({ children }) {
   const state = useAppState();

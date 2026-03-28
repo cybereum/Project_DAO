@@ -5,7 +5,7 @@ import {
   Activity, TrendingUp, Zap, DollarSign, Users, ArrowDownRight,
   Send, RefreshCw, Shield, Eye, BarChart3, Gauge
 } from 'lucide-react';
-import { useApp } from '../store/appStore';
+import { useApp, waitWithTimeout } from '../store/appStore';
 
 function StatCard({ label, value, sub, icon: Icon, color = 'text-nexus-cyan' }) {
   return (
@@ -97,7 +97,7 @@ export default function CommerceBlackhole() {
       while (memos.length < recipients.length) memos.push('');
 
       const tx = await contract.batchTransferNative(recipients, amounts, memos);
-      await tx.wait();
+      await waitWithTimeout(tx.wait());
       setBatchStatus(`Batch complete! ${recipients.length} transfers executed.`);
       setBatchRecipients('');
       setBatchAmounts('');

@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { nexusAI } from '../services/nexusAI';
 import { trackEvent } from '../lib/analytics';
-import { useApp } from '../store/appStore';
+import { useApp, waitWithTimeout } from '../store/appStore';
 
 // ─── Severity / priority colours ─────────────────────────────────────────
 
@@ -280,7 +280,7 @@ export default function NexusAI() {
       try {
         const contract = await getDaoWriteContract();
         const tx = await contract.deductAIServiceFee(mode);
-        const receipt = await tx.wait();
+        const receipt = await waitWithTimeout(tx.wait());
         paymentTxHash = receipt.hash;
       } catch {
         setResult({ error: 'AI service fee payment failed. Please ensure your agent escrow is funded.' });

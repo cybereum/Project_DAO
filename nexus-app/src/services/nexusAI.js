@@ -14,6 +14,11 @@
 
 const BASE_URL = (import.meta.env.VITE_NEXUS_AI_URL || 'http://localhost:3737').replace(/\/$/, '');
 
+// Warn in production if AI service is not HTTPS (credentials sent in headers)
+if (import.meta.env.PROD && BASE_URL.startsWith('http://') && !BASE_URL.includes('localhost') && !BASE_URL.includes('127.0.0.1')) {
+  console.error('[nexusAI] SECURITY WARNING: VITE_NEXUS_AI_URL uses HTTP in production. Wallet addresses and payment hashes will be sent unencrypted. Use HTTPS.');
+}
+
 let _wallet = '';
 
 async function safeFetch(path, options = {}) {
