@@ -2440,12 +2440,13 @@ describe("Reputation Engine: Tiers & Incentives", () => {
     await memberAgent(dao, bob);
     await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1") });
 
-    const [agents, scores, tiers, total] = await dao.getReputationLeaderboard(0, 10);
+    const [agents, scores, tiers, registered, total] = await dao.getReputationLeaderboard(0, 10);
     expect(total).to.be.gte(2n);
     expect(agents.length).to.be.gte(2);
-    // alice should have some score
+    // alice should have some score and be registered
     const aliceIdx = agents.indexOf(alice.address);
     expect(scores[aliceIdx]).to.be.gt(0n);
+    expect(registered[aliceIdx]).to.equal(true);
   });
 
   it("higher reputation tier gets messaging fee discount", async () => {

@@ -34,12 +34,13 @@ export default function Reputation() {
     if (!contract) { setLoading(false); return; }
     try {
       setLoading(true);
-      const [agents_, scores, tiers] = await contract.getReputationLeaderboard(0, 50);
+      const [agents_, scores, tiers, registered] = await contract.getReputationLeaderboard(0, 50);
       const entries = agents_.map((addr, i) => ({
         address: addr,
         score: Number(scores[i]),
         tier: Number(tiers[i]),
-      }));
+        registered: registered[i],
+      })).filter(a => a.registered);
       // Sort by score descending
       entries.sort((a, b) => b.score - a.score);
       setLeaderboard(entries);

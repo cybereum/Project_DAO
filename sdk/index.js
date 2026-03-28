@@ -513,7 +513,7 @@ export class AgentClient {
     return {
       totalCommerceVolume: m._totalCommerceVolume,
       totalFeesCollected: m._totalFeesCollected,
-      agentCount: m._agentCount,
+      agentCount: Number(m._agentCount),
       feeBps: Number(m._feeBps),
       exitFeeBps: Number(m._exitFeeBps),
       messagingFeeWei: m._messagingFeeWei,
@@ -595,12 +595,13 @@ export class AgentClient {
    * @returns {Promise<{agents: Array<{address, score, tier}>, total}>}
    */
   async getReputationLeaderboard(offset = 0, limit = 50) {
-    const [agents_, scores, tiers, total] = await this.contract.getReputationLeaderboard(offset, limit);
+    const [agents_, scores, tiers, registered, total] = await this.contract.getReputationLeaderboard(offset, limit);
     return {
       agents: agents_.map((addr, i) => ({
         address: addr,
         score: Number(scores[i]),
         tier: Number(tiers[i]),
+        registered: registered[i],
       })),
       total: Number(total),
     };

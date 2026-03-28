@@ -577,9 +577,9 @@ contract Project_DAO {
         agentCommerceVolume[_agent] += _amount;
         agentFeesPaid[_agent] += _fee;
         agentTransactionCount[_agent]++;
-        agentLastActiveAt[_agent] = block.timestamp;
         emit CommerceVolumeRecorded(_agent, _amount, _context);
         _refreshReputation(_agent);
+        agentLastActiveAt[_agent] = block.timestamp;
     }
 
     // ─── Reputation Engine (Internal) ───────────────────────────────────────
@@ -595,9 +595,8 @@ contract Project_DAO {
         uint256 oldScore = agentReputation[_agent];
 
         // Component 1: Volume score (0-250)
-        // 1 ETH volume = 50 points, max 250 at 5 ETH
-        uint256 volumeEth = agentCommerceVolume[_agent] / 1 ether;
-        uint256 volumeScore = volumeEth * 50;
+        // 1 ETH volume = 50 points, max 250 at 5 ETH (including fractional ETH)
+        uint256 volumeScore = agentCommerceVolume[_agent] * 50 / 1 ether;
         if (volumeScore > 250) volumeScore = 250;
 
         // Component 2: Transaction count score (0-250)
@@ -635,6 +634,9 @@ contract Project_DAO {
 
         agentReputation[_agent] = newScore;
 
+        if (decay > 0) {
+            emit ReputationDecayApplied(_agent, decay, newScore);
+        }
         if (newScore != oldScore) {
             emit ReputationUpdated(_agent, oldScore, newScore, _getReputationTier(newScore));
         }
@@ -2101,13 +2103,14 @@ contract Project_DAO {
                 emit CybereumFeePaid(msg.sender, address(0), fee, "batch_native_transfer");
             }
 
+            _recordVolume(msg.sender, amounts[i], fee, "batch_native_transfer");
+
             totalVolume += amounts[i];
             totalFees += fee;
 
             emit AgentToAgentNativeTransfer(msg.sender, recipients[i], netAmount, memos[i]);
         }
 
-        _recordVolume(msg.sender, totalVolume, totalFees, "batch_native_transfer");
         emit BlackholeBatchTransfer(msg.sender, recipients.length, totalVolume, totalFees);
     }
 
@@ -2233,21 +2236,24 @@ contract Project_DAO {
         address[] memory agents_,
         uint256[] memory scores,
         uint256[] memory tiers,
+        bool[] memory registered,
         uint256 total
     ) {
         total = agentAddresses.length;
-        if (offset >= total) return (new address[](0), new uint256[](0), new uint256[](0), total);
+        if (offset >= total) return (new address[](0), new uint256[](0), new uint256[](0), new bool[](0), total);
         uint256 end = offset + limit;
         if (end > total) end = total;
         uint256 count = end - offset;
         agents_ = new address[](count);
         scores = new uint256[](count);
         tiers = new uint256[](count);
+        registered = new bool[](count);
         for (uint256 i = 0; i < count; i++) {
             address a = agentAddresses[offset + i];
             agents_[i] = a;
             scores[i] = agentReputation[a];
             tiers[i] = _getReputationTier(agentReputation[a]);
+            registered[i] = agents[a].registered;
         }
     }
 

@@ -48,7 +48,7 @@ export default function CommerceBlackhole() {
 
   const loadMetrics = useCallback(async () => {
     const contract = getDaoReadContract();
-    if (!contract) return;
+    if (!contract) { setLoading(false); return; }
     try {
       setLoading(true);
       const m = await contract.getBlackholeMetrics();
@@ -87,8 +87,11 @@ export default function CommerceBlackhole() {
     try {
       setBatchStatus('Processing batch transfer...');
       const recipients = batchRecipients.split('\n').map(s => s.trim()).filter(Boolean);
-      const amounts = batchAmounts.split('\n').map(s => parseEther(s.trim()));
-      const memos = batchMemos.split('\n').map(s => s.trim());
+      const amounts = batchAmounts.split('\n').map(s => s.trim()).filter(Boolean).map(s => parseEther(s));
+      const memos = batchMemos.split('\n').map(s => s.trim()).filter(Boolean);
+
+      if (recipients.length === 0) { setBatchStatus('Error: No recipients.'); return; }
+      if (amounts.length !== recipients.length) { setBatchStatus(`Error: ${recipients.length} recipients but ${amounts.length} amounts.`); return; }
 
       // Pad memos if shorter
       while (memos.length < recipients.length) memos.push('');
@@ -162,7 +165,7 @@ export default function CommerceBlackhole() {
             <StatCard
               label="Capture Rate"
               value={metrics.totalVolume > 0n
-                ? `${(Number(metrics.totalFees) / Number(metrics.totalVolume) * 100).toFixed(3)}%`
+                ? `${(Number(metrics.totalFees * 100_000n / metrics.totalVolume) / 1000).toFixed(3)}%`
                 : '0%'}
               sub="Effective fee capture"
               icon={Gauge}

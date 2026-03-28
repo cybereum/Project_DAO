@@ -148,7 +148,7 @@ export const PROJECT_DAO_ABI = [
 
   // ─── Reputation Engine ─────────────────────────────────────────────────
   'function getAgentReputation(address _agent) external view returns (uint256 score, uint256 tier, uint256 transactionCount, uint256 lastActiveAt, uint256 registeredAt, uint256 messagingFeeDiscount)',
-  'function getReputationLeaderboard(uint256 offset, uint256 limit) external view returns (address[] agents_, uint256[] scores, uint256[] tiers, uint256 total)',
+  'function getReputationLeaderboard(uint256 offset, uint256 limit) external view returns (address[] agents_, uint256[] scores, uint256[] tiers, bool[] registered, uint256 total)',
   'function refreshReputation(address _agent) external',
   'function agentReputation(address) external view returns (uint256)',
   'function agentTransactionCount(address) external view returns (uint256)',
