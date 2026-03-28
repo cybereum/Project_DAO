@@ -422,6 +422,7 @@ export function useAppState() {
       const tx = await contract.transferNativeBetweenAgents(toAddress, amountWei, memo || '');
       const receipt = await waitWithTimeout(tx.wait());
       await loadAgentProfile();
+      loadAgentActivity();
       return receipt.hash;
     } catch (error) {
       setWalletError(error?.shortMessage || error?.message || 'Transfer failed.');
@@ -429,7 +430,7 @@ export function useAppState() {
     } finally {
       setTxPending(false);
     }
-  }, [getDaoWriteContract, loadAgentProfile]);
+  }, [getDaoWriteContract, loadAgentProfile, loadAgentActivity]);
 
   const agentCreatePaymentRequest = useCallback(async (payer, token, amount, isNative, description) => {
     setWalletError('');
@@ -460,6 +461,8 @@ export function useAppState() {
         ? await contract.settleAgentPaymentRequest(requestId, { value: valueWei })
         : await contract.settleAgentPaymentRequest(requestId);
       const receipt = await waitWithTimeout(tx.wait());
+      await loadAgentProfile();
+      loadAgentActivity();
       return receipt.hash;
     } catch (error) {
       setWalletError(error?.shortMessage || error?.message || 'Settlement failed.');
@@ -467,14 +470,14 @@ export function useAppState() {
     } finally {
       setTxPending(false);
     }
-  }, [getDaoWriteContract]);
+  }, [getDaoWriteContract, loadAgentProfile, loadAgentActivity]);
 
   const agentLoadTokenBalance = useCallback(async (tokenAddress) => {
     if (!walletAddress || !tokenAddress) return;
     const contract = getDaoReadContract();
     if (!contract) return;
     try {
-      const bal = await contract.agentTokenEscrowBalances(walletAddress, tokenAddress);
+      const bal = await contract.getAgentTokenBalance(walletAddress, tokenAddress);
       setAgentTokenBalances(prev => ({ ...prev, [tokenAddress.toLowerCase()]: bal.toString() }));
     } catch (err) { console.error('agentLoadTokenBalance failed:', err); }
   }, [walletAddress, getDaoReadContract]);
@@ -601,6 +604,7 @@ export function useAppState() {
       const tx = await contract.transferTokenBetweenAgents(tokenAddress, toAddress, amountWei, memo || '');
       const receipt = await waitWithTimeout(tx.wait());
       await agentLoadTokenBalance(tokenAddress);
+      loadAgentActivity();
       return receipt.hash;
     } catch (error) {
       setWalletError(error?.shortMessage || error?.message || 'Token transfer failed.');
@@ -608,7 +612,7 @@ export function useAppState() {
     } finally {
       setTxPending(false);
     }
-  }, [getDaoWriteContract, agentLoadTokenBalance]);
+  }, [getDaoWriteContract, agentLoadTokenBalance, loadAgentActivity]);
 
   const agentTransferAsset = useCallback(async (assetContract, toAddress, tokenId, memo, flatFeeWei) => {
     setWalletError('');
@@ -1051,7 +1055,7 @@ export function useAppState() {
   return appState;
 }
 
-export { AppContext };
+export { AppContext, waitWithTimeout };
 
 export function AppProvider({ children }) {
   const state = useAppState();

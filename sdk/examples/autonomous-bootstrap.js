@@ -115,8 +115,10 @@ async function main() {
   const peers = agents.filter(a => a.address.toLowerCase() !== agent.address.toLowerCase());
   if (peers.length > 0) {
     console.log(`[6/6] Sending test message to ${peers[0].address.slice(0, 10)}...`);
-    // NOTE: This is an unencrypted demo payload. In production, encrypt the
-    // message off-chain before calling sendMessage if you require secrecy.
+    // WARNING: This is an UNENCRYPTED demo payload stored on-chain in cleartext.
+    // In production, encrypt the message off-chain (ECIES / x25519 / IPFS CID to
+    // encrypted blob) before calling sendMessage. The contentHash should always be
+    // the keccak256 of the original plaintext for integrity verification.
     const demoMessage = 'Hello from an autonomous agent. This is a bootstrap test.';
     const contentHash = ethers.keccak256(ethers.toUtf8Bytes(demoMessage));
     const messageId = await agent.sendMessage(peers[0].address, demoMessage, contentHash);

@@ -346,6 +346,7 @@ export class AgentClient {
 
   /** Withdraw ETH from escrow. Amount in wei (bigint). */
   async withdrawNative(amountWei) {
+    if (!amountWei || BigInt(amountWei) <= 0n) throw new Error('Withdraw amount must be greater than zero');
     const tx = await this._write(() => this.contract.withdrawNativeFromEscrow(amountWei));
     return tx.wait();
   }
@@ -353,6 +354,7 @@ export class AgentClient {
   /** Transfer ETH from your escrow to another agent. Amount in wei. */
   async transferNative(toAddress, amountWei, memo = '') {
     this._validateAddress(toAddress, 'recipient');
+    if (!amountWei || BigInt(amountWei) <= 0n) throw new Error('Transfer amount must be greater than zero');
     const tx = await this._write(() => this.contract.transferNativeBetweenAgents(toAddress, amountWei, memo));
     return tx.wait();
   }
@@ -375,6 +377,7 @@ export class AgentClient {
   /** Withdraw ERC-20 tokens from escrow. */
   async withdrawToken(tokenAddress, amountWei) {
     this._validateAddress(tokenAddress, 'token');
+    if (!amountWei || BigInt(amountWei) <= 0n) throw new Error('Withdraw amount must be greater than zero');
     const tx = await this._write(() => this.contract.withdrawTokenFromEscrow(tokenAddress, amountWei));
     return tx.wait();
   }
@@ -383,6 +386,7 @@ export class AgentClient {
   async transferToken(tokenAddress, toAddress, amountWei, memo = '') {
     this._validateAddress(tokenAddress, 'token');
     this._validateAddress(toAddress, 'recipient');
+    if (!amountWei || BigInt(amountWei) <= 0n) throw new Error('Transfer amount must be greater than zero');
     const tx = await this._write(() => this.contract.transferTokenBetweenAgents(tokenAddress, toAddress, amountWei, memo));
     return tx.wait();
   }
@@ -530,6 +534,12 @@ export class AgentClient {
    */
   async sendMessage(toAddress, encryptedContent, contentHash) {
     this._validateAddress(toAddress, 'recipient');
+    if (!encryptedContent || typeof encryptedContent !== 'string' || encryptedContent.length === 0) {
+      throw new Error('encryptedContent must be a non-empty string');
+    }
+    if (!contentHash || !/^0x[0-9a-fA-F]{64}$/.test(contentHash)) {
+      throw new Error('contentHash must be a 32-byte hex string (0x + 64 hex chars)');
+    }
     const tx = await this._write(() => this.contract.sendDirectMessage(toAddress, encryptedContent, contentHash));
     const receipt = await tx.wait();
     return this._extractEventArg(receipt, 'DirectMessageSent', 'messageId') ?? receipt;
@@ -700,9 +710,17 @@ export class AgentClient {
 
   // ─── Event Listening ───────────────────────────────────────────────────
 
-  /** Listen for incoming payment requests addressed to this agent. */
+  /** Listen for incoming payment requests where this agent is the payer. */
   onPaymentRequest(callback) {
     const filter = this.contract.filters.AgentPaymentRequestCreated(null, null, this.address);
+    this.contract.on(filter, (requestId, requester, payer, isNative, token, amount, description) => {
+      callback({ requestId, requester, payer, isNative, token, amount, description });
+    });
+  }
+
+  /** Listen for payment requests created by this agent (as requester). */
+  onPaymentRequestCreated(callback) {
+    const filter = this.contract.filters.AgentPaymentRequestCreated(null, this.address);
     this.contract.on(filter, (requestId, requester, payer, isNative, token, amount, description) => {
       callback({ requestId, requester, payer, isNative, token, amount, description });
     });

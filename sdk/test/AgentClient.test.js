@@ -313,6 +313,92 @@ describe('AgentClient.discover()', () => {
   });
 });
 
+// ─── Withdraw/Transfer Amount Validation ────────────────────────────────────
+
+describe('withdrawNative input validation', () => {
+  const client = makeMockClient();
+
+  it('rejects zero amount', () => {
+    assert.rejects(() => client.withdrawNative(0n), /Withdraw amount must be greater than zero/);
+  });
+
+  it('rejects negative amount', () => {
+    assert.rejects(() => client.withdrawNative(-1n), /Withdraw amount must be greater than zero/);
+  });
+});
+
+describe('transferNative amount validation', () => {
+  const client = makeMockClient();
+
+  it('rejects zero amount', () => {
+    assert.rejects(
+      () => client.transferNative('0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266', 0n, 'test'),
+      /Transfer amount must be greater than zero/
+    );
+  });
+});
+
+describe('withdrawToken input validation', () => {
+  const client = makeMockClient();
+
+  it('rejects zero amount', () => {
+    assert.rejects(
+      () => client.withdrawToken('0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266', 0n),
+      /Withdraw amount must be greater than zero/
+    );
+  });
+});
+
+describe('transferToken amount validation', () => {
+  const client = makeMockClient();
+
+  it('rejects zero amount', () => {
+    assert.rejects(
+      () => client.transferToken(
+        '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266',
+        '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266',
+        0n,
+        'test'
+      ),
+      /Transfer amount must be greater than zero/
+    );
+  });
+});
+
+// ─── sendMessage Validation ─────────────────────────────────────────────────
+
+describe('sendMessage input validation', () => {
+  const client = makeMockClient();
+
+  it('rejects empty encryptedContent', () => {
+    assert.rejects(
+      () => client.sendMessage('0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266', '', '0x' + 'ab'.repeat(32)),
+      /encryptedContent must be a non-empty string/
+    );
+  });
+
+  it('rejects invalid contentHash format', () => {
+    assert.rejects(
+      () => client.sendMessage('0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266', 'hello', '0xinvalid'),
+      /contentHash must be a 32-byte hex string/
+    );
+  });
+
+  it('rejects contentHash without 0x prefix', () => {
+    assert.rejects(
+      () => client.sendMessage('0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266', 'hello', 'ab'.repeat(32)),
+      /contentHash must be a 32-byte hex string/
+    );
+  });
+
+  it('rejects short contentHash', () => {
+    assert.rejects(
+      () => client.sendMessage('0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266', 'hello', '0x' + 'ab'.repeat(16)),
+      /contentHash must be a 32-byte hex string/
+    );
+  });
+});
+
 // ─── Method existence checks ─────────────────────────────────────────────────
 
 describe('method completeness', () => {
@@ -344,7 +430,7 @@ describe('method completeness', () => {
     // Reputation
     'getAgentReputation', 'getReputationLeaderboard', 'refreshReputation',
     // Events
-    'onPaymentRequest', 'onTransferReceived', 'onDirectMessage', 'onBroadcast',
+    'onPaymentRequest', 'onPaymentRequestCreated', 'onTransferReceived', 'onDirectMessage', 'onBroadcast',
     'onReputationUpdated', 'removeAllListeners',
     // Lifecycle
     'verifyChain', 'preflight', 'safeOnboard',

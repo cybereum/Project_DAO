@@ -88,7 +88,7 @@ export async function submitLead({ email, name = '', persona = '', message = '',
 
   if (!webhookUrl) {
     // Dev mode: log the lead payload
-    console.info('[NEXUS Lead Capture]', payload);
+    console.warn('[NEXUS Lead Capture] No webhook configured — payload:', payload);
     return { ok: true, dev: true };
   }
 
