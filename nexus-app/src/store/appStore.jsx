@@ -13,12 +13,29 @@ const TX_TIMEOUT_MS = 120_000;
  * Returns the receipt on success, or throws on timeout.
  */
 function waitWithTimeout(txPromise, ms = TX_TIMEOUT_MS) {
-  return Promise.race([
-    txPromise,
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Transaction timed out. It may still confirm — check your wallet.')), ms)
-    ),
-  ]);
+  let timeoutId;
+  let settled = false;
+
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      reject(new Error('Transaction timed out. It may still confirm — check your wallet.'));
+    }, ms);
+  });
+
+  const wrappedTxPromise = txPromise.finally(() => {
+    if (!settled) {
+      settled = true;
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+      }
+    }
+  });
+
+  return Promise.race([wrappedTxPromise, timeoutPromise]);
 }
 
 const MOCK_PROJECTS = [
