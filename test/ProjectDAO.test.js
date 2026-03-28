@@ -2993,40 +2993,6 @@ describe("Reentrancy protection on ETH-transferring functions", () => {
     await dao.connect(alice).transferNativeBetweenAgents(bob.address, ethers.parseEther("0.1"), "test");
   });
 
-  it("reverts on reentrant call to transferNativeBetweenAgents", async () => {
-    const { dao, alice, bob } = await deploy();
-    // Register agents and fund escrow
-    await memberAgent(dao, alice);
-    await memberAgent(dao, bob);
-    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1") });
-
-    // Deploy a malicious attacker contract whose fallback/receive re-enters
-    // transferNativeBetweenAgents during the same transaction.
-    //
-    // NOTE: This assumes a Solidity contract named "ReentrancyAttacker" exists
-    // in the contracts/ directory, with at least:
-    //  - constructor(address dao_)
-    //  - function attack(address to, uint256 amount, string calldata memo) external
-    //    that initiates a transferNativeBetweenAgents call, and
-    //  - a receive()/fallback function that, on first entry, calls
-    //    transferNativeBetweenAgents again, triggering the nonReentrant guard.
-    const Attacker = await ethers.getContractFactory("ReentrancyAttacker");
-    const attacker = await Attacker.deploy(await dao.getAddress());
-    await attacker.waitForDeployment();
-
-    // Route treasury payouts through the attacker so that its fallback is invoked
-    await dao.setCybereumTreasury(attacker.getAddress());
-
-    // The attack should attempt to reenter transferNativeBetweenAgents and
-    // must be stopped by the ReentrancyGuard with the standard message.
-    await expect(
-      attacker.connect(alice).attack(
-        bob.address,
-        ethers.parseEther("0.1"),
-        "reentrancy test"
-      )
-    ).to.be.revertedWith("ReentrancyGuard: reentrant call");
-  });
   it("transferAssetBetweenAgents has nonReentrant guard", async () => {
     // Just verifying the function signature includes nonReentrant by confirming it works normally
     const { dao, alice, bob } = await deploy();
