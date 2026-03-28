@@ -337,6 +337,9 @@ export function useAppState() {
     setNfts(prev => [...prev, { ...nft, id: prev.length + 1, owner: walletAddress || '0x0000...0000', image: `gradient-${(prev.length % 6) + 1}` }]);
   }, [walletAddress]);
 
+  // ─── Data load error (surfaced to UI instead of silently swallowed) ────────
+  const [dataLoadError, setDataLoadError] = useState('');
+
   // ─── Agent economy state ───────────────────────────────────────────────────
   const [agentProfile, setAgentProfile] = useState(null);
   const [agentPaymentRequests, setAgentPaymentRequests] = useState([]);
@@ -359,7 +362,7 @@ export function useAppState() {
       ]);
       setAgentFeeBps(Number(feeBps));
       setAgentFlatFeeWei(flatFee.toString());
-    } catch (err) { console.error('loadAgentConfig failed:', err); }
+    } catch (err) { setDataLoadError('Failed to load fee config. Check your network connection.'); console.error('loadAgentConfig failed:', err); }
   }, [getDaoReadContract]);
 
   const loadAgentProfile = useCallback(async () => {
@@ -373,7 +376,7 @@ export function useAppState() {
         metadataURI: profile.metadataURI,
         nativeEscrowBalance: profile.nativeEscrowBalance.toString(),
       });
-    } catch (err) { console.error('loadAgentProfile failed:', err); }
+    } catch (err) { setDataLoadError('Failed to load agent profile.'); console.error('loadAgentProfile failed:', err); }
   }, [walletAddress, getDaoReadContract]);
 
   const agentRegister = useCallback(async (metadataURI) => {
@@ -496,7 +499,7 @@ export function useAppState() {
     try {
       const bal = await contract.getAgentTokenBalance(walletAddress, tokenAddress);
       setAgentTokenBalances(prev => ({ ...prev, [tokenAddress.toLowerCase()]: bal.toString() }));
-    } catch (err) { console.error('agentLoadTokenBalance failed:', err); }
+    } catch (err) { setDataLoadError('Failed to load token balance.'); console.error('agentLoadTokenBalance failed:', err); }
   }, [walletAddress, getDaoReadContract]);
 
   const loadAgentActivity = useCallback(async ({ forceFull = false } = {}) => {
@@ -727,7 +730,7 @@ export function useAppState() {
         }))
       );
       return Number(total);
-    } catch (err) { console.error('loadEconomicProjects failed:', err); }
+    } catch (err) { setDataLoadError('Failed to load projects.'); console.error('loadEconomicProjects failed:', err); }
     finally { setEconomicProjectsLoading(false); }
   }, [getDaoReadContract]);
 
@@ -903,7 +906,7 @@ export function useAppState() {
       const [messageIds, total] = await contract.getInbox(offset, limit);
       const messages = await hydrateMessages(contract, messageIds);
       setInbox({ messages, total: Number(total) });
-    } catch (err) { console.error('loadInbox failed:', err); setInbox({ messages: [], total: 0 }); }
+    } catch (err) { setDataLoadError('Failed to load inbox.'); console.error('loadInbox failed:', err); setInbox({ messages: [], total: 0 }); }
     finally { setInboxLoading(false); }
   }, [walletAddress, getDaoReadContract, hydrateMessages]);
 
@@ -916,7 +919,7 @@ export function useAppState() {
       const [messageIds, total] = await contract.getConversation(otherAgent, offset, limit);
       const messages = await hydrateMessages(contract, messageIds);
       setConversationMessages({ messages, total: Number(total) });
-    } catch (err) { console.error('loadConversation failed:', err); setConversationMessages({ messages: [], total: 0 }); }
+    } catch (err) { setDataLoadError('Failed to load conversation.'); console.error('loadConversation failed:', err); setConversationMessages({ messages: [], total: 0 }); }
     finally { setConversationLoading(false); }
   }, [walletAddress, getDaoReadContract, hydrateMessages]);
 
@@ -976,7 +979,7 @@ export function useAppState() {
         }))
       );
       return Number(total);
-    } catch (err) { console.error('loadFeatureKits failed:', err); }
+    } catch (err) { setDataLoadError('Failed to load feature kits.'); console.error('loadFeatureKits failed:', err); }
     finally { setFeatureKitsLoading(false); }
   }, [getDaoReadContract]);
 
@@ -1018,7 +1021,7 @@ export function useAppState() {
 
   const appState = useMemo(() => ({
     projects, milestones, proposals, members, companies, nfts, tasks,
-    walletConnected, walletAddress, walletError, txPending, syncingProposals,
+    walletConnected, walletAddress, walletError, dataLoadError, txPending, syncingProposals,
     connectWallet, disconnectWallet, castVote, syncProposalsFromChain,
     addProject, addProposal, addCompany, addNft,
     getDaoReadContract, getDaoWriteContract,
@@ -1046,7 +1049,7 @@ export function useAppState() {
     cancelEconomicProject, refundFromEconomicProject,
   }), [
     projects, milestones, proposals, members, companies, nfts, tasks,
-    walletConnected, walletAddress, walletError, txPending, syncingProposals,
+    walletConnected, walletAddress, walletError, dataLoadError, txPending, syncingProposals,
     connectWallet, disconnectWallet, castVote, syncProposalsFromChain,
     addProject, addProposal, addCompany, addNft,
     getDaoReadContract, getDaoWriteContract,

@@ -36,6 +36,13 @@ export class AgentClient {
     if (!contractAddress) throw new Error('contractAddress is required');
     if (!privateKey) throw new Error('privateKey is required');
 
+    // Validate contract address format
+    try {
+      ethers.getAddress(contractAddress);
+    } catch {
+      throw new Error(`Invalid contractAddress: ${contractAddress}. Must be a valid Ethereum address.`);
+    }
+
     this.provider = new ethers.JsonRpcProvider(rpcUrl);
     this.wallet = new ethers.Wallet(privateKey, this.provider);
     this.contract = new ethers.Contract(contractAddress, PROJECT_DAO_ABI, this.wallet);
@@ -143,13 +150,15 @@ export class AgentClient {
       stakeWei = minStake + (minStake * 10n / 100n);
     }
 
-    // Check wallet balance
+    // Check wallet balance (include gas buffer: ~200k gas at 1 gwei = 0.0002 ETH conservative estimate)
+    const gasBuffer = ethers.parseEther('0.0005');
+    const totalNeeded = stakeWei + gasBuffer;
     const balance = await this.provider.getBalance(this.address);
-    if (balance < stakeWei) {
-      const needed = ethers.formatEther(stakeWei);
+    if (balance < totalNeeded) {
+      const needed = ethers.formatEther(totalNeeded);
       const have = ethers.formatEther(balance);
       throw new Error(
-        `Insufficient balance to onboard. Need ${needed} ETH (stake + fee buffer), have ${have} ETH.`
+        `Insufficient balance to onboard. Need ~${needed} ETH (stake + fee buffer + gas), have ${have} ETH.`
       );
     }
 

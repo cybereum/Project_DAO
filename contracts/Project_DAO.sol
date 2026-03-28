@@ -276,6 +276,10 @@ contract Project_DAO {
     event ExitFeePaid(address indexed agent, uint256 fee, string context);
     event ReputationUpdated(address indexed agent, uint256 oldScore, uint256 newScore, uint256 tier);
     event ReputationDecayApplied(address indexed agent, uint256 pointsDecayed, uint256 newScore);
+    event PrivilegeGranted(address indexed member, uint256 privilege);
+    event ProposalDisputeCreated(uint256 indexed disputeId, uint256 indexed proposalId, address indexed initiator, string description);
+    event ProposalDisputeResolved(uint256 indexed disputeId, bool inFavor);
+    event OwnerChanged(address indexed previousOwner, address indexed newOwner);
 
     constructor() {
         owner = msg.sender;
@@ -700,8 +704,9 @@ contract Project_DAO {
         emit AgentMetadataUpdated(msg.sender, _metadataURI);
     }
 
-    function depositNativeToEscrow() public payable onlyRegisteredAgent whenNotPaused {
+    function depositNativeToEscrow() public payable onlyRegisteredAgent whenNotPaused nonReentrant {
         require(msg.value > 0, "Deposit amount must be greater than zero.");
+        require(cybereumTreasury != address(0), "Cybereum treasury not configured.");
         uint256 fee = _collectNativeFee(msg.value, "deposit_native_escrow");
         uint256 netAmount = msg.value - fee;
         require(netAmount > 0, "Amount too small after fee.");
@@ -766,7 +771,7 @@ contract Project_DAO {
         emit AgentTokenEscrowDeposited(msg.sender, _token, netAmount);
     }
 
-    function withdrawTokenFromEscrow(address _token, uint256 _amount) public onlyRegisteredAgent whenNotPaused {
+    function withdrawTokenFromEscrow(address _token, uint256 _amount) public onlyRegisteredAgent whenNotPaused nonReentrant {
         require(_token != address(0), "Invalid token address.");
         require(_amount > 0, "Amount must be greater than zero.");
         require(agentTokenEscrowBalances[msg.sender][_token] >= _amount, "Insufficient token escrow balance.");
@@ -787,7 +792,7 @@ contract Project_DAO {
         emit AgentTokenEscrowWithdrawn(msg.sender, _token, netAmount);
     }
 
-    function transferTokenBetweenAgents(address _token, address _to, uint256 _amount, string memory _memo) public onlyRegisteredAgent whenNotPaused {
+    function transferTokenBetweenAgents(address _token, address _to, uint256 _amount, string memory _memo) public onlyRegisteredAgent whenNotPaused nonReentrant {
         require(_token != address(0), "Invalid token address.");
         require(agents[_to].registered, "Recipient must be a registered agent.");
         require(_to != msg.sender, "Cannot transfer to self.");
@@ -945,13 +950,15 @@ contract Project_DAO {
     function grantPrivilege(address _member, uint256 _privilege) public onlyOwner whenNotPaused {
         require(members[_member].isMember, "Invalid member address.");
         members[_member].privileges.push(_privilege);
+        emit PrivilegeGranted(_member, _privilege);
     }
 
     function changeOwner(address _newOwner) public onlyOwner {
         require(_newOwner != address(0), "Invalid new owner address.");
+        address previousOwner = owner;
         members[_newOwner].isMember = true;
         members[_newOwner].votingPower = members[owner].votingPower;
-        members[owner].isMember = false;
+        members[previousOwner].isMember = false;
         // Add new owner to memberAddresses if not already present
         bool found = false;
         for (uint256 i = 0; i < memberAddresses.length; i++) {
@@ -964,6 +971,7 @@ contract Project_DAO {
             memberAddresses.push(_newOwner);
         }
         owner = _newOwner;
+        emit OwnerChanged(previousOwner, _newOwner);
     }
 
     function getMemberCount() public view returns (uint256) {
@@ -1164,6 +1172,7 @@ contract Project_DAO {
         dispute.resolved = false;
 
         currentProposalDisputeId++;
+        emit ProposalDisputeCreated(disputeId, _proposalId, msg.sender, _description);
     }
 
     function voteOnProposalDispute(uint256 _proposalDisputeId, bool _vote) public onlyMember {
@@ -1206,6 +1215,7 @@ contract Project_DAO {
             Proposal storage proposal = proposals[proposalIndex];
             proposal.proposalPassed = true;
         }
+        emit ProposalDisputeResolved(_disputeId, _inFavor);
     }
 
     /// @notice Owner can manually resolve a dispute after the deadline passes
@@ -1220,6 +1230,7 @@ contract Project_DAO {
             Proposal storage proposal = proposals[proposalIndex];
             proposal.proposalPassed = true;
         }
+        emit ProposalDisputeResolved(_disputeId, _inFavor);
     }
 
     // --- Tasks ---
