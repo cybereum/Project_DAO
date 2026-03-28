@@ -162,6 +162,7 @@ contract Project_DAO {
     uint256 public constant MIN_FEE_BPS = 1;
     uint256 public cybereumFeeBps = 5;
     uint256 public assetTransferFlatFeeWei = 1e12;
+    uint256 public aiServiceFeeWei = 0.0003 ether;
     address public cybereumTreasury;
 
     event TaskCreated(uint256 id, string description, uint256 deadline, uint256 milestoneId, address assignedMember, string status);
@@ -228,6 +229,9 @@ contract Project_DAO {
 
     // --- Task progress events ---
     event TaskProgressAdded(uint256 indexed taskId, uint256 progressId, uint256 percentageCompleted);
+
+    event AIServiceFeeDeducted(address indexed agent, uint256 amount, string serviceType);
+    event AIServiceFeeUpdated(uint256 newFeeWei);
 
     constructor() {
         owner = msg.sender;
@@ -392,6 +396,28 @@ contract Project_DAO {
         cybereumFeeBps = _feeBps;
         assetTransferFlatFeeWei = _assetTransferFlatFeeWei;
         emit CybereumFeeConfigUpdated(_feeBps, _assetTransferFlatFeeWei);
+    }
+
+    /// @notice Update AI analysis service fee. Only callable by owner.
+    function setAIServiceFee(uint256 _feeWei) public onlyOwner {
+        aiServiceFeeWei = _feeWei;
+        emit AIServiceFeeUpdated(_feeWei);
+    }
+
+    /// @notice Deduct AI service fee from caller's native escrow. Fee goes to Cybereum treasury.
+    function deductAIServiceFee(string memory _serviceType) external onlyRegisteredAgent whenNotPaused nonReentrant {
+        uint256 fee = aiServiceFeeWei;
+        require(fee > 0, "AI service fee not configured.");
+        require(agents[msg.sender].nativeEscrowBalance >= fee, "Insufficient escrow balance for AI service fee.");
+
+        agents[msg.sender].nativeEscrowBalance -= fee;
+
+        require(cybereumTreasury != address(0), "Cybereum treasury not configured.");
+        (bool ok,) = payable(cybereumTreasury).call{value: fee}("");
+        require(ok, "AI service fee transfer failed.");
+
+        emit AIServiceFeeDeducted(msg.sender, fee, _serviceType);
+        emit CybereumFeePaid(msg.sender, address(0), fee, string(abi.encodePacked("ai_service:", _serviceType)));
     }
 
     /// @notice Preview the fee that will be charged for a given amount.

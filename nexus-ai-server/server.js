@@ -80,6 +80,40 @@ function apiAuth(req, res, next) {
 
 app.use('/api/', apiAuth);
 
+// ── AI usage tracking: generous free tier + escrow-based premium ──
+const FREE_TIER_DAILY_LIMIT = 5;
+const usageMap = new Map(); // wallet -> { date, count }
+
+function checkFreeTier(walletAddress) {
+  if (!walletAddress) return { allowed: true, remaining: FREE_TIER_DAILY_LIMIT }; // anonymous = free tier
+  const today = new Date().toISOString().slice(0, 10);
+  const entry = usageMap.get(walletAddress);
+  if (!entry || entry.date !== today) {
+    return { allowed: true, remaining: FREE_TIER_DAILY_LIMIT };
+  }
+  const remaining = Math.max(0, FREE_TIER_DAILY_LIMIT - entry.count);
+  return { allowed: remaining > 0, remaining };
+}
+
+function recordUsage(walletAddress) {
+  if (!walletAddress) return;
+  const today = new Date().toISOString().slice(0, 10);
+  const entry = usageMap.get(walletAddress);
+  if (!entry || entry.date !== today) {
+    usageMap.set(walletAddress, { date: today, count: 1 });
+  } else {
+    entry.count++;
+  }
+}
+
+// Clean up stale usage entries daily
+setInterval(() => {
+  const today = new Date().toISOString().slice(0, 10);
+  for (const [wallet, entry] of usageMap) {
+    if (entry.date !== today) usageMap.delete(wallet);
+  }
+}, 60 * 60_000); // every hour
+
 const client = new Anthropic(); // reads ANTHROPIC_API_KEY from env
 
 const ALLOWED_OUTCOMES = new Set(['adopted', 'successful', 'rejected', 'noisy']);
@@ -439,6 +473,20 @@ app.post('/api/analyse', async (req, res) => {
     return res.status(400).json({ error: 'Too many kits. Maximum 100.' });
   }
 
+  // ── Usage metering ──
+  const walletAddress = (req.headers['x-wallet-address'] || '').toLowerCase().trim();
+  const paymentTxHash = req.headers['x-payment-tx'] || '';
+  const freeTier = checkFreeTier(walletAddress);
+
+  if (!freeTier.allowed && !paymentTxHash) {
+    return res.status(402).json({
+      error: 'Free tier limit reached. Please ensure your agent escrow is funded.',
+      code: 'PAYMENT_REQUIRED',
+      dailyLimit: FREE_TIER_DAILY_LIMIT,
+      remaining: 0,
+    });
+  }
+
   const files = await readSourceFiles(modeConfig.files);
   if (!files.length) {
     return res.status(500).json({ error: 'Could not read source files.' });
@@ -475,6 +523,7 @@ app.post('/api/analyse', async (req, res) => {
       const final = await stream.finalMessage();
       const raw = final.content.find(b => b.type === 'text')?.text || '{}';
       res.write(`data: ${JSON.stringify({ done: true, raw })}\n\n`);
+      recordUsage(walletAddress);
       res.end();
     } else {
       const response = await client.messages.create({
@@ -493,6 +542,7 @@ app.post('/api/analyse', async (req, res) => {
         parsed = { raw };
       }
 
+      recordUsage(walletAddress);
       res.json({
         mode,
         label: modeConfig.label,
@@ -567,6 +617,18 @@ app.get('/api/modes', (_req, res) => {
       files: m.files,
     }))
   );
+});
+
+// ─── /api/usage — check free tier remaining ──────────────────────────────
+
+app.get('/api/usage', (req, res) => {
+  const walletAddress = (req.headers['x-wallet-address'] || req.query.wallet || '').toLowerCase().trim();
+  const tier = checkFreeTier(walletAddress);
+  res.json({
+    freeTierRemaining: tier.remaining,
+    dailyLimit: FREE_TIER_DAILY_LIMIT,
+    requiresPayment: !tier.allowed,
+  });
 });
 
 // ─── /api/health ──────────────────────────────────────────────────────────
