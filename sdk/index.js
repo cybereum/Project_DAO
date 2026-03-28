@@ -502,6 +502,127 @@ export class AgentClient {
     return { messageIds, total };
   }
 
+  // ─── Commerce Blackhole ─────────────────────────────────────────────────
+
+  /**
+   * Get protocol-wide commerce blackhole metrics.
+   * @returns {Promise<Object>} { totalCommerceVolume, totalFeesCollected, agentCount, feeBps, exitFeeBps, messagingFeeWei, aiServiceFeeWei, assetTransferFlatFeeWei }
+   */
+  async getBlackholeMetrics() {
+    const m = await this.contract.getBlackholeMetrics();
+    return {
+      totalCommerceVolume: m._totalCommerceVolume,
+      totalFeesCollected: m._totalFeesCollected,
+      agentCount: Number(m._agentCount),
+      feeBps: Number(m._feeBps),
+      exitFeeBps: Number(m._exitFeeBps),
+      messagingFeeWei: m._messagingFeeWei,
+      aiServiceFeeWei: m._aiServiceFeeWei,
+      assetTransferFlatFeeWei: m._assetTransferFlatFeeWei,
+    };
+  }
+
+  /**
+   * Get commerce metrics for a specific agent.
+   * @returns {Promise<Object>} { volume, feesPaid, escrowBalance, registered }
+   */
+  async getAgentCommerceMetrics(address = this.address) {
+    if (address !== this.address) this._validateAddress(address, 'agent');
+    const m = await this.contract.getAgentCommerceMetrics(address);
+    return {
+      volume: m.volume,
+      feesPaid: m.feesPaid,
+      escrowBalance: m.escrowBalance,
+      registered: m.registered,
+    };
+  }
+
+  /**
+   * Preview exit fee for a given amount (in wei).
+   * @returns {Promise<{fee: bigint, net: bigint}>}
+   */
+  async previewExitFee(amountWei) {
+    const [fee, net] = await this.contract.previewExitFee(amountWei);
+    return { fee, net };
+  }
+
+  /**
+   * Batch transfer native ETH to multiple agents from escrow.
+   * Each transfer collects a protocol fee.
+   * @param {Array<{address: string, amount: bigint, memo: string}>} transfers
+   */
+  async batchTransferNative(transfers) {
+    if (!Array.isArray(transfers) || transfers.length === 0) throw new Error('transfers must be a non-empty array');
+    const recipients = transfers.map(t => this._validateAddress(t.address, 'recipient'));
+    const amounts = transfers.map(t => t.amount);
+    const memos = transfers.map(t => t.memo || '');
+    const tx = await this._write(() => this.contract.batchTransferNative(recipients, amounts, memos));
+    return tx.wait();
+  }
+
+  /**
+   * Batch settle multiple native payment requests in one tx.
+   * @param {bigint[]} requestIds  Array of payment request IDs.
+   * @param {bigint}   totalValue  Total ETH to send (sum of all request amounts).
+   */
+  async batchSettlePaymentRequests(requestIds, totalValue) {
+    if (!Array.isArray(requestIds) || requestIds.length === 0) throw new Error('requestIds must be a non-empty array');
+    const tx = await this._write(() => this.contract.batchSettlePaymentRequests(requestIds, { value: totalValue }));
+    return tx.wait();
+  }
+
+  // ─── Reputation Engine ──────────────────────────────────────────────────
+
+  /**
+   * Get full reputation profile for an agent.
+   * @returns {Promise<{score, tier, transactionCount, lastActiveAt, registeredAt, messagingFeeDiscount}>}
+   */
+  async getAgentReputation(address = this.address) {
+    if (address !== this.address) this._validateAddress(address, 'agent');
+    const r = await this.contract.getAgentReputation(address);
+    return {
+      score: Number(r.score),
+      tier: Number(r.tier),
+      transactionCount: Number(r.transactionCount),
+      lastActiveAt: Number(r.lastActiveAt),
+      registeredAt: Number(r.registeredAt),
+      messagingFeeDiscount: Number(r.messagingFeeDiscount),
+    };
+  }
+
+  /**
+   * Get paginated reputation leaderboard.
+   * @returns {Promise<{agents: Array<{address, score, tier}>, total}>}
+   */
+  async getReputationLeaderboard(offset = 0, limit = 50) {
+    const [agents_, scores, tiers, registered, total] = await this.contract.getReputationLeaderboard(offset, limit);
+    return {
+      agents: agents_.map((addr, i) => ({
+        address: addr,
+        score: Number(scores[i]),
+        tier: Number(tiers[i]),
+        registered: registered[i],
+      })),
+      total: Number(total),
+    };
+  }
+
+  /**
+   * Manually trigger reputation refresh for an agent (applies decay).
+   */
+  async refreshReputation(address) {
+    this._validateAddress(address, 'agent');
+    const tx = await this._write(() => this.contract.refreshReputation(address));
+    return tx.wait();
+  }
+
+  /** Listen for reputation updates. */
+  onReputationUpdated(callback) {
+    this.contract.on('ReputationUpdated', (agent, oldScore, newScore, tier) => {
+      callback({ agent, oldScore: Number(oldScore), score: Number(newScore), tier: Number(tier) });
+    });
+  }
+
   // ─── Event Listening ───────────────────────────────────────────────────
 
   /** Listen for incoming payment requests addressed to this agent. */

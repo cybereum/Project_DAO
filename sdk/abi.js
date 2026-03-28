@@ -63,6 +63,19 @@ export const PROJECT_DAO_ABI = [
   'function getInbox(uint256 offset, uint256 limit) external view returns (uint256[] messageIds, uint256 total)',
   'function currentDirectMessageId() external view returns (uint256)',
 
+  // ─── Commerce Blackhole ─────────────────────────────────────────────────
+  'function messagingFeeWei() external view returns (uint256)',
+  'function exitFeeBps() external view returns (uint256)',
+  'function totalCommerceVolume() external view returns (uint256)',
+  'function totalFeesCollected() external view returns (uint256)',
+  'function agentCommerceVolume(address) external view returns (uint256)',
+  'function agentFeesPaid(address) external view returns (uint256)',
+  'function getBlackholeMetrics() external view returns (uint256 _totalCommerceVolume, uint256 _totalFeesCollected, uint256 _agentCount, uint256 _feeBps, uint256 _exitFeeBps, uint256 _messagingFeeWei, uint256 _aiServiceFeeWei, uint256 _assetTransferFlatFeeWei)',
+  'function getAgentCommerceMetrics(address _agent) external view returns (uint256 volume, uint256 feesPaid, uint256 escrowBalance, bool registered)',
+  'function previewExitFee(uint256 _amount) external view returns (uint256 fee, uint256 net)',
+  'function batchTransferNative(address[] calldata recipients, uint256[] calldata amounts, string[] calldata memos) external',
+  'function batchSettlePaymentRequests(uint256[] calldata requestIds) external payable',
+
   // ─── Events ────────────────────────────────────────────────────────────
   'event AgentRegistered(address indexed agent, string metadataURI)',
   'event AgentToAgentNativeTransfer(address indexed from, address indexed to, uint256 amount, string memo)',
@@ -73,4 +86,18 @@ export const PROJECT_DAO_ABI = [
   'event AgentBroadcast(uint256 indexed broadcastId, address indexed sender, uint8 broadcastType, string messageURI, uint256 timestamp)',
   'event DirectMessageSent(uint256 indexed messageId, address indexed sender, address indexed recipient, bytes32 contentHash, uint256 timestamp)',
   'event DirectMessageRead(uint256 indexed messageId, address indexed recipient)',
+  'event CommerceVolumeRecorded(address indexed agent, uint256 amount, string context)',
+  'event MessagingFeePaid(address indexed sender, uint256 fee)',
+  'event BlackholeBatchTransfer(address indexed from, uint256 transferCount, uint256 totalVolume, uint256 totalFees)',
+  'event BlackholeBatchSettle(address indexed settler, uint256 settleCount, uint256 totalVolume, uint256 totalFees)',
+  'event ExitFeePaid(address indexed agent, uint256 fee, string context)',
+
+  // ─── Reputation Engine ─────────────────────────────────────────────────
+  'function getAgentReputation(address _agent) external view returns (uint256 score, uint256 tier, uint256 transactionCount, uint256 lastActiveAt, uint256 registeredAt, uint256 messagingFeeDiscount)',
+  'function getReputationLeaderboard(uint256 offset, uint256 limit) external view returns (address[] agents_, uint256[] scores, uint256[] tiers, bool[] registered, uint256 total)',
+  'function refreshReputation(address _agent) external',
+  'function agentReputation(address) external view returns (uint256)',
+  'function agentTransactionCount(address) external view returns (uint256)',
+  'event ReputationUpdated(address indexed agent, uint256 oldScore, uint256 newScore, uint256 tier)',
+  'event ReputationDecayApplied(address indexed agent, uint256 pointsDecayed, uint256 newScore)',
 ];

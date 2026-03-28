@@ -980,7 +980,7 @@ export function useAppState() {
     walletConnected, walletAddress, walletError, txPending, syncingProposals,
     connectWallet, disconnectWallet, castVote, syncProposalsFromChain,
     addProject, addProposal, addCompany, addNft,
-    getDaoWriteContract,
+    getDaoReadContract, getDaoWriteContract,
     // agent economy
     agentProfile, agentPaymentRequests, agentFeeBps, agentFlatFeeWei,
     agentTokenBalances, agentActivity, agentActivityLoading,
@@ -1008,7 +1008,7 @@ export function useAppState() {
     walletConnected, walletAddress, walletError, txPending, syncingProposals,
     connectWallet, disconnectWallet, castVote, syncProposalsFromChain,
     addProject, addProposal, addCompany, addNft,
-    getDaoWriteContract,
+    getDaoReadContract, getDaoWriteContract,
     agentProfile, agentPaymentRequests, agentFeeBps, agentFlatFeeWei,
     agentTokenBalances, agentActivity, agentActivityLoading,
     loadAgentConfig, loadAgentProfile, setAgentPaymentRequests,
