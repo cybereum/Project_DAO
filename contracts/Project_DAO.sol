@@ -462,6 +462,7 @@ contract Project_DAO {
 
         emit AIServiceFeeDeducted(msg.sender, fee, _serviceType);
         emit CybereumFeePaid(msg.sender, address(0), fee, string(abi.encodePacked("ai_service:", _serviceType)));
+        _recordVolume(msg.sender, fee, fee, "ai_service_fee");
     }
 
     /// @notice Preview the fee that will be charged for a given amount.
