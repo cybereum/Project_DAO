@@ -178,7 +178,9 @@ export class AgentClient {
       this.provider.getBalance(this.address),
     ]);
 
+    const gasBuffer = ethers.parseEther('0.0005');
     const stakeNeeded = minStake === 0n ? ethers.parseEther('0.001') : minStake + (minStake * 10n / 100n);
+    const totalNeeded = stakeNeeded + gasBuffer;
     return {
       address: this.address,
       chainId: this._expectedChainId,
@@ -187,8 +189,8 @@ export class AgentClient {
       escrowBalance: profile.nativeEscrowBalance.toString(),
       walletBalance: ethers.formatEther(balance),
       minStakeRequired: ethers.formatEther(minStake),
-      recommendedStake: ethers.formatEther(stakeNeeded),
-      canAffordOnboarding: balance >= stakeNeeded,
+      recommendedStake: ethers.formatEther(totalNeeded),
+      canAffordOnboarding: balance >= totalNeeded,
       feeBps: Number(feeConfig.feeBps),
       totalAgentsOnNetwork: Number(agentCount),
       readyToTransact: profile.registered,

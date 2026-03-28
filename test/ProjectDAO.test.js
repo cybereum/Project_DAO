@@ -1368,6 +1368,13 @@ describe("Access Control & Edge Cases", () => {
     );
   });
 
+  it("changeOwner reverts on self-transfer", async () => {
+    const { dao, owner } = await deploy();
+    await expect(dao.changeOwner(owner.address)).to.be.revertedWith(
+      "Already the owner."
+    );
+  });
+
   it("grantPrivilege works for a member", async () => {
     const { dao, alice } = await deploy();
     await dao.addMember(alice.address, 10);

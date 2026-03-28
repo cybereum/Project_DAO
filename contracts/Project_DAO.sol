@@ -958,6 +958,7 @@ contract Project_DAO {
 
     function changeOwner(address _newOwner) public onlyOwner {
         require(_newOwner != address(0), "Invalid new owner address.");
+        require(_newOwner != owner, "Already the owner.");
         address previousOwner = owner;
         bool newOwnerWasMember = members[_newOwner].isMember;
         members[_newOwner].isMember = true;

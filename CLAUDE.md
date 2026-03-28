@@ -845,7 +845,7 @@ The file `sdk/deployments.json` maps chain IDs to contract addresses and RPC hin
 | Category | Before | After | Details |
 |---|---|---|---|
 | **Smart Contract Security** | 5/10 | 7.5/10 | Added `nonReentrant` to `withdrawTokenFromEscrow`, `transferTokenBetweenAgents`, `depositNativeToEscrow`. Treasury check added to deposit path. All ERC-20 transfer return values checked. |
-| **Event Audit Trail** | 6/10 | 9/10 | Added 5 missing events: `PrivilegeGranted`, `ProposalDisputeCreated`, `ProposalDisputeResolved`, `OwnerChanged`. All state changes now emit events. |
+| **Event Audit Trail** | 6/10 | 9/10 | Added 4 missing events: `PrivilegeGranted`, `ProposalDisputeCreated`, `ProposalDisputeResolved`, `OwnerChanged`. All state changes now emit events. |
 | **Test Coverage** | 6/10 | 8/10 | 274 → 285 tests. Added: event emission tests, reentrancy guard verification, treasury validation, payment request ID 0 edge case, reputation ceiling/decay tests. 49 describe blocks covering all contract modules. |
 | **SDK Robustness** | 6/10 | 7.5/10 | Added contract address format validation in constructor. Gas buffer (0.0005 ETH) included in `safeOnboard` balance check. Chain verification enforced on all write paths. |
 | **Frontend Error Handling** | 3/10 | 6.5/10 | 8 silent `console.error` catches now surface errors via `dataLoadError` state. HTTPS enforced (not just warned) in production for AI service. |

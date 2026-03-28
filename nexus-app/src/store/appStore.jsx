@@ -160,6 +160,7 @@ export function useAppState() {
 
   const connectWallet = useCallback(async () => {
     setWalletError('');
+    setDataLoadError('');
     const provider = getBrowserProvider();
     if (!provider) {
       setWalletError('No injected wallet found. Install MetaMask to enable on-chain actions.');
@@ -183,6 +184,7 @@ export function useAppState() {
     setWalletConnected(false);
     setAgentProfile(null);
     setWalletError('');
+    setDataLoadError('');
   }, []);
 
   // ─── Wallet event listeners (accountsChanged, chainChanged) ───────────────

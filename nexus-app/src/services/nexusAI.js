@@ -99,6 +99,9 @@ export const nexusAI = {
    * @returns {Promise<string>}
    */
   async analyseStream(mode = 'health', onChunk, { paymentTxHash } = {}) {
+    if (_isInsecureProduction) {
+      return JSON.stringify({ error: 'NexusAI requires HTTPS in production. Set VITE_NEXUS_AI_URL to an https:// endpoint.' });
+    }
     let raw = '';
     try {
       const headers = { 'Content-Type': 'application/json', 'x-wallet-address': _wallet };
