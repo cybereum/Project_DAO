@@ -483,8 +483,14 @@ export class AgentClient {
   /** Approve a contributor for a project with a revenue share (in bps, 0-10000). */
   async approveContributor(projectId, contributorAddress, sharesBps) {
     this._validateAddress(contributorAddress, 'contributor');
-    if (sharesBps < 0 || sharesBps > 10000) throw new Error('sharesBps must be between 0 and 10000');
-    const tx = await this._write(() => this.contract.approveContributor(projectId, contributorAddress, sharesBps));
+    const sharesBpsNum = Number(sharesBps);
+    if (!Number.isFinite(sharesBpsNum) || !Number.isInteger(sharesBpsNum)) {
+      throw new Error('sharesBps must be a finite integer');
+    }
+    if (sharesBpsNum < 0 || sharesBpsNum > 10000) {
+      throw new Error('sharesBps must be between 0 and 10000');
+    }
+    const tx = await this._write(() => this.contract.approveContributor(projectId, contributorAddress, sharesBpsNum));
     return tx.wait();
   }
 
