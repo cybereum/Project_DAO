@@ -76,7 +76,7 @@ async function main() {
   }
 
   // Configure fee (optional)
-  const feeBps = process.env.FEE_BPS ? parseInt(process.env.FEE_BPS) : 0;
+  const feeBps = process.env.FEE_BPS ? parseInt(process.env.FEE_BPS, 10) : 0;
   const assetFeeWei = process.env.ASSET_FEE_WEI ? BigInt(process.env.ASSET_FEE_WEI) : 0n;
   if (feeBps > 0 && assetFeeWei > 0n) {
     if (feeBps < 1 || feeBps > 100) {

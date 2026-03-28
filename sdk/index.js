@@ -271,6 +271,8 @@ export class AgentClient {
 
   /** Paginated list of registered agents. Returns { addresses, metadataURIs, total }. */
   async discoverAgents(offset = 0, limit = 50) {
+    if (offset < 0) throw new Error('offset must be non-negative');
+    if (limit <= 0 || limit > 1000) throw new Error('limit must be between 1 and 1000');
     const [addresses, metadataURIs, total] = await this.contract.getRegisteredAgents(offset, limit);
     return {
       agents: addresses.map((addr, i) => ({ address: addr, metadataURI: metadataURIs[i] })),
@@ -298,6 +300,7 @@ export class AgentClient {
   /** Deposit ETH into escrow. Amount in ETH string (e.g. '0.1'). */
   async depositNative(amountEth) {
     const value = ethers.parseEther(amountEth);
+    if (value === 0n) throw new Error('Deposit amount too small');
     if (value <= 0n) throw new Error('Amount must be greater than zero');
     const tx = await this._write(() => this.contract.depositNativeToEscrow({ value }));
     return tx.wait();
@@ -368,6 +371,7 @@ export class AgentClient {
   /** Settle (pay) a payment request. For native requests, sends ETH. */
   async settlePaymentRequest(requestId) {
     const req = await this.getPaymentRequest(requestId);
+    if (!req) throw new Error(`Payment request ${requestId} not found`);
     const opts = req.isNative ? { value: req.amount } : {};
     const tx = await this._write(() => this.contract.settleAgentPaymentRequest(requestId, opts));
     return tx.wait();
@@ -395,6 +399,7 @@ export class AgentClient {
   /** Stake ETH to join the DAO and register as an agent in one transaction. */
   async stakeAndJoin(metadataURI, stakeEth) {
     const value = ethers.parseEther(stakeEth);
+    if (value === 0n) throw new Error('Stake amount too small');
     if (value <= 0n) throw new Error('Amount must be greater than zero');
     const tx = await this._write(() => this.contract.stakeAndJoin(metadataURI, { value }));
     return tx.wait();
@@ -479,6 +484,8 @@ export class AgentClient {
    * @returns {{ messageIds: bigint[], total: bigint }}
    */
   async getConversation(otherAgent, offset = 0, limit = 50) {
+    if (offset < 0) throw new Error('offset must be non-negative');
+    if (limit <= 0 || limit > 1000) throw new Error('limit must be between 1 and 1000');
     this._validateAddress(otherAgent, 'otherAgent');
     const [messageIds, total] = await this.contract.getConversation(otherAgent, offset, limit);
     return { messageIds, total };
@@ -489,6 +496,8 @@ export class AgentClient {
    * @returns {{ messageIds: bigint[], total: bigint }}
    */
   async getInbox(offset = 0, limit = 50) {
+    if (offset < 0) throw new Error('offset must be non-negative');
+    if (limit <= 0 || limit > 1000) throw new Error('limit must be between 1 and 1000');
     const [messageIds, total] = await this.contract.getInbox(offset, limit);
     return { messageIds, total };
   }

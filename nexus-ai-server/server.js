@@ -27,7 +27,44 @@ const FEEDBACK_STORE_PATH = path.join(__dirname, 'data', 'feedback-memory.json')
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
+
+// Simple in-memory rate limiter
+const rateLimitMap = new Map();
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 10;
+
+function rateLimit(req, res, next) {
+  const ip = req.ip || req.connection.remoteAddress;
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+    rateLimitMap.set(ip, { windowStart: now, count: 1 });
+    return next();
+  }
+  entry.count++;
+  if (entry.count > RATE_LIMIT_MAX) {
+    return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+  }
+  return next();
+}
+
+// Clean up stale entries every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of rateLimitMap) {
+    if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS) rateLimitMap.delete(ip);
+  }
+}, 5 * 60_000);
+
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  next();
+});
+
+app.use('/api/', rateLimit);
 
 const client = new Anthropic(); // reads ANTHROPIC_API_KEY from env
 
@@ -384,6 +421,10 @@ app.post('/api/analyse', async (req, res) => {
     return res.status(400).json({ error: 'triage mode requires a non-empty kits[] array in the request body.' });
   }
 
+  if (Array.isArray(kits) && kits.length > 100) {
+    return res.status(400).json({ error: 'Too many kits. Maximum 100.' });
+  }
+
   const files = await readSourceFiles(modeConfig.files);
   if (!files.length) {
     return res.status(500).json({ error: 'Could not read source files.' });
@@ -524,6 +565,7 @@ app.post('/api/feedback', async (req, res) => {
   try {
     const payload = normaliseFeedback(req.body || {});
     const store = await loadFeedbackStore();
+    if (store.items.length >= 10000) return res.status(507).json({ error: 'Feedback store is full.' });
     store.items.push(payload);
     await saveFeedbackStore(store);
     const insights = buildFeedbackInsights(store);

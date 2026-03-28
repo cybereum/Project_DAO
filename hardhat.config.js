@@ -17,7 +17,7 @@ module.exports = {
   solidity: {
     version: "0.8.26",
     settings: {
-      optimizer: { enabled: true, runs: 1 },  // runs=1 minimizes bytecode (43KB even so — contract needs splitting for mainnet)
+      optimizer: { enabled: true, runs: 200 },  // runs=200 balances deploy cost vs runtime gas efficiency
       viaIR: true,
     },
   },

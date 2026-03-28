@@ -203,9 +203,12 @@ export function useAppState() {
       const countNumber = Number(count);
       if (!Number.isFinite(countNumber) || countNumber <= 0) return;
 
-      const chainProposals = await Promise.all(
+      const results = await Promise.allSettled(
         Array.from({ length: countNumber }, (_, i) => contract.getProposal(i + 1))
       );
+      const chainProposals = results
+        .filter((r) => r.status === 'fulfilled')
+        .map((r) => r.value);
 
       setProposals((prev) => {
         const merged = [...prev];
@@ -289,7 +292,7 @@ export function useAppState() {
       ]);
       setAgentFeeBps(Number(feeBps));
       setAgentFlatFeeWei(flatFee.toString());
-    } catch { /* no-op if contract not configured */ }
+    } catch (err) { console.error('loadAgentConfig failed:', err); }
   }, [getDaoReadContract]);
 
   const loadAgentProfile = useCallback(async () => {
@@ -303,7 +306,7 @@ export function useAppState() {
         metadataURI: profile.metadataURI,
         nativeEscrowBalance: profile.nativeEscrowBalance.toString(),
       });
-    } catch { /* no-op */ }
+    } catch (err) { console.error('loadAgentProfile failed:', err); }
   }, [walletAddress, getDaoReadContract]);
 
   const agentRegister = useCallback(async (metadataURI) => {
@@ -419,7 +422,7 @@ export function useAppState() {
     try {
       const bal = await contract.agentTokenEscrowBalances(walletAddress, tokenAddress);
       setAgentTokenBalances(prev => ({ ...prev, [tokenAddress.toLowerCase()]: bal.toString() }));
-    } catch { /* no-op */ }
+    } catch (err) { console.error('agentLoadTokenBalance failed:', err); }
   }, [walletAddress, getDaoReadContract]);
 
   const loadAgentActivity = useCallback(async ({ forceFull = false } = {}) => {
@@ -491,7 +494,8 @@ export function useAppState() {
       setAgentActivity(deduped.slice(0, 40));
       lastAgentActivityBlockRef.current = latestBlock;
       lastAgentActivityWalletRef.current = walletAddress;
-    } catch {
+    } catch (err) {
+      console.error('loadAgentActivity failed:', err);
       setAgentActivity([]);
     } finally {
       setAgentActivityLoading(false);
@@ -648,7 +652,7 @@ export function useAppState() {
         }))
       );
       return Number(total);
-    } catch { /* no-op if contract not configured */ }
+    } catch (err) { console.error('loadEconomicProjects failed:', err); }
     finally { setEconomicProjectsLoading(false); }
   }, [getDaoReadContract]);
 
@@ -809,7 +813,7 @@ export function useAppState() {
             contentHash: m.contentHash, encryptedContent: m.encryptedContent,
             timestamp: Number(m.timestamp), readByRecipient: m.readByRecipient,
           };
-        } catch { return null; }
+        } catch (err) { console.error('hydrateMessages failed:', err); return null; }
       })
     );
     return messages.filter(Boolean);
@@ -824,7 +828,7 @@ export function useAppState() {
       const [messageIds, total] = await contract.getInbox(offset, limit);
       const messages = await hydrateMessages(contract, messageIds);
       setInbox({ messages, total: Number(total) });
-    } catch { setInbox({ messages: [], total: 0 }); }
+    } catch (err) { console.error('loadInbox failed:', err); setInbox({ messages: [], total: 0 }); }
     finally { setInboxLoading(false); }
   }, [walletAddress, getDaoReadContract, hydrateMessages]);
 
@@ -837,7 +841,7 @@ export function useAppState() {
       const [messageIds, total] = await contract.getConversation(otherAgent, offset, limit);
       const messages = await hydrateMessages(contract, messageIds);
       setConversationMessages({ messages, total: Number(total) });
-    } catch { setConversationMessages({ messages: [], total: 0 }); }
+    } catch (err) { console.error('loadConversation failed:', err); setConversationMessages({ messages: [], total: 0 }); }
     finally { setConversationLoading(false); }
   }, [walletAddress, getDaoReadContract, hydrateMessages]);
 
@@ -897,7 +901,7 @@ export function useAppState() {
         }))
       );
       return Number(total);
-    } catch { /* no-op if contract not configured */ }
+    } catch (err) { console.error('loadFeatureKits failed:', err); }
     finally { setFeatureKitsLoading(false); }
   }, [getDaoReadContract]);
 

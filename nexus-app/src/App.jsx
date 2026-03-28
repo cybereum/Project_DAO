@@ -1,5 +1,6 @@
 import { Routes, Route, useLocation } from 'react-router-dom';
 import { AppProvider } from './store/appStore';
+import ErrorBoundary from './components/ErrorBoundary';
 import Layout from './components/Layout';
 import SEOHead from './components/SEOHead';
 import Landing from './pages/Landing';
@@ -42,6 +43,7 @@ function AppShell({ children }) {
 
 export default function App() {
   return (
+    <ErrorBoundary>
     <AppProvider>
       <SEOHead />
       <AppShell>
@@ -73,5 +75,6 @@ export default function App() {
         </Routes>
       </AppShell>
     </AppProvider>
+    </ErrorBoundary>
   );
 }
