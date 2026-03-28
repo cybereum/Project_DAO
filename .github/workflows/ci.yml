@@ -52,7 +52,10 @@ jobs:
           cache-dependency-path: nexus-app/package-lock.json
       - run: npm ci
       - run: npm run lint
-      - run: npm run build
+      - name: Build
+        run: npm run build
+        env:
+          VITE_PROJECT_DAO_ADDRESS: '0x0000000000000000000000000000000000000001'
 
       # Dependency audit
       - name: Audit dependencies
