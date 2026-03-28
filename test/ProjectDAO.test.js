@@ -2596,6 +2596,20 @@ describe("Role indexing consistency (1-based)", () => {
     expect(ethers.decodeBytes32String(name)).to.equal("Owner");
   });
 
+  it("createRole emits 1-based role ID matching getRole", async () => {
+    const { dao } = await deploy();
+    // Owner role is created in constructor with 1-based ID = 1
+    // Creating a new role should emit ID = 2
+    const tx = await dao.createRole(ethers.encodeBytes32String("Admin"));
+    const receipt = await tx.wait();
+    const event = receipt.logs.find(l => l.fragment?.name === "RoleCreated");
+    expect(event).to.not.be.undefined;
+    expect(event.args[0]).to.equal(2n); // 1-based ID
+    // Verify the emitted ID works with getRole
+    const [name] = await dao.getRole(2);
+    expect(ethers.decodeBytes32String(name)).to.equal("Admin");
+  });
+
   it("addPermission, assignRole, getRole all use consistent 1-based IDs", async () => {
     const { dao, alice } = await deploy();
     await dao.addMember(alice.address, 10);

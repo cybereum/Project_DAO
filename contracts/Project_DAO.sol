@@ -348,9 +348,9 @@ contract Project_DAO {
 
     /// @dev Internal role creation used by constructor and public createRole
     function _createRole(bytes32 _name) internal {
-        uint256 newRoleId = roles.length;
         roles.push();
-        Role storage newRole = roles[newRoleId];
+        uint256 newRoleId = roles.length; // 1-based — matches getRole/assignRole/addPermission
+        Role storage newRole = roles[newRoleId - 1];
         newRole.name = _name;
 
         emit RoleCreated(newRoleId, string(abi.encodePacked(_name)));

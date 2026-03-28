@@ -250,6 +250,11 @@ export class AgentClient {
     });
   }
 
+  /** @private Wait for a transaction with timeout protection. */
+  _waitForTx(tx, ms = 120_000) {
+    return this._withTimeout(tx.wait(), ms);
+  }
+
   /** Extract a named arg from a transaction receipt's event logs. */
   _extractEventArg(receipt, eventName, argName) {
     const log = receipt.logs.find(l => {
@@ -279,13 +284,13 @@ export class AgentClient {
   /** Register this agent on-chain with an IPFS metadata URI. */
   async register(metadataURI) {
     const tx = await this._write(() => this.contract.registerAgent(metadataURI));
-    return tx.wait();
+    return this._waitForTx(tx);
   }
 
   /** Update this agent's metadata URI. */
   async updateMetadata(metadataURI) {
     const tx = await this._write(() => this.contract.updateAgentMetadata(metadataURI));
-    return tx.wait();
+    return this._waitForTx(tx);
   }
 
   /** Get profile for any agent address. */
@@ -341,14 +346,14 @@ export class AgentClient {
     const value = ethers.parseEther(amountEth);
     if (value <= 0n) throw new Error('Deposit amount must be greater than zero');
     const tx = await this._write(() => this.contract.depositNativeToEscrow({ value }));
-    return tx.wait();
+    return this._waitForTx(tx);
   }
 
   /** Withdraw ETH from escrow. Amount in wei (bigint). */
   async withdrawNative(amountWei) {
     if (!amountWei || BigInt(amountWei) <= 0n) throw new Error('Withdraw amount must be greater than zero');
     const tx = await this._write(() => this.contract.withdrawNativeFromEscrow(amountWei));
-    return tx.wait();
+    return this._waitForTx(tx);
   }
 
   /** Transfer ETH from your escrow to another agent. Amount in wei. */
@@ -356,7 +361,7 @@ export class AgentClient {
     this._validateAddress(toAddress, 'recipient');
     if (!amountWei || BigInt(amountWei) <= 0n) throw new Error('Transfer amount must be greater than zero');
     const tx = await this._write(() => this.contract.transferNativeBetweenAgents(toAddress, amountWei, memo));
-    return tx.wait();
+    return this._waitForTx(tx);
   }
 
   /** Get this agent's native escrow balance (wei). */
@@ -371,7 +376,7 @@ export class AgentClient {
   async depositToken(tokenAddress, amountWei) {
     this._validateAddress(tokenAddress, 'token');
     const tx = await this._write(() => this.contract.depositTokenToEscrow(tokenAddress, amountWei));
-    return tx.wait();
+    return this._waitForTx(tx);
   }
 
   /** Withdraw ERC-20 tokens from escrow. */
@@ -379,7 +384,7 @@ export class AgentClient {
     this._validateAddress(tokenAddress, 'token');
     if (!amountWei || BigInt(amountWei) <= 0n) throw new Error('Withdraw amount must be greater than zero');
     const tx = await this._write(() => this.contract.withdrawTokenFromEscrow(tokenAddress, amountWei));
-    return tx.wait();
+    return this._waitForTx(tx);
   }
 
   /** Transfer ERC-20 tokens to another agent's escrow. */
@@ -388,7 +393,7 @@ export class AgentClient {
     this._validateAddress(toAddress, 'recipient');
     if (!amountWei || BigInt(amountWei) <= 0n) throw new Error('Transfer amount must be greater than zero');
     const tx = await this._write(() => this.contract.transferTokenBetweenAgents(tokenAddress, toAddress, amountWei, memo));
-    return tx.wait();
+    return this._waitForTx(tx);
   }
 
   /** Get this agent's token escrow balance. */
@@ -406,7 +411,7 @@ export class AgentClient {
   async createPaymentRequest(payerAddress, amount, { isNative = true, tokenAddress = ethers.ZeroAddress, description = '' } = {}) {
     this._validateAddress(payerAddress, 'payer');
     const tx = await this._write(() => this.contract.createAgentPaymentRequest(payerAddress, tokenAddress, amount, isNative, description));
-    const receipt = await tx.wait();
+    const receipt = await this._waitForTx(tx);
     return this._extractEventArg(receipt, 'AgentPaymentRequestCreated', 'requestId') ?? receipt;
   }
 
@@ -416,13 +421,13 @@ export class AgentClient {
     if (!req) throw new Error(`Payment request ${requestId} not found`);
     const opts = req.isNative ? { value: req.amount } : {};
     const tx = await this._write(() => this.contract.settleAgentPaymentRequest(requestId, opts));
-    return tx.wait();
+    return this._waitForTx(tx);
   }
 
   /** Cancel a payment request you created. */
   async cancelPaymentRequest(requestId) {
     const tx = await this._write(() => this.contract.cancelAgentPaymentRequest(requestId));
-    return tx.wait();
+    return this._waitForTx(tx);
   }
 
   /** Get details of a payment request. */
@@ -443,13 +448,13 @@ export class AgentClient {
     const value = ethers.parseEther(stakeEth);
     if (value <= 0n) throw new Error('Stake amount must be greater than zero');
     const tx = await this._write(() => this.contract.stakeAndJoin(metadataURI, { value }));
-    return tx.wait();
+    return this._waitForTx(tx);
   }
 
   /** Leave the DAO and reclaim your stake. */
   async leaveDAO() {
     const tx = await this._write(() => this.contract.leaveDAO());
-    return tx.wait();
+    return this._waitForTx(tx);
   }
 
   /** Get minimum stake required to join. */
@@ -462,7 +467,7 @@ export class AgentClient {
   /** Create an economic project. Returns projectId. */
   async createProject(metadataURI, targetBudgetWei, deadlineUnix) {
     const tx = await this._write(() => this.contract.createEconomicProject(metadataURI, targetBudgetWei, deadlineUnix));
-    const receipt = await tx.wait();
+    const receipt = await this._waitForTx(tx);
     return this._extractEventArg(receipt, 'EconomicProjectCreated', 'projectId') ?? receipt;
   }
 
@@ -471,13 +476,13 @@ export class AgentClient {
     const value = ethers.parseEther(amountEth);
     if (value <= 0n) throw new Error('Amount must be greater than zero');
     const tx = await this._write(() => this.contract.fundProject(projectId, { value }));
-    return tx.wait();
+    return this._waitForTx(tx);
   }
 
   /** Apply to contribute to a project. */
   async applyToProject(projectId) {
     const tx = await this._write(() => this.contract.applyToProject(projectId));
-    return tx.wait();
+    return this._waitForTx(tx);
   }
 
   /** Approve a contributor for a project with a revenue share (in bps, 0-10000). */
@@ -491,31 +496,31 @@ export class AgentClient {
       throw new Error('sharesBps must be between 0 and 10000');
     }
     const tx = await this._write(() => this.contract.approveContributor(projectId, contributorAddress, sharesBpsNum));
-    return tx.wait();
+    return this._waitForTx(tx);
   }
 
   /** Mark a project as completed (proposer only). */
   async completeProject(projectId) {
     const tx = await this._write(() => this.contract.completeProject(projectId));
-    return tx.wait();
+    return this._waitForTx(tx);
   }
 
   /** Cancel a project (proposer only). */
   async cancelProject(projectId) {
     const tx = await this._write(() => this.contract.cancelProject(projectId));
-    return tx.wait();
+    return this._waitForTx(tx);
   }
 
   /** Claim your revenue share from a completed project. */
   async claimProjectShare(projectId) {
     const tx = await this._write(() => this.contract.claimProjectShare(projectId));
-    return tx.wait();
+    return this._waitForTx(tx);
   }
 
   /** Refund a funder from a cancelled project. */
   async refundProjectFunder(projectId) {
     const tx = await this._write(() => this.contract.refundProjectFunder(projectId));
-    return tx.wait();
+    return this._waitForTx(tx);
   }
 
   /** Get details of an economic project. */
@@ -547,14 +552,14 @@ export class AgentClient {
       throw new Error('contentHash must be a 32-byte hex string (0x + 64 hex chars)');
     }
     const tx = await this._write(() => this.contract.sendDirectMessage(toAddress, encryptedContent, contentHash));
-    const receipt = await tx.wait();
+    const receipt = await this._waitForTx(tx);
     return this._extractEventArg(receipt, 'DirectMessageSent', 'messageId') ?? receipt;
   }
 
   /** Mark a received message as read. */
   async markMessageRead(messageId) {
     const tx = await this._write(() => this.contract.markMessageRead(messageId));
-    return tx.wait();
+    return this._waitForTx(tx);
   }
 
   /**
@@ -648,7 +653,7 @@ export class AgentClient {
     const amounts = transfers.map(t => t.amount);
     const memos = transfers.map(t => t.memo || '');
     const tx = await this._write(() => this.contract.batchTransferNative(recipients, amounts, memos));
-    return tx.wait();
+    return this._waitForTx(tx);
   }
 
   /**
@@ -659,7 +664,7 @@ export class AgentClient {
   async batchSettlePaymentRequests(requestIds, totalValue) {
     if (!Array.isArray(requestIds) || requestIds.length === 0) throw new Error('requestIds must be a non-empty array');
     const tx = await this._write(() => this.contract.batchSettlePaymentRequests(requestIds, { value: totalValue }));
-    return tx.wait();
+    return this._waitForTx(tx);
   }
 
   // ─── Reputation Engine ──────────────────────────────────────────────────
@@ -704,7 +709,7 @@ export class AgentClient {
   async refreshReputation(address) {
     this._validateAddress(address, 'agent');
     const tx = await this._write(() => this.contract.refreshReputation(address));
-    return tx.wait();
+    return this._waitForTx(tx);
   }
 
   /** Listen for reputation updates. */
