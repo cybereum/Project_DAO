@@ -213,6 +213,22 @@ contract Project_DAO {
     /// @notice Emitted when a kit status changes (e.g. validated, queued, rejected).
     event FeatureKitStatusChanged(uint256 indexed kitId, uint8 newStatus, string reason);
 
+    // --- Pause/Resume events ---
+    event ContractPausedEvent(address indexed by);
+    event ContractResumedEvent(address indexed by);
+
+    // --- Task operation events ---
+    event TaskStatusUpdated(uint256 indexed taskId, string status);
+    event TaskCompleted(uint256 indexed taskId);
+    event TaskAssigned(uint256 indexed taskId, address indexed member);
+
+    // --- Governance config events ---
+    event VotingPeriodChanged(uint256 newPeriod);
+    event MinimumVotingPowerChanged(uint256 newMinimum);
+
+    // --- Task progress events ---
+    event TaskProgressAdded(uint256 indexed taskId, uint256 progressId, uint256 percentageCompleted);
+
     constructor() {
         owner = msg.sender;
         members[owner].isMember = true;
@@ -352,10 +368,12 @@ contract Project_DAO {
 
     function pauseContract() public onlyOwner {
         _paused = true;
+        emit ContractPausedEvent(msg.sender);
     }
 
     function resumeContract() public onlyOwner {
         _paused = false;
+        emit ContractResumedEvent(msg.sender);
     }
 
     // --- Agent, Payments, and Asset Value Transfer ---
@@ -1055,6 +1073,7 @@ contract Project_DAO {
         });
 
         task.progressIds.push(newProgressId);
+        emit TaskProgressAdded(_taskId, newProgressId, _percentageCompleted);
     }
 
     function updateTask(
@@ -1105,6 +1124,7 @@ contract Project_DAO {
         Task storage t = tasks[_taskId - 1];
         require(t.milestoneId < milestones.length, "Invalid milestone ID.");
         t.assignedMember = _member;
+        emit TaskAssigned(_taskId, _member);
     }
 
     function updateTaskStatus(uint256 _taskId, string memory _status) public onlyOwner {
@@ -1112,11 +1132,13 @@ contract Project_DAO {
         Task storage t = tasks[_taskId - 1];
         require(t.milestoneId < milestones.length, "Invalid milestone ID.");
         t.status = _status;
+        emit TaskStatusUpdated(_taskId, _status);
     }
 
     function completeTask(uint256 _taskId) public onlyOwner {
         require(_taskId > 0 && _taskId < currentTaskId, "Invalid task ID.");
         tasks[_taskId - 1].completed = true;
+        emit TaskCompleted(_taskId);
     }
 
     // --- Config ---
@@ -1124,11 +1146,13 @@ contract Project_DAO {
     function changeVotingPeriod(uint256 _newVotingPeriod) public onlyOwner {
         require(_newVotingPeriod > 0, "New voting period should be greater than zero.");
         votingPeriod = _newVotingPeriod;
+        emit VotingPeriodChanged(_newVotingPeriod);
     }
 
     function changeMinimumVotingPower(uint256 _newMinimumVotingPower) public onlyOwner {
         require(_newMinimumVotingPower > 0, "New minimum voting power should be greater than zero.");
         minimumVotingPower = _newMinimumVotingPower;
+        emit MinimumVotingPowerChanged(_newMinimumVotingPower);
     }
 
     // ─── Agent Broadcast ──────────────────────────────────────────────────────

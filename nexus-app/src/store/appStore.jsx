@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { useState, useRef, createContext, useContext, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, createContext, useContext, useCallback, useMemo } from 'react';
 import { BrowserProvider, Contract, isAddress } from 'ethers';
 import { PROJECT_DAO_ABI, PROJECT_DAO_ADDRESS, hasContractConfig } from '../config/contract';
 
@@ -144,6 +144,40 @@ export function useAppState() {
       setWalletConnected(false);
     }
   }, [getBrowserProvider]);
+
+  const disconnectWallet = useCallback(() => {
+    setWalletAddress('');
+    setWalletConnected(false);
+    setAgentProfile(null);
+    setWalletError('');
+  }, []);
+
+  // ─── Wallet event listeners (accountsChanged, chainChanged) ───────────────
+  useEffect(() => {
+    const ethereum = window?.ethereum;
+    if (!ethereum || !walletConnected) return;
+
+    const handleAccountsChanged = (accounts) => {
+      if (!accounts || accounts.length === 0) {
+        disconnectWallet();
+      } else {
+        const newAddress = accounts[0];
+        setWalletAddress(newAddress);
+      }
+    };
+
+    const handleChainChanged = () => {
+      window.location.reload();
+    };
+
+    ethereum.on('accountsChanged', handleAccountsChanged);
+    ethereum.on('chainChanged', handleChainChanged);
+
+    return () => {
+      ethereum.removeListener('accountsChanged', handleAccountsChanged);
+      ethereum.removeListener('chainChanged', handleChainChanged);
+    };
+  }, [walletConnected, disconnectWallet]);
 
   const castVote = useCallback(async (proposalId, vote) => {
     setWalletError('');
@@ -944,7 +978,7 @@ export function useAppState() {
   const appState = useMemo(() => ({
     projects, milestones, proposals, members, companies, nfts, tasks,
     walletConnected, walletAddress, walletError, txPending, syncingProposals,
-    connectWallet, castVote, syncProposalsFromChain,
+    connectWallet, disconnectWallet, castVote, syncProposalsFromChain,
     addProject, addProposal, addCompany, addNft,
     // agent economy
     agentProfile, agentPaymentRequests, agentFeeBps, agentFlatFeeWei,
@@ -971,7 +1005,7 @@ export function useAppState() {
   }), [
     projects, milestones, proposals, members, companies, nfts, tasks,
     walletConnected, walletAddress, walletError, txPending, syncingProposals,
-    connectWallet, castVote, syncProposalsFromChain,
+    connectWallet, disconnectWallet, castVote, syncProposalsFromChain,
     addProject, addProposal, addCompany, addNft,
     agentProfile, agentPaymentRequests, agentFeeBps, agentFlatFeeWei,
     agentTokenBalances, agentActivity, agentActivityLoading,
