@@ -223,8 +223,9 @@ function SuggestionCard({ item, onApply, applying, onSubmitKit, submittingKit })
 // ─── Main page ────────────────────────────────────────────────────────────
 
 export default function NexusAI() {
-  const { submitFeatureKit, txPending } = useApp();
+  const { submitFeatureKit, txPending, walletConnected, walletAddress, getDaoWriteContract } = useApp();
   const [serverOk, setServerOk] = useState(null); // null=checking, true, false
+  const [usageInfo, setUsageInfo] = useState(null);
   const [activeMode, setActiveMode] = useState(null);
   const [loading, setLoading] = useState(false);
   const [streamText, setStreamText] = useState('');
@@ -248,6 +249,14 @@ export default function NexusAI() {
     nexusAI.ping().then(r => setServerOk(!!r?.ok));
   }, []);
 
+  // Sync wallet with AI service and fetch usage info
+  useEffect(() => {
+    if (walletAddress) {
+      nexusAI.setWallet(walletAddress);
+      nexusAI.getUsage(walletAddress).then(setUsageInfo).catch(() => {});
+    }
+  }, [walletAddress]);
+
   const refreshFeedbackInsights = useCallback(async () => {
     const insight = await nexusAI.getFeedbackInsights();
     if (!insight?.error) setFeedbackInsights(insight);
@@ -265,11 +274,26 @@ export default function NexusAI() {
     streamRef.current = '';
     trackEvent('nexus_ai_analyse', { mode });
 
+    // Deduct AI service fee if free tier is exhausted
+    let paymentTxHash;
+    if (usageInfo?.requiresPayment && walletConnected) {
+      try {
+        const contract = await getDaoWriteContract();
+        const tx = await contract.deductAIServiceFee(mode);
+        const receipt = await tx.wait();
+        paymentTxHash = receipt.hash;
+      } catch {
+        setResult({ error: 'AI service fee payment failed. Please ensure your agent escrow is funded.' });
+        setLoading(false);
+        return;
+      }
+    }
+
     // Use streaming so the user sees tokens as they arrive
     const raw = await nexusAI.analyseStream(mode, (chunk) => {
       streamRef.current += chunk;
       setStreamText(streamRef.current);
-    });
+    }, { paymentTxHash });
 
     setLoading(false);
 
@@ -284,7 +308,12 @@ export default function NexusAI() {
       // Not valid JSON — show raw (happens if server error leaked into stream)
       setResult({ raw });
     }
-  }, [refreshFeedbackInsights]);
+
+    // Refresh usage info after analysis
+    if (walletAddress) {
+      nexusAI.getUsage(walletAddress).then(setUsageInfo).catch(() => {});
+    }
+  }, [refreshFeedbackInsights, usageInfo, walletConnected, walletAddress, getDaoWriteContract]);
 
   const submitFeedback = useCallback(async (e) => {
     e.preventDefault();
@@ -524,6 +553,17 @@ export default function NexusAI() {
           <p className="text-xs text-nexus-text-dim">
             Then set <code className="text-nexus-cyan">VITE_NEXUS_AI_URL=http://localhost:3737</code> in <code className="text-nexus-cyan">nexus-app/.env</code>.
           </p>
+        </div>
+      )}
+
+      {/* Usage indicator */}
+      {usageInfo && !usageInfo.error && (
+        <div className="text-xs text-nexus-text-dim flex items-center gap-2">
+          <Zap size={12} className="text-nexus-cyan" />
+          <span>{usageInfo.freeTierRemaining} free analyses remaining today</span>
+          {usageInfo.requiresPayment && (
+            <span className="text-amber-400">· Fund your agent escrow for unlimited access</span>
+          )}
         </div>
       )}
 

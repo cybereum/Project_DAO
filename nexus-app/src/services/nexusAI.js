@@ -14,11 +14,17 @@
 
 const BASE_URL = (import.meta.env.VITE_NEXUS_AI_URL || 'http://localhost:3737').replace(/\/$/, '');
 
+let _wallet = '';
+
 async function safeFetch(path, options = {}) {
   try {
     const res = await fetch(`${BASE_URL}${path}`, {
-      headers: { 'Content-Type': 'application/json' },
       ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-wallet-address': _wallet,
+        ...(options.headers || {}),
+      },
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -34,6 +40,23 @@ async function safeFetch(path, options = {}) {
 }
 
 export const nexusAI = {
+  /**
+   * Store wallet address for subsequent API calls.
+   * @param {string} addr
+   */
+  setWallet(addr) {
+    _wallet = (addr || '').toLowerCase();
+  },
+
+  /**
+   * Fetch usage / quota info for a wallet.
+   * @param {string} [walletAddress]
+   * @returns {{ freeTierRemaining, requiresPayment, ... } | { error }}
+   */
+  async getUsage(walletAddress) {
+    return safeFetch(`/api/usage?wallet=${walletAddress || _wallet || ''}`);
+  },
+
   /**
    * Check if the server is reachable.
    * @returns {{ ok: boolean, error?: string }}
@@ -69,12 +92,14 @@ export const nexusAI = {
    * @param {(text: string) => void} onChunk
    * @returns {Promise<string>}
    */
-  async analyseStream(mode = 'health', onChunk) {
+  async analyseStream(mode = 'health', onChunk, { paymentTxHash } = {}) {
     let raw = '';
     try {
+      const headers = { 'Content-Type': 'application/json', 'x-wallet-address': _wallet };
+      if (paymentTxHash) headers['x-payment-tx'] = paymentTxHash;
       const res = await fetch(`${BASE_URL}/api/analyse`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ mode, stream: true }),
       });
 

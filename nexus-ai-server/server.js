@@ -27,7 +27,138 @@ const FEEDBACK_STORE_PATH = path.join(__dirname, 'data', 'feedback-memory.json')
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
+
+// Simple in-memory rate limiter
+const rateLimitMap = new Map();
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 10;
+
+function rateLimit(req, res, next) {
+  const ip = req.ip || req.connection.remoteAddress;
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+    rateLimitMap.set(ip, { windowStart: now, count: 1 });
+    return next();
+  }
+  entry.count++;
+  if (entry.count > RATE_LIMIT_MAX) {
+    return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+  }
+  return next();
+}
+
+// Clean up stale entries every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of rateLimitMap) {
+    if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS) rateLimitMap.delete(ip);
+  }
+}, 5 * 60_000);
+
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  next();
+});
+
+app.use('/api/', rateLimit);
+
+// API key authentication — permissive in dev (no key = no auth), enforced when env var is set
+const API_KEY = process.env.NEXUS_AI_API_KEY;
+
+function apiAuth(req, res, next) {
+  if (!API_KEY) return next(); // Skip auth if no key configured (dev mode)
+  const provided = req.headers['x-api-key'] || req.query.apiKey;
+  if (provided !== API_KEY) {
+    return res.status(401).json({ error: 'Invalid or missing API key.' });
+  }
+  next();
+}
+
+app.use('/api/', apiAuth);
+
+// ── AI usage tracking: generous free tier + escrow-based premium ──
+const FREE_TIER_DAILY_LIMIT = 5;
+const usageMap = new Map(); // wallet -> { date, count }
+
+function checkFreeTier(key) {
+  if (!key) return { allowed: false, remaining: 0 }; // no identifier = denied
+  const today = new Date().toISOString().slice(0, 10);
+  const entry = usageMap.get(key);
+  if (!entry || entry.date !== today) {
+    return { allowed: true, remaining: FREE_TIER_DAILY_LIMIT };
+  }
+  const remaining = Math.max(0, FREE_TIER_DAILY_LIMIT - entry.count);
+  return { allowed: remaining > 0, remaining };
+}
+
+function recordUsage(key) {
+  if (!key) return;
+  const today = new Date().toISOString().slice(0, 10);
+  const entry = usageMap.get(walletAddress);
+  if (!entry || entry.date !== today) {
+    usageMap.set(walletAddress, { date: today, count: 1 });
+  } else {
+    entry.count++;
+  }
+}
+
+// Clean up stale usage entries daily
+setInterval(() => {
+  const today = new Date().toISOString().slice(0, 10);
+  for (const [wallet, entry] of usageMap) {
+    if (entry.date !== today) usageMap.delete(wallet);
+  }
+}, 60 * 60_000); // every hour
+
+// ── On-chain payment verification ──
+// AIServiceFeeDeducted(address indexed agent, uint256 amount, string serviceType)
+// keccak256("AIServiceFeeDeducted(address,uint256,string)")
+const AI_FEE_EVENT_TOPIC = '0xae0592be0ec5dc0e84cc897c5caab610b0ee5cc800d5102516f6f19c90a1050d';
+const RPC_URL = process.env.RPC_URL || '';
+const VERIFIED_TX_CACHE = new Map(); // txHash -> timestamp (prevent replay)
+
+async function verifyPaymentTx(txHash, expectedWallet) {
+  if (!RPC_URL) return true; // Skip verification if no RPC configured (dev mode)
+  if (!txHash || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) return false;
+  if (VERIFIED_TX_CACHE.has(txHash)) return false; // Prevent replay
+
+  try {
+    const resp = await fetch(RPC_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 1,
+        method: 'eth_getTransactionReceipt',
+        params: [txHash],
+      }),
+    });
+    const { result: receipt } = await resp.json();
+    if (!receipt || receipt.status !== '0x1') return false;
+
+    // Verify the tx sender matches the claimed wallet
+    if (expectedWallet && receipt.from.toLowerCase() !== expectedWallet.toLowerCase()) return false;
+
+    // Check that the receipt contains an AIServiceFeeDeducted event log
+    const hasEvent = receipt.logs.some(log =>
+      log.topics && log.topics[0] && log.topics[0].toLowerCase() === AI_FEE_EVENT_TOPIC
+    );
+    if (!hasEvent) return false;
+
+    VERIFIED_TX_CACHE.set(txHash, Date.now());
+    // Clean old entries (older than 24h)
+    const cutoff = Date.now() - 24 * 60 * 60_000;
+    for (const [hash, ts] of VERIFIED_TX_CACHE) {
+      if (ts < cutoff) VERIFIED_TX_CACHE.delete(hash);
+    }
+    return true;
+  } catch {
+    return true; // On RPC failure, allow (don't block users due to infra issues)
+  }
+}
 
 const client = new Anthropic(); // reads ANTHROPIC_API_KEY from env
 
@@ -384,6 +515,35 @@ app.post('/api/analyse', async (req, res) => {
     return res.status(400).json({ error: 'triage mode requires a non-empty kits[] array in the request body.' });
   }
 
+  if (Array.isArray(kits) && kits.length > 100) {
+    return res.status(400).json({ error: 'Too many kits. Maximum 100.' });
+  }
+
+  // ── Usage metering ──
+  const walletAddress = (req.headers['x-wallet-address'] || '').toLowerCase().trim();
+  const paymentTxHash = (req.headers['x-payment-tx'] || '').trim();
+  const usageKey = walletAddress || req.ip || req.connection.remoteAddress;
+  const freeTier = checkFreeTier(usageKey);
+
+  if (!freeTier.allowed) {
+    if (!paymentTxHash) {
+      return res.status(402).json({
+        error: 'Free tier limit reached. Please ensure your agent escrow is funded.',
+        code: 'PAYMENT_REQUIRED',
+        dailyLimit: FREE_TIER_DAILY_LIMIT,
+        remaining: 0,
+      });
+    }
+    // Verify the payment tx on-chain
+    const valid = await verifyPaymentTx(paymentTxHash, walletAddress);
+    if (!valid) {
+      return res.status(402).json({
+        error: 'Payment verification failed. Please submit a valid AI service fee transaction.',
+        code: 'PAYMENT_INVALID',
+      });
+    }
+  }
+
   const files = await readSourceFiles(modeConfig.files);
   if (!files.length) {
     return res.status(500).json({ error: 'Could not read source files.' });
@@ -420,6 +580,7 @@ app.post('/api/analyse', async (req, res) => {
       const final = await stream.finalMessage();
       const raw = final.content.find(b => b.type === 'text')?.text || '{}';
       res.write(`data: ${JSON.stringify({ done: true, raw })}\n\n`);
+      recordUsage(usageKey);
       res.end();
     } else {
       const response = await client.messages.create({
@@ -438,6 +599,7 @@ app.post('/api/analyse', async (req, res) => {
         parsed = { raw };
       }
 
+      recordUsage(usageKey);
       res.json({
         mode,
         label: modeConfig.label,
@@ -514,6 +676,19 @@ app.get('/api/modes', (_req, res) => {
   );
 });
 
+// ─── /api/usage — check free tier remaining ──────────────────────────────
+
+app.get('/api/usage', (req, res) => {
+  const walletAddress = (req.headers['x-wallet-address'] || req.query.wallet || '').toLowerCase().trim();
+  const usageKey = walletAddress || req.ip || req.connection.remoteAddress;
+  const tier = checkFreeTier(usageKey);
+  res.json({
+    freeTierRemaining: tier.remaining,
+    dailyLimit: FREE_TIER_DAILY_LIMIT,
+    requiresPayment: !tier.allowed,
+  });
+});
+
 // ─── /api/health ──────────────────────────────────────────────────────────
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, version: '1.0.0' }));
@@ -524,6 +699,7 @@ app.post('/api/feedback', async (req, res) => {
   try {
     const payload = normaliseFeedback(req.body || {});
     const store = await loadFeedbackStore();
+    if (store.items.length >= 10000) return res.status(507).json({ error: 'Feedback store is full.' });
     store.items.push(payload);
     await saveFeedbackStore(store);
     const insights = buildFeedbackInsights(store);

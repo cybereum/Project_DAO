@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { useState, useRef, createContext, useContext, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, createContext, useContext, useCallback, useMemo } from 'react';
 import { BrowserProvider, Contract, isAddress } from 'ethers';
 import { PROJECT_DAO_ABI, PROJECT_DAO_ADDRESS, hasContractConfig } from '../config/contract';
 
@@ -145,6 +145,40 @@ export function useAppState() {
     }
   }, [getBrowserProvider]);
 
+  const disconnectWallet = useCallback(() => {
+    setWalletAddress('');
+    setWalletConnected(false);
+    setAgentProfile(null);
+    setWalletError('');
+  }, []);
+
+  // ─── Wallet event listeners (accountsChanged, chainChanged) ───────────────
+  useEffect(() => {
+    const ethereum = window?.ethereum;
+    if (!ethereum || !walletConnected) return;
+
+    const handleAccountsChanged = (accounts) => {
+      if (!accounts || accounts.length === 0) {
+        disconnectWallet();
+      } else {
+        const newAddress = accounts[0];
+        setWalletAddress(newAddress);
+      }
+    };
+
+    const handleChainChanged = () => {
+      window.location.reload();
+    };
+
+    ethereum.on('accountsChanged', handleAccountsChanged);
+    ethereum.on('chainChanged', handleChainChanged);
+
+    return () => {
+      ethereum.removeListener('accountsChanged', handleAccountsChanged);
+      ethereum.removeListener('chainChanged', handleChainChanged);
+    };
+  }, [walletConnected, disconnectWallet]);
+
   const castVote = useCallback(async (proposalId, vote) => {
     setWalletError('');
     const contract = await getDaoWriteContract();
@@ -203,9 +237,12 @@ export function useAppState() {
       const countNumber = Number(count);
       if (!Number.isFinite(countNumber) || countNumber <= 0) return;
 
-      const chainProposals = await Promise.all(
+      const results = await Promise.allSettled(
         Array.from({ length: countNumber }, (_, i) => contract.getProposal(i + 1))
       );
+      const chainProposals = results
+        .filter((r) => r.status === 'fulfilled')
+        .map((r) => r.value);
 
       setProposals((prev) => {
         const merged = [...prev];
@@ -289,7 +326,7 @@ export function useAppState() {
       ]);
       setAgentFeeBps(Number(feeBps));
       setAgentFlatFeeWei(flatFee.toString());
-    } catch { /* no-op if contract not configured */ }
+    } catch (err) { console.error('loadAgentConfig failed:', err); }
   }, [getDaoReadContract]);
 
   const loadAgentProfile = useCallback(async () => {
@@ -303,7 +340,7 @@ export function useAppState() {
         metadataURI: profile.metadataURI,
         nativeEscrowBalance: profile.nativeEscrowBalance.toString(),
       });
-    } catch { /* no-op */ }
+    } catch (err) { console.error('loadAgentProfile failed:', err); }
   }, [walletAddress, getDaoReadContract]);
 
   const agentRegister = useCallback(async (metadataURI) => {
@@ -419,7 +456,7 @@ export function useAppState() {
     try {
       const bal = await contract.agentTokenEscrowBalances(walletAddress, tokenAddress);
       setAgentTokenBalances(prev => ({ ...prev, [tokenAddress.toLowerCase()]: bal.toString() }));
-    } catch { /* no-op */ }
+    } catch (err) { console.error('agentLoadTokenBalance failed:', err); }
   }, [walletAddress, getDaoReadContract]);
 
   const loadAgentActivity = useCallback(async ({ forceFull = false } = {}) => {
@@ -491,7 +528,8 @@ export function useAppState() {
       setAgentActivity(deduped.slice(0, 40));
       lastAgentActivityBlockRef.current = latestBlock;
       lastAgentActivityWalletRef.current = walletAddress;
-    } catch {
+    } catch (err) {
+      console.error('loadAgentActivity failed:', err);
       setAgentActivity([]);
     } finally {
       setAgentActivityLoading(false);
@@ -648,7 +686,7 @@ export function useAppState() {
         }))
       );
       return Number(total);
-    } catch { /* no-op if contract not configured */ }
+    } catch (err) { console.error('loadEconomicProjects failed:', err); }
     finally { setEconomicProjectsLoading(false); }
   }, [getDaoReadContract]);
 
@@ -809,7 +847,7 @@ export function useAppState() {
             contentHash: m.contentHash, encryptedContent: m.encryptedContent,
             timestamp: Number(m.timestamp), readByRecipient: m.readByRecipient,
           };
-        } catch { return null; }
+        } catch (err) { console.error('hydrateMessages failed:', err); return null; }
       })
     );
     return messages.filter(Boolean);
@@ -824,7 +862,7 @@ export function useAppState() {
       const [messageIds, total] = await contract.getInbox(offset, limit);
       const messages = await hydrateMessages(contract, messageIds);
       setInbox({ messages, total: Number(total) });
-    } catch { setInbox({ messages: [], total: 0 }); }
+    } catch (err) { console.error('loadInbox failed:', err); setInbox({ messages: [], total: 0 }); }
     finally { setInboxLoading(false); }
   }, [walletAddress, getDaoReadContract, hydrateMessages]);
 
@@ -837,7 +875,7 @@ export function useAppState() {
       const [messageIds, total] = await contract.getConversation(otherAgent, offset, limit);
       const messages = await hydrateMessages(contract, messageIds);
       setConversationMessages({ messages, total: Number(total) });
-    } catch { setConversationMessages({ messages: [], total: 0 }); }
+    } catch (err) { console.error('loadConversation failed:', err); setConversationMessages({ messages: [], total: 0 }); }
     finally { setConversationLoading(false); }
   }, [walletAddress, getDaoReadContract, hydrateMessages]);
 
@@ -897,7 +935,7 @@ export function useAppState() {
         }))
       );
       return Number(total);
-    } catch { /* no-op if contract not configured */ }
+    } catch (err) { console.error('loadFeatureKits failed:', err); }
     finally { setFeatureKitsLoading(false); }
   }, [getDaoReadContract]);
 
@@ -940,8 +978,9 @@ export function useAppState() {
   const appState = useMemo(() => ({
     projects, milestones, proposals, members, companies, nfts, tasks,
     walletConnected, walletAddress, walletError, txPending, syncingProposals,
-    connectWallet, castVote, syncProposalsFromChain,
+    connectWallet, disconnectWallet, castVote, syncProposalsFromChain,
     addProject, addProposal, addCompany, addNft,
+    getDaoWriteContract,
     // agent economy
     agentProfile, agentPaymentRequests, agentFeeBps, agentFlatFeeWei,
     agentTokenBalances, agentActivity, agentActivityLoading,
@@ -967,8 +1006,9 @@ export function useAppState() {
   }), [
     projects, milestones, proposals, members, companies, nfts, tasks,
     walletConnected, walletAddress, walletError, txPending, syncingProposals,
-    connectWallet, castVote, syncProposalsFromChain,
+    connectWallet, disconnectWallet, castVote, syncProposalsFromChain,
     addProject, addProposal, addCompany, addNft,
+    getDaoWriteContract,
     agentProfile, agentPaymentRequests, agentFeeBps, agentFlatFeeWei,
     agentTokenBalances, agentActivity, agentActivityLoading,
     loadAgentConfig, loadAgentProfile, setAgentPaymentRequests,

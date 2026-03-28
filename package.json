@@ -2,6 +2,9 @@
   "name": "project-dao",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "test": "hardhat test",
     "test:coverage": "hardhat coverage"

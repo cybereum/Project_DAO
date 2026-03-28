@@ -1431,6 +1431,465 @@ describe("Access Control & Edge Cases", () => {
   });
 });
 
+// ─── Task Management ────────────────────────────────────────────────────────
+
+describe("Task management", () => {
+  // Helper: deploy + create a milestone so tasks can reference it
+  async function deployWithMilestone() {
+    const ctx = await deploy();
+    const futureDate = Math.floor(Date.now() / 1000) + 86400;
+    await ctx.dao.createMilestone("Milestone 1", futureDate);
+    return ctx;
+  }
+
+  // Helper: deploy + milestone + task
+  async function deployWithTask() {
+    const ctx = await deployWithMilestone();
+    await ctx.dao.addMember(ctx.alice.address, 10);
+    await ctx.dao.createTask("Task 1", 9999999999, 0, ctx.alice.address, "open");
+    return ctx;
+  }
+
+  it("owner can assign a task to a member", async () => {
+    const ctx = await deployWithTask();
+    const { dao, bob } = ctx;
+    await dao.addMember(bob.address, 10);
+    await dao.assignTask(1, bob.address);
+    // Verify by reading task via getTasksForMilestone
+    const tasks = await dao.getTasksForMilestone(0);
+    expect(tasks[0].assignedMember).to.equal(bob.address);
+  });
+
+  it("assignTask reverts for non-member address", async () => {
+    const { dao, bob } = await deployWithTask();
+    await expect(dao.assignTask(1, bob.address)).to.be.revertedWith("Invalid member address.");
+  });
+
+  it("assignTask reverts for non-owner caller", async () => {
+    const { dao, alice } = await deployWithTask();
+    await expect(
+      dao.connect(alice).assignTask(1, alice.address)
+    ).to.be.revertedWith("Only the owner can call this function.");
+  });
+
+  it("assignTask reverts for invalid task ID", async () => {
+    const { dao, alice } = await deployWithTask();
+    await expect(dao.assignTask(999, alice.address)).to.be.revertedWith("Invalid task ID.");
+  });
+
+  it("owner can update task status", async () => {
+    const { dao } = await deployWithTask();
+    await dao.updateTaskStatus(1, "in-progress");
+    const tasks = await dao.getTasksForMilestone(0);
+    expect(tasks[0].status).to.equal("in-progress");
+  });
+
+  it("updateTaskStatus reverts for non-owner", async () => {
+    const { dao, alice } = await deployWithTask();
+    await expect(
+      dao.connect(alice).updateTaskStatus(1, "done")
+    ).to.be.revertedWith("Only the owner can call this function.");
+  });
+
+  it("updateTaskStatus reverts for invalid task ID", async () => {
+    const { dao } = await deployWithTask();
+    await expect(dao.updateTaskStatus(999, "done")).to.be.revertedWith("Invalid task ID.");
+  });
+
+  it("owner can complete a task", async () => {
+    const { dao } = await deployWithTask();
+    await dao.completeTask(1);
+    const tasks = await dao.getTasksForMilestone(0);
+    expect(tasks[0].completed).to.be.true;
+  });
+
+  it("completeTask reverts for non-owner", async () => {
+    const { dao, alice } = await deployWithTask();
+    await expect(
+      dao.connect(alice).completeTask(1)
+    ).to.be.revertedWith("Only the owner can call this function.");
+  });
+
+  it("completeTask reverts for invalid task ID", async () => {
+    const { dao } = await deployWithTask();
+    await expect(dao.completeTask(999)).to.be.revertedWith("Invalid task ID.");
+  });
+
+  it("owner can delete a task", async () => {
+    const { dao } = await deployWithTask();
+    await expect(dao.deleteTask(1)).to.emit(dao, "TaskDeleted").withArgs(1n);
+  });
+
+  it("deleteTask reverts for non-owner", async () => {
+    const { dao, alice } = await deployWithTask();
+    await expect(
+      dao.connect(alice).deleteTask(1)
+    ).to.be.revertedWith("Only the owner can call this function.");
+  });
+
+  it("deleteTask reverts for invalid task ID", async () => {
+    const { dao } = await deployWithTask();
+    await expect(dao.deleteTask(999)).to.be.revertedWith("Invalid task ID.");
+  });
+
+  it("getTasksForMilestone returns tasks for a given milestone", async () => {
+    const { dao, alice } = await deployWithTask();
+    // Create a second task on the same milestone
+    await dao.createTask("Task 2", 9999999999, 0, alice.address, "open");
+    const tasks = await dao.getTasksForMilestone(0);
+    expect(tasks.length).to.equal(2);
+    expect(tasks[0].description).to.equal("Task 1");
+    expect(tasks[1].description).to.equal("Task 2");
+  });
+
+  it("getTasksForMilestone reverts for invalid milestone ID", async () => {
+    const { dao } = await deployWithTask();
+    await expect(dao.getTasksForMilestone(999)).to.be.revertedWith("Invalid milestone ID.");
+  });
+});
+
+// ─── Governance Config ──────────────────────────────────────────────────────
+
+describe("Governance config", () => {
+  it("owner can change voting period", async () => {
+    const { dao } = await deploy();
+    await dao.changeVotingPeriod(14 * 24 * 60 * 60); // 14 days
+    expect(await dao.votingPeriod()).to.equal(BigInt(14 * 24 * 60 * 60));
+  });
+
+  it("changeVotingPeriod reverts for non-owner", async () => {
+    const { dao, alice } = await deploy();
+    await expect(
+      dao.connect(alice).changeVotingPeriod(1000)
+    ).to.be.revertedWith("Only the owner can call this function.");
+  });
+
+  it("changeVotingPeriod reverts on zero value", async () => {
+    const { dao } = await deploy();
+    await expect(dao.changeVotingPeriod(0)).to.be.revertedWith(
+      "New voting period should be greater than zero."
+    );
+  });
+
+  it("owner can change minimum voting power", async () => {
+    const { dao } = await deploy();
+    await dao.changeMinimumVotingPower(50);
+    expect(await dao.minimumVotingPower()).to.equal(50n);
+  });
+
+  it("changeMinimumVotingPower reverts for non-owner", async () => {
+    const { dao, alice } = await deploy();
+    await expect(
+      dao.connect(alice).changeMinimumVotingPower(50)
+    ).to.be.revertedWith("Only the owner can call this function.");
+  });
+
+  it("changeMinimumVotingPower reverts on zero value", async () => {
+    const { dao } = await deploy();
+    await expect(dao.changeMinimumVotingPower(0)).to.be.revertedWith(
+      "New minimum voting power should be greater than zero."
+    );
+  });
+});
+
+// ─── Proposal Disputes ──────────────────────────────────────────────────────
+
+describe("Proposal disputes", () => {
+  // Helper: deploy + milestone + proposal (not yet executed)
+  async function deployWithProposal() {
+    const ctx = await deploy();
+    const futureDate = Math.floor(Date.now() / 1000) + 86400;
+    await ctx.dao.createMilestone("Milestone 1", futureDate);
+    // Owner is a member assigned to milestone 0
+    await ctx.dao.createProposal("Disputable proposal", [0]);
+    return ctx;
+  }
+
+  it("member can dispute a proposal that has not been executed", async () => {
+    const { dao, owner } = await deployWithProposal();
+    // Owner is milestone-assigned member — can dispute
+    await dao.disputeProposal(1, "I disagree with this proposal");
+    const dispute = await dao.proposalDisputes(1);
+    expect(dispute.id).to.equal(1n);
+    expect(dispute.proposalId).to.equal(1n);
+    expect(dispute.resolved).to.be.false;
+  });
+
+  it("disputeProposal reverts for non-member", async () => {
+    const { dao, alice } = await deployWithProposal();
+    await expect(
+      dao.connect(alice).disputeProposal(1, "dispute")
+    ).to.be.revertedWith("Only members can call this function.");
+  });
+
+  it("disputeProposal reverts for invalid proposal ID", async () => {
+    const { dao } = await deployWithProposal();
+    await expect(dao.disputeProposal(999, "dispute")).to.be.revertedWith("Invalid proposal ID.");
+  });
+
+  it("member can vote on a dispute", async () => {
+    const { dao, owner } = await deployWithProposal();
+    await dao.disputeProposal(1, "I disagree");
+    await dao.voteOnProposalDispute(1, true);
+    const dispute = await dao.proposalDisputes(1);
+    expect(dispute.votesFor).to.equal(1n);
+  });
+
+  it("voteOnProposalDispute reverts for non-member", async () => {
+    const { dao, alice } = await deployWithProposal();
+    await dao.disputeProposal(1, "I disagree");
+    await expect(
+      dao.connect(alice).voteOnProposalDispute(1, true)
+    ).to.be.revertedWith("Only members can call this function.");
+  });
+
+  it("voteOnProposalDispute reverts if already voted", async () => {
+    const { dao } = await deployWithProposal();
+    await dao.disputeProposal(1, "I disagree");
+    await dao.voteOnProposalDispute(1, true);
+    await expect(dao.voteOnProposalDispute(1, false)).to.be.revertedWith(
+      "Already voted on this dispute."
+    );
+  });
+
+  it("voteOnProposalDispute reverts for non-existent dispute", async () => {
+    const { dao } = await deployWithProposal();
+    await expect(dao.voteOnProposalDispute(999, true)).to.be.revertedWith(
+      "Dispute does not exist."
+    );
+  });
+
+  it("owner can resolve dispute after deadline", async () => {
+    const { dao } = await deployWithProposal();
+    await dao.disputeProposal(1, "I disagree");
+    // Advance time past dispute deadline (votingPeriod / 2 = 3.5 days)
+    await ethers.provider.send("evm_increaseTime", [4 * 24 * 60 * 60]);
+    await ethers.provider.send("evm_mine");
+    await dao.resolveProposalDispute(1, true);
+    const dispute = await dao.proposalDisputes(1);
+    expect(dispute.resolved).to.be.true;
+  });
+
+  it("resolveProposalDispute reverts for non-owner", async () => {
+    const { dao, alice } = await deployWithProposal();
+    await dao.addMember(alice.address, 10);
+    await dao.disputeProposal(1, "I disagree");
+    await ethers.provider.send("evm_increaseTime", [4 * 24 * 60 * 60]);
+    await ethers.provider.send("evm_mine");
+    await expect(
+      dao.connect(alice).resolveProposalDispute(1, true)
+    ).to.be.revertedWith("Only the owner can call this function.");
+  });
+
+  it("resolveProposalDispute reverts before deadline", async () => {
+    const { dao } = await deployWithProposal();
+    await dao.disputeProposal(1, "I disagree");
+    await expect(dao.resolveProposalDispute(1, true)).to.be.revertedWith(
+      "The voting period has not yet ended."
+    );
+  });
+
+  it("resolveProposalDispute in favor marks proposal as passed", async () => {
+    const { dao } = await deployWithProposal();
+    await dao.disputeProposal(1, "I disagree");
+    await ethers.provider.send("evm_increaseTime", [4 * 24 * 60 * 60]);
+    await ethers.provider.send("evm_mine");
+    await dao.resolveProposalDispute(1, true);
+    const p = await dao.getProposal(1);
+    expect(p.proposalPassed).to.be.true;
+  });
+
+  it("resolveProposalDispute not in favor does not mark proposal as passed", async () => {
+    const { dao } = await deployWithProposal();
+    await dao.disputeProposal(1, "I disagree");
+    await ethers.provider.send("evm_increaseTime", [4 * 24 * 60 * 60]);
+    await ethers.provider.send("evm_mine");
+    await dao.resolveProposalDispute(1, false);
+    const p = await dao.getProposal(1);
+    expect(p.proposalPassed).to.be.false;
+  });
+});
+
+// ─── Member Query ───────────────────────────────────────────────────────────
+
+describe("Member query functions", () => {
+  it("getMember returns correct data for a member", async () => {
+    const { dao, alice } = await deploy();
+    await dao.addMember(alice.address, 25);
+    const m = await dao.getMember(alice.address);
+    expect(m.votingPower).to.equal(25n);
+    expect(m.isMember).to.be.true;
+  });
+
+  it("getMember returns default data for non-member", async () => {
+    const { dao, alice } = await deploy();
+    const m = await dao.getMember(alice.address);
+    expect(m.isMember).to.be.false;
+    expect(m.votingPower).to.equal(0n);
+  });
+
+  it("getMemberCount returns correct count", async () => {
+    const { dao, alice, bob } = await deploy();
+    // Owner is added as member in constructor
+    const initialCount = await dao.getMemberCount();
+    await dao.addMember(alice.address, 10);
+    expect(await dao.getMemberCount()).to.equal(initialCount + 1n);
+    await dao.addMember(bob.address, 10);
+    expect(await dao.getMemberCount()).to.equal(initialCount + 2n);
+  });
+
+  it("getMemberCount decreases when member is removed", async () => {
+    const { dao, alice } = await deploy();
+    await dao.addMember(alice.address, 10);
+    const countBefore = await dao.getMemberCount();
+    await dao.removeMember(alice.address);
+    expect(await dao.getMemberCount()).to.equal(countBefore - 1n);
+  });
+});
+
+// ─── Token Escrow: Withdraw ─────────────────────────────────────────────────
+
+describe("withdrawTokenFromEscrow", () => {
+  async function deployWithToken() {
+    const ctx = await deploy();
+    const Token = await ethers.getContractFactory("MockERC20");
+    const token = await Token.deploy();
+    await token.waitForDeployment();
+    return { ...ctx, token };
+  }
+
+  it("agent can withdraw tokens from escrow", async () => {
+    const { dao, owner, treasury, token } = await deployWithToken();
+    await dao.registerAgent("ipfs://owner");
+
+    const depositAmount = ethers.parseEther("100");
+    await token.approve(await dao.getAddress(), depositAmount);
+    await dao.depositTokenToEscrow(await token.getAddress(), depositAmount);
+
+    const depositFee = depositAmount * 5n / 10000n;
+    const escrowBalance = depositAmount - depositFee;
+
+    const withdrawAmount = ethers.parseEther("50");
+    const withdrawFee = withdrawAmount * 5n / 10000n;
+
+    const ownerBalBefore = await token.balanceOf(owner.address);
+    await dao.withdrawTokenFromEscrow(await token.getAddress(), withdrawAmount);
+    const ownerBalAfter = await token.balanceOf(owner.address);
+
+    expect(ownerBalAfter - ownerBalBefore).to.equal(withdrawAmount - withdrawFee);
+
+    const remainingEscrow = await dao.getAgentTokenBalance(owner.address, await token.getAddress());
+    expect(remainingEscrow).to.equal(escrowBalance - withdrawAmount);
+  });
+
+  it("withdrawTokenFromEscrow sends fee to treasury", async () => {
+    const { dao, owner, treasury, token } = await deployWithToken();
+    await dao.registerAgent("ipfs://owner");
+
+    const depositAmount = ethers.parseEther("100");
+    await token.approve(await dao.getAddress(), depositAmount);
+    await dao.depositTokenToEscrow(await token.getAddress(), depositAmount);
+
+    const withdrawAmount = ethers.parseEther("50");
+    const withdrawFee = withdrawAmount * 5n / 10000n;
+
+    const treasuryBefore = await token.balanceOf(treasury.address);
+    await dao.withdrawTokenFromEscrow(await token.getAddress(), withdrawAmount);
+    const treasuryAfter = await token.balanceOf(treasury.address);
+
+    expect(treasuryAfter - treasuryBefore).to.equal(withdrawFee);
+  });
+
+  it("withdrawTokenFromEscrow reverts on insufficient balance", async () => {
+    const { dao, owner, token } = await deployWithToken();
+    await dao.registerAgent("ipfs://owner");
+
+    const depositAmount = ethers.parseEther("10");
+    await token.approve(await dao.getAddress(), depositAmount);
+    await dao.depositTokenToEscrow(await token.getAddress(), depositAmount);
+
+    await expect(
+      dao.withdrawTokenFromEscrow(await token.getAddress(), ethers.parseEther("100"))
+    ).to.be.revertedWith("Insufficient token escrow balance.");
+  });
+
+  it("withdrawTokenFromEscrow reverts for non-agent", async () => {
+    const { dao, alice, token } = await deployWithToken();
+    await expect(
+      dao.connect(alice).withdrawTokenFromEscrow(await token.getAddress(), ethers.parseEther("1"))
+    ).to.be.revertedWith("Only registered agents can call this function.");
+  });
+});
+
+// ─── getInbox ───────────────────────────────────────────────────────────────
+
+describe("getInbox", () => {
+  const sampleHash = ethers.keccak256(ethers.toUtf8Bytes("inbox test"));
+
+  it("returns correct message IDs after receiving multiple messages", async () => {
+    const { dao, owner, alice, bob } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    await dao.addMember(bob.address, 10);
+    await dao.connect(bob).registerAgent("ipfs://bob");
+
+    const hash1 = ethers.keccak256(ethers.toUtf8Bytes("msg1"));
+    const hash2 = ethers.keccak256(ethers.toUtf8Bytes("msg2"));
+    const hash3 = ethers.keccak256(ethers.toUtf8Bytes("msg3"));
+
+    // owner sends to alice (msg 1), bob sends to alice (msg 2), owner sends to alice (msg 3)
+    await dao.sendDirectMessage(alice.address, "enc1", hash1);
+    await dao.connect(bob).sendDirectMessage(alice.address, "enc2", hash2);
+    await dao.sendDirectMessage(alice.address, "enc3", hash3);
+
+    const [ids, total] = await dao.connect(alice).getInbox(0, 10);
+    expect(total).to.equal(3n);
+    expect(ids.length).to.equal(3);
+    expect(ids[0]).to.equal(1n);
+    expect(ids[1]).to.equal(2n);
+    expect(ids[2]).to.equal(3n);
+  });
+
+  it("getInbox returns empty for agent with no messages", async () => {
+    const { dao, owner } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    const [ids, total] = await dao.getInbox(0, 10);
+    expect(total).to.equal(0n);
+    expect(ids.length).to.equal(0);
+  });
+
+  it("getInbox paginates correctly", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+
+    for (let i = 0; i < 5; i++) {
+      const hash = ethers.keccak256(ethers.toUtf8Bytes(`inbox-msg${i}`));
+      await dao.sendDirectMessage(alice.address, `enc${i}`, hash);
+    }
+
+    const [page1, total] = await dao.connect(alice).getInbox(0, 3);
+    expect(total).to.equal(5n);
+    expect(page1.length).to.equal(3);
+
+    const [page2] = await dao.connect(alice).getInbox(3, 3);
+    expect(page2.length).to.equal(2);
+  });
+
+  it("getInbox does not include sent messages", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+
+    // owner sends to alice
+    await dao.sendDirectMessage(alice.address, "enc1", sampleHash);
+    // owner's inbox should be empty (they sent, not received)
+    const [ids, total] = await dao.getInbox(0, 10);
+    expect(total).to.equal(0n);
+    expect(ids.length).to.equal(0);
+  });
+});
+
 // ─── Economic Projects: Edge Cases ──────────────────────────────────────────
 
 describe("Economic Projects: Edge Cases", () => {
@@ -1522,5 +1981,113 @@ describe("Economic Projects: Edge Cases", () => {
     const contributors = await dao.getProjectContributors(1n);
     expect(contributors.length).to.equal(1);
     expect(contributors[0]).to.equal(alice.address);
+  });
+});
+
+// ─── AI Service Fee ──────────────────────────────────────────────────────────
+
+describe("AI Service Fee", () => {
+  it("defaults to 0.0003 ETH", async () => {
+    const { dao } = await deploy();
+    expect(await dao.aiServiceFeeWei()).to.equal(ethers.parseEther("0.0003"));
+  });
+
+  it("owner can update AI service fee", async () => {
+    const { dao } = await deploy();
+    await dao.setAIServiceFee(ethers.parseEther("0.001"));
+    expect(await dao.aiServiceFeeWei()).to.equal(ethers.parseEther("0.001"));
+  });
+
+  it("emits AIServiceFeeUpdated on config change", async () => {
+    const { dao } = await deploy();
+    const newFee = ethers.parseEther("0.0005");
+    await expect(dao.setAIServiceFee(newFee))
+      .to.emit(dao, "AIServiceFeeUpdated")
+      .withArgs(newFee);
+  });
+
+  it("non-owner cannot update AI service fee", async () => {
+    const { dao, alice } = await deploy();
+    await expect(dao.connect(alice).setAIServiceFee(1000))
+      .to.be.revertedWith("Only the owner can call this function.");
+  });
+
+  it("registered agent can deduct AI service fee from escrow", async () => {
+    const { dao, alice, treasury } = await deploy();
+    await memberAgent(dao, alice);
+    const depositAmount = ethers.parseEther("0.01");
+    await dao.connect(alice).depositNativeToEscrow({ value: depositAmount });
+
+    const treasuryBefore = await ethers.provider.getBalance(treasury.address);
+    await dao.connect(alice).deductAIServiceFee("health");
+    const treasuryAfter = await ethers.provider.getBalance(treasury.address);
+
+    const fee = ethers.parseEther("0.0003");
+    expect(treasuryAfter - treasuryBefore).to.equal(fee);
+  });
+
+  it("emits AIServiceFeeDeducted and CybereumFeePaid", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("0.01") });
+
+    const fee = ethers.parseEther("0.0003");
+    await expect(dao.connect(alice).deductAIServiceFee("security"))
+      .to.emit(dao, "AIServiceFeeDeducted")
+      .withArgs(alice.address, fee, "security")
+      .and.to.emit(dao, "CybereumFeePaid");
+  });
+
+  it("reduces agent escrow balance by fee amount", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    const deposit = ethers.parseEther("0.01");
+    await dao.connect(alice).depositNativeToEscrow({ value: deposit });
+
+    const depositFee = (deposit * 5n) / 10000n;
+    const escrowBefore = deposit - depositFee;
+
+    await dao.connect(alice).deductAIServiceFee("ux");
+    const profile = await dao.getAgentProfile(alice.address);
+    const aiFee = ethers.parseEther("0.0003");
+    expect(profile.nativeEscrowBalance).to.equal(escrowBefore - aiFee);
+  });
+
+  it("reverts when escrow balance is insufficient", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    // No deposit — escrow is 0
+    await expect(dao.connect(alice).deductAIServiceFee("health"))
+      .to.be.revertedWith("Insufficient escrow balance for AI service fee.");
+  });
+
+  it("reverts for non-registered agent", async () => {
+    const { dao, alice } = await deploy();
+    await expect(dao.connect(alice).deductAIServiceFee("health"))
+      .to.be.revertedWith("Only registered agents can call this function.");
+  });
+
+  it("reverts when contract is paused", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("0.01") });
+    await dao.pauseContract();
+    await expect(dao.connect(alice).deductAIServiceFee("health"))
+      .to.be.reverted;
+  });
+
+  it("owner can set fee to zero (free AI)", async () => {
+    const { dao } = await deploy();
+    await dao.setAIServiceFee(0);
+    expect(await dao.aiServiceFeeWei()).to.equal(0n);
+  });
+
+  it("deductAIServiceFee reverts when fee is zero", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("0.01") });
+    await dao.setAIServiceFee(0);
+    await expect(dao.connect(alice).deductAIServiceFee("health"))
+      .to.be.revertedWith("AI service fee not configured.");
   });
 });

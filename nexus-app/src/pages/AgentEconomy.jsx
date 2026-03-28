@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion as Motion } from 'framer-motion';
-import { parseEther, formatEther, parseUnits, keccak256, toUtf8Bytes } from 'ethers';
+import { parseEther, formatEther, parseUnits, keccak256, toUtf8Bytes, isAddress } from 'ethers';
 import {
   Bot, Wallet, ArrowUpRight, ArrowDownLeft, Send, FileText,
   CheckCircle, XCircle, Clock, Zap, Info, Copy, ExternalLink,
@@ -163,6 +163,7 @@ export default function AgentEconomy() {
 
   const [lastTx, setLastTx] = useState('');
   const [lastTxAction, setLastTxAction] = useState('');
+  const [feedback, setFeedback] = useState('');
   const [tab, setTab] = useState('overview');
 
   // Register form
@@ -222,6 +223,7 @@ export default function AgentEconomy() {
   }, [walletConnected, refresh]);
 
   const handle = (fn, action = 'transacted') => async (...args) => {
+    setFeedback('');
     const hash = await fn(...args);
     if (hash) {
       setLastTx(hash);
@@ -303,6 +305,9 @@ export default function AgentEconomy() {
 
       {walletError && (
         <div className="p-3 rounded-lg border border-red-500/30 bg-red-500/10 text-sm text-red-400">{walletError}</div>
+      )}
+      {feedback && (
+        <div className="p-3 rounded-lg border border-red-500/30 bg-red-500/10 text-sm text-red-400">{feedback}</div>
       )}
       {lastTx && (
         <div>
@@ -538,15 +543,18 @@ export default function AgentEconomy() {
                   <Field label="Memo (optional)" placeholder="Service payment"
                     value={tokenTransferMemo} onChange={e => setTokenTransferMemo(e.target.value)} />
                   <Btn loading={txPending} disabled={!walletConnected || !tokenAddr || !tokenTransferTo || !tokenTransferAmt}
-                    onClick={() => handle(
-                      () => agentTransferToken(
-                        tokenAddr,
-                        tokenTransferTo,
-                        parseUnits(tokenTransferAmt || '0', parseInt(tokenDecimals) || 18),
-                        tokenTransferMemo
-                      ),
-                      'transferred tokens to an agent'
-                    )()}>
+                    onClick={() => {
+                      if (!isAddress(tokenTransferTo)) { setFeedback('Invalid recipient address'); return; }
+                      handle(
+                        () => agentTransferToken(
+                          tokenAddr,
+                          tokenTransferTo,
+                          parseUnits(tokenTransferAmt || '0', parseInt(tokenDecimals) || 18),
+                          tokenTransferMemo
+                        ),
+                        'transferred tokens to an agent'
+                      )();
+                    }}>
                     <Send size={14} /> Transfer Tokens
                   </Btn>
                 </div>
@@ -579,10 +587,13 @@ export default function AgentEconomy() {
                 value={assetMemo} onChange={e => setAssetMemo(e.target.value)} />
               <Btn loading={txPending}
                 disabled={!walletConnected || !assetContract || !assetTokenId || !assetRecipient}
-                onClick={() => handle(
-                  () => agentTransferAsset(assetContract, assetRecipient, BigInt(assetTokenId || '0'), assetMemo, BigInt(agentFlatFeeWei)),
-                  'transferred an NFT asset to an agent'
-                )()}>
+                onClick={() => {
+                  if (!isAddress(assetRecipient)) { setFeedback('Invalid recipient address'); return; }
+                  handle(
+                    () => agentTransferAsset(assetContract, assetRecipient, BigInt(assetTokenId || '0'), assetMemo, BigInt(agentFlatFeeWei)),
+                    'transferred an NFT asset to an agent'
+                  )();
+                }}>
                 <Image size={14} /> Transfer Asset
               </Btn>
             </div>
@@ -610,7 +621,10 @@ export default function AgentEconomy() {
               <Field label="Memo (optional)" placeholder="Payment for task #42" value={transferMemo} onChange={e => setTransferMemo(e.target.value)} />
               <FeePreview amountEth={transferAmt} feeBps={agentFeeBps} />
               <Btn loading={txPending} disabled={!walletConnected || !transferTo || !transferAmt}
-                onClick={() => handle(agentTransferNative, 'transferred ETH to an agent')(transferTo, parseEther(transferAmt || '0'), transferMemo)}>
+                onClick={() => {
+                  if (!isAddress(transferTo)) { setFeedback('Invalid recipient address'); return; }
+                  handle(agentTransferNative, 'transferred ETH to an agent')(transferTo, parseEther(transferAmt || '0'), transferMemo);
+                }}>
                 <Send size={14} /> Transfer
               </Btn>
             </div>
@@ -638,13 +652,16 @@ export default function AgentEconomy() {
               <Field label="Description / Invoice" placeholder="Design work for milestone #3" value={prDesc} onChange={e => setPrDesc(e.target.value)} />
               <FeePreview amountEth={prAmount} feeBps={agentFeeBps} />
               <Btn loading={txPending} disabled={!walletConnected || !prPayer || !prAmount}
-                onClick={() => handle(agentCreatePaymentRequest)(
+                onClick={() => {
+                  if (!isAddress(prPayer)) { setFeedback('Invalid payer address'); return; }
+                  handle(agentCreatePaymentRequest)(
                   prPayer,
                   '0x0000000000000000000000000000000000000000',
                   parseEther(prAmount || '0'),
                   true,
                   prDesc
-                )}>
+                );
+                }}>
                 <FileText size={14} /> Create Request
               </Btn>
             </div>
@@ -700,6 +717,7 @@ export default function AgentEconomy() {
                 </div>
                 <Btn loading={txPending} disabled={!walletConnected || !msgRecipient || !msgContent}
                   onClick={async () => {
+                    if (!isAddress(msgRecipient)) { setFeedback('Invalid recipient address'); return; }
                     const contentHash = keccak256(toUtf8Bytes(msgContent));
                     const hash = await agentSendMessage(msgRecipient, msgContent, contentHash);
                     if (hash) {
