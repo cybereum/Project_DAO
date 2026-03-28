@@ -319,8 +319,8 @@ contract Project_DAO {
     // --- Role Management ---
 
     function getRole(uint256 _roleId) public view returns (bytes32, uint256) {
-        require(_roleId < roles.length, "Invalid role ID.");
-        Role storage role = roles[_roleId];
+        require(_roleId > 0 && _roleId <= roles.length, "Invalid role ID.");
+        Role storage role = roles[_roleId - 1];
         return (role.name, role.members.length);
     }
 
@@ -375,6 +375,7 @@ contract Project_DAO {
     }
 
     function assignRole(address _member, uint256 _roleId) public onlyOwner whenNotPaused {
+        require(_member != address(0), "Invalid member address.");
         require(_roleId > 0 && _roleId <= roles.length, "Invalid role ID.");
         Role storage role = roles[_roleId - 1];
         require(!findMemberInRole(role, _member), "Member already has this role.");
@@ -385,6 +386,7 @@ contract Project_DAO {
     }
 
     function assignRoleToMilestone(address _member, uint256 _milestoneId, bytes32 _role) public onlyOwner whenNotPaused {
+        require(_member != address(0), "Invalid member address.");
         require(_milestoneId < milestones.length, "Invalid milestone ID.");
         require(
             _role == keccak256(abi.encodePacked("milestone_owner")) ||
@@ -727,7 +729,7 @@ contract Project_DAO {
         emit AgentNativeEscrowWithdrawn(msg.sender, netAmount);
     }
 
-    function transferNativeBetweenAgents(address _to, uint256 _amount, string memory _memo) public onlyRegisteredAgent whenNotPaused {
+    function transferNativeBetweenAgents(address _to, uint256 _amount, string memory _memo) public onlyRegisteredAgent whenNotPaused nonReentrant {
         require(agents[_to].registered, "Recipient must be a registered agent.");
         require(_to != msg.sender, "Cannot transfer to self.");
         require(_amount > 0, "Amount must be greater than zero.");
@@ -814,6 +816,7 @@ contract Project_DAO {
         payable
         onlyRegisteredAgent
         whenNotPaused
+        nonReentrant
     {
         require(_assetContract != address(0), "Invalid asset contract address.");
         require(agents[_to].registered, "Recipient must be a registered agent.");
@@ -939,7 +942,7 @@ contract Project_DAO {
         emit MemberRemoved(_member);
     }
 
-    function grantPrivilege(address _member, uint256 _privilege) public onlyOwner {
+    function grantPrivilege(address _member, uint256 _privilege) public onlyOwner whenNotPaused {
         require(members[_member].isMember, "Invalid member address.");
         members[_member].privileges.push(_privilege);
     }
@@ -1227,7 +1230,7 @@ contract Project_DAO {
         uint256 _milestoneId,
         address _assignedMember,
         string memory _status
-    ) public onlyOwner {
+    ) public onlyOwner whenNotPaused {
         require(_milestoneId < milestones.length, "Invalid milestone ID.");
         tasks.push(
             Task({
@@ -1250,7 +1253,7 @@ contract Project_DAO {
         string memory _description,
         bool _completed,
         uint256 _percentageCompleted
-    ) public onlyRole("reporter") {
+    ) public onlyRole("reporter") whenNotPaused {
         require(_taskId > 0 && _taskId < currentTaskId, "Invalid task ID.");
         require(_percentageCompleted <= 100, "Percentage completed must be between 0 and 100.");
 
@@ -1274,7 +1277,7 @@ contract Project_DAO {
         uint256 _deadline,
         address _assignedMember,
         string memory _status
-    ) public onlyOwner {
+    ) public onlyOwner whenNotPaused {
         require(_taskId > 0 && _taskId < currentTaskId, "Invalid task ID.");
         Task storage t = tasks[_taskId - 1];
         require(t.milestoneId < milestones.length, "Invalid milestone ID.");
@@ -1285,7 +1288,7 @@ contract Project_DAO {
         emit TaskUpdated(_taskId, _description, _deadline, _assignedMember, _status);
     }
 
-    function deleteTask(uint256 _taskId) public onlyOwner {
+    function deleteTask(uint256 _taskId) public onlyOwner whenNotPaused {
         require(_taskId > 0 && _taskId < currentTaskId, "Invalid task ID.");
         delete tasks[_taskId - 1];
         emit TaskDeleted(_taskId);
@@ -1310,7 +1313,7 @@ contract Project_DAO {
         return milestoneTasks;
     }
 
-    function assignTask(uint256 _taskId, address _member) public onlyOwner {
+    function assignTask(uint256 _taskId, address _member) public onlyOwner whenNotPaused {
         require(members[_member].isMember, "Invalid member address.");
         require(_taskId > 0 && _taskId < currentTaskId, "Invalid task ID.");
         Task storage t = tasks[_taskId - 1];
@@ -1319,7 +1322,7 @@ contract Project_DAO {
         emit TaskAssigned(_taskId, _member);
     }
 
-    function updateTaskStatus(uint256 _taskId, string memory _status) public onlyOwner {
+    function updateTaskStatus(uint256 _taskId, string memory _status) public onlyOwner whenNotPaused {
         require(_taskId > 0 && _taskId < currentTaskId, "Invalid task ID.");
         Task storage t = tasks[_taskId - 1];
         require(t.milestoneId < milestones.length, "Invalid milestone ID.");
@@ -1327,7 +1330,7 @@ contract Project_DAO {
         emit TaskStatusUpdated(_taskId, _status);
     }
 
-    function completeTask(uint256 _taskId) public onlyOwner {
+    function completeTask(uint256 _taskId) public onlyOwner whenNotPaused {
         require(_taskId > 0 && _taskId < currentTaskId, "Invalid task ID.");
         tasks[_taskId - 1].completed = true;
         emit TaskCompleted(_taskId);
@@ -1335,13 +1338,13 @@ contract Project_DAO {
 
     // --- Config ---
 
-    function changeVotingPeriod(uint256 _newVotingPeriod) public onlyOwner {
+    function changeVotingPeriod(uint256 _newVotingPeriod) public onlyOwner whenNotPaused {
         require(_newVotingPeriod > 0, "New voting period should be greater than zero.");
         votingPeriod = _newVotingPeriod;
         emit VotingPeriodChanged(_newVotingPeriod);
     }
 
-    function changeMinimumVotingPower(uint256 _newMinimumVotingPower) public onlyOwner {
+    function changeMinimumVotingPower(uint256 _newMinimumVotingPower) public onlyOwner whenNotPaused {
         require(_newMinimumVotingPower > 0, "New minimum voting power should be greater than zero.");
         minimumVotingPower = _newMinimumVotingPower;
         emit MinimumVotingPowerChanged(_newMinimumVotingPower);
@@ -1425,7 +1428,7 @@ contract Project_DAO {
         address _to,
         string calldata _encryptedContent,
         bytes32 _contentHash
-    ) external onlyRegisteredAgent whenNotPaused {
+    ) external onlyRegisteredAgent whenNotPaused nonReentrant {
         require(agents[_to].registered, "Recipient must be a registered agent.");
         require(_to != msg.sender, "Cannot message self.");
         require(bytes(_encryptedContent).length > 0, "Message content required.");
@@ -1674,7 +1677,7 @@ contract Project_DAO {
     function stakeAndJoin(string calldata metadataURI) external payable whenNotPaused {
         require(!members[msg.sender].isMember, "Already a member.");
         require(msg.value >= minStakeToJoin, "Insufficient stake.");
-        require(bytes(metadataURI).length > 0, "Metadata URI cannot be empty.");
+        require(bytes(metadataURI).length > 0, "metadataURI required.");
         require(bytes(metadataURI).length <= 512, "Metadata URI too long.");
 
         uint256 fee = _collectNativeFee(msg.value, "stakeAndJoin");
@@ -1712,14 +1715,8 @@ contract Project_DAO {
         require(members[msg.sender].isMember, "Not a member.");
         require(memberStakes[msg.sender] > 0 || msg.sender != owner, "Owner cannot leave.");
 
-        // Prevent leaving while proposer on an active/open project
-        for (uint256 i = 1; i < currentProjectId; i++) {
-            EconomicProject storage p = economicProjects[i];
-            if (p.proposer == msg.sender &&
-                (p.status == ProjectStatus.Open || p.status == ProjectStatus.Active)) {
-                revert("Cancel active projects before leaving.");
-            }
-        }
+        // Prevent leaving while proposer on an active/open project (O(1) check)
+        require(activeProjectCount[msg.sender] == 0, "Cancel active projects before leaving.");
 
         uint256 stake = memberStakes[msg.sender];
         memberStakes[msg.sender] = 0;
@@ -1773,6 +1770,7 @@ contract Project_DAO {
     mapping(uint256 => address[])                   private _projectFunders;
     mapping(uint256 => mapping(address => uint256)) public projectFunderContributions;
     mapping(uint256 => mapping(address => bool))    public projectShareClaimed;
+    mapping(address => uint256)                     public activeProjectCount; // tracks Open/Active projects per proposer
 
     event EconomicProjectCreated(uint256 indexed projectId, address indexed proposer, string metadataURI, uint256 targetBudget, uint256 deadline);
     event EconomicProjectFunded(uint256 indexed projectId, address indexed funder, uint256 netAmount);
@@ -1813,6 +1811,7 @@ contract Project_DAO {
             funderCount:      0
         });
 
+        activeProjectCount[msg.sender]++;
         emit EconomicProjectCreated(id, msg.sender, metadataURI, targetBudget, deadline);
         return id;
     }
@@ -1876,6 +1875,7 @@ contract Project_DAO {
     ) external whenNotPaused {
         EconomicProject storage proj = economicProjects[projectId];
         require(proj.id != 0, "Project not found.");
+        require(contributor != address(0), "Invalid contributor address.");
         require(msg.sender == proj.proposer, "Only the proposer can approve contributors.");
         require(projectApplications[projectId][contributor], "Contributor has not applied.");
         require(!projectApplicationApproved[projectId][contributor], "Already approved.");
@@ -1915,6 +1915,9 @@ contract Project_DAO {
         );
 
         proj.status = ProjectStatus.Completed;
+        if (activeProjectCount[proj.proposer] > 0) {
+            activeProjectCount[proj.proposer]--;
+        }
         emit EconomicProjectCompleted(projectId);
     }
 
@@ -1967,6 +1970,9 @@ contract Project_DAO {
         );
 
         proj.status = ProjectStatus.Cancelled;
+        if (activeProjectCount[proj.proposer] > 0) {
+            activeProjectCount[proj.proposer]--;
+        }
         emit EconomicProjectCancelled(projectId);
     }
 
@@ -2084,7 +2090,7 @@ contract Project_DAO {
         address[] calldata recipients,
         uint256[] calldata amounts,
         string[] calldata memos
-    ) external onlyRegisteredAgent whenNotPaused {
+    ) external onlyRegisteredAgent whenNotPaused nonReentrant {
         require(recipients.length == amounts.length && amounts.length == memos.length, "Array length mismatch.");
         require(recipients.length > 0, "Empty batch.");
         require(recipients.length <= 50, "Batch too large.");
