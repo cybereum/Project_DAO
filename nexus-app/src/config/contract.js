@@ -125,6 +125,26 @@ export const PROJECT_DAO_ABI = [
   'event EconomicProjectCancelled(uint256 indexed projectId)',
   'event EconomicProjectShareClaimed(uint256 indexed projectId, address indexed contributor, uint256 amount)',
   'event EconomicProjectFunderRefunded(uint256 indexed projectId, address indexed funder, uint256 amount)',
+
+  // ─── Commerce Blackhole ─────────────────────────────────────────────────
+  'function messagingFeeWei() external view returns (uint256)',
+  'function exitFeeBps() external view returns (uint256)',
+  'function totalCommerceVolume() external view returns (uint256)',
+  'function totalFeesCollected() external view returns (uint256)',
+  'function agentCommerceVolume(address) external view returns (uint256)',
+  'function agentFeesPaid(address) external view returns (uint256)',
+  'function getBlackholeMetrics() external view returns (uint256 _totalCommerceVolume, uint256 _totalFeesCollected, uint256 _agentCount, uint256 _feeBps, uint256 _exitFeeBps, uint256 _messagingFeeWei, uint256 _aiServiceFeeWei, uint256 _assetTransferFlatFeeWei)',
+  'function getAgentCommerceMetrics(address _agent) external view returns (uint256 volume, uint256 feesPaid, uint256 escrowBalance, bool registered)',
+  'function previewExitFee(uint256 _amount) external view returns (uint256 fee, uint256 net)',
+  'function setCommerceBlackholeConfig(uint256 _messagingFeeWei, uint256 _exitFeeBps) external',
+  'function batchTransferNative(address[] calldata recipients, uint256[] calldata amounts, string[] calldata memos) external',
+  'function batchSettlePaymentRequests(uint256[] calldata requestIds) external payable',
+  'event CommerceVolumeRecorded(address indexed agent, uint256 amount, string context)',
+  'event MessagingFeePaid(address indexed sender, uint256 fee)',
+  'event BlackholeBatchTransfer(address indexed from, uint256 transferCount, uint256 totalVolume, uint256 totalFees)',
+  'event BlackholeBatchSettle(address indexed settler, uint256 settleCount, uint256 totalVolume, uint256 totalFees)',
+  'event ExitFeePaid(address indexed agent, uint256 fee, string context)',
+  'event CommerceBlackholeConfigUpdated(uint256 messagingFeeWei, uint256 exitFeeBps)',
 ];
 
 export function hasContractConfig() {

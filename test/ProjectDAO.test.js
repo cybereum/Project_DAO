@@ -523,7 +523,7 @@ describe("stakeAndJoin / leaveDAO", () => {
     expect(registered).to.be.true;
   });
 
-  it("alice can stake and join, then leave to reclaim stake", async () => {
+  it("alice can stake and join, then leave to reclaim stake (minus exit fee)", async () => {
     const { dao, alice } = await deploy();
     const stake = ethers.parseEther("0.1");
     await dao.connect(alice).stakeAndJoin("ipfs://alice", { value: stake });
@@ -539,10 +539,13 @@ describe("stakeAndJoin / leaveDAO", () => {
     const gasCost = receipt.gasUsed * receipt.gasPrice;
     const balAfter = await ethers.provider.getBalance(alice.address);
 
-    const fee = stake * 5n / 10000n;
-    const netStake = stake - fee;
-    // Balance after = before + netStake refund - gas
-    expect(balAfter - balBefore + gasCost).to.be.closeTo(netStake, ethers.parseEther("0.0001"));
+    const joinFee = stake * 5n / 10000n;
+    const netStake = stake - joinFee;
+    // Exit fee (3 bps) deducted from netStake on leave
+    const exitFee = netStake * 3n / 10000n;
+    const refund = netStake - exitFee;
+    // Balance after = before + refund - gas
+    expect(balAfter - balBefore + gasCost).to.be.closeTo(refund, ethers.parseEther("0.0001"));
 
     const mAfter = await dao.members(alice.address);
     expect(mAfter.isMember).to.be.false;
@@ -618,14 +621,16 @@ describe("Economic projects", () => {
     // owner completes
     await dao.completeProject(1n);
 
-    // alice claims
+    // alice claims — exit fee is deducted from payout
     const aliceBefore = await ethers.provider.getBalance(alice.address);
     const tx = await dao.connect(alice).claimProjectShare(1n);
     const receipt = await tx.wait();
     const gasCost = receipt.gasUsed * receipt.gasPrice;
     const aliceAfter = await ethers.provider.getBalance(alice.address);
 
-    const expectedPayout = netFunded * 5000n / 10000n;
+    const grossPayout = netFunded * 5000n / 10000n;
+    const exitFee = grossPayout * 3n / 10000n; // 3 bps exit fee
+    const expectedPayout = grossPayout - exitFee;
     expect(aliceAfter - aliceBefore + gasCost).to.be.closeTo(
       expectedPayout, ethers.parseEther("0.0001")
     );
@@ -722,6 +727,8 @@ describe("Secure direct messaging", () => {
     const { dao, owner, alice } = await deploy();
     await dao.registerAgent("ipfs://owner");
     await memberAgent(dao, alice);
+    // Fund escrow for messaging fee
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("0.01") });
 
     await dao.sendDirectMessage(alice.address, "encrypted-payload-abc", sampleHash);
     const m = await dao.getDirectMessage(1n);
@@ -736,6 +743,7 @@ describe("Secure direct messaging", () => {
     const { dao, owner, alice } = await deploy();
     await dao.registerAgent("ipfs://owner");
     await memberAgent(dao, alice);
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("0.01") });
 
     await expect(dao.sendDirectMessage(alice.address, "enc-data", sampleHash))
       .to.emit(dao, "DirectMessageSent")
@@ -746,6 +754,7 @@ describe("Secure direct messaging", () => {
     const { dao, owner, alice } = await deploy();
     await dao.registerAgent("ipfs://owner");
     await memberAgent(dao, alice);
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("0.01") });
     await dao.sendDirectMessage(alice.address, "enc-data", sampleHash);
 
     const m = await dao.connect(alice).getDirectMessage(1n);
@@ -758,6 +767,7 @@ describe("Secure direct messaging", () => {
     await memberAgent(dao, alice);
     await dao.addMember(bob.address, 10);
     await dao.connect(bob).registerAgent("ipfs://bob");
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("0.01") });
     await dao.sendDirectMessage(alice.address, "enc-data", sampleHash);
 
     await expect(dao.connect(bob).getDirectMessage(1n)).to.be.revertedWith(
@@ -769,6 +779,7 @@ describe("Secure direct messaging", () => {
     const { dao, owner, alice } = await deploy();
     await dao.registerAgent("ipfs://owner");
     await memberAgent(dao, alice);
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("0.01") });
     await dao.sendDirectMessage(alice.address, "enc-data", sampleHash);
 
     await dao.connect(alice).markMessageRead(1n);
@@ -780,6 +791,7 @@ describe("Secure direct messaging", () => {
     const { dao, owner, alice } = await deploy();
     await dao.registerAgent("ipfs://owner");
     await memberAgent(dao, alice);
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("0.01") });
     await dao.sendDirectMessage(alice.address, "enc-data", sampleHash);
 
     await expect(dao.connect(alice).markMessageRead(1n))
@@ -791,6 +803,7 @@ describe("Secure direct messaging", () => {
     const { dao, owner, alice } = await deploy();
     await dao.registerAgent("ipfs://owner");
     await memberAgent(dao, alice);
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("0.01") });
     await dao.sendDirectMessage(alice.address, "enc-data", sampleHash);
 
     await expect(dao.markMessageRead(1n)).to.be.revertedWith(
@@ -801,6 +814,7 @@ describe("Secure direct messaging", () => {
   it("cannot message self", async () => {
     const { dao, owner } = await deploy();
     await dao.registerAgent("ipfs://owner");
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("0.01") });
 
     await expect(
       dao.sendDirectMessage(owner.address, "enc", sampleHash)
@@ -810,6 +824,7 @@ describe("Secure direct messaging", () => {
   it("cannot message unregistered agent", async () => {
     const { dao, owner, alice } = await deploy();
     await dao.registerAgent("ipfs://owner");
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("0.01") });
 
     await expect(
       dao.sendDirectMessage(alice.address, "enc", sampleHash)
@@ -820,6 +835,7 @@ describe("Secure direct messaging", () => {
     const { dao, owner, alice } = await deploy();
     await dao.registerAgent("ipfs://owner");
     await memberAgent(dao, alice);
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("0.01") });
 
     await expect(
       dao.sendDirectMessage(alice.address, "", sampleHash)
@@ -830,6 +846,7 @@ describe("Secure direct messaging", () => {
     const { dao, owner, alice } = await deploy();
     await dao.registerAgent("ipfs://owner");
     await memberAgent(dao, alice);
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("0.01") });
 
     await expect(
       dao.sendDirectMessage(alice.address, "enc", ethers.ZeroHash)
@@ -840,6 +857,9 @@ describe("Secure direct messaging", () => {
     const { dao, owner, alice } = await deploy();
     await dao.registerAgent("ipfs://owner");
     await memberAgent(dao, alice);
+    // Fund both agents' escrow for messaging fees
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("0.01") });
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("0.01") });
 
     const hash1 = ethers.keccak256(ethers.toUtf8Bytes("msg1"));
     const hash2 = ethers.keccak256(ethers.toUtf8Bytes("msg2"));
@@ -866,6 +886,7 @@ describe("Secure direct messaging", () => {
     const { dao, owner, alice } = await deploy();
     await dao.registerAgent("ipfs://owner");
     await memberAgent(dao, alice);
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("0.1") });
 
     for (let i = 0; i < 5; i++) {
       const hash = ethers.keccak256(ethers.toUtf8Bytes(`msg${i}`));
@@ -883,6 +904,7 @@ describe("Secure direct messaging", () => {
     const { dao, owner, alice } = await deploy();
     await dao.registerAgent("ipfs://owner");
     await memberAgent(dao, alice);
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("0.01") });
 
     await dao.sendDirectMessage(alice.address, "enc1", ethers.keccak256(ethers.toUtf8Bytes("m1")));
     await dao.sendDirectMessage(alice.address, "enc2", ethers.keccak256(ethers.toUtf8Bytes("m2")));
@@ -1832,6 +1854,8 @@ describe("getInbox", () => {
     await memberAgent(dao, alice);
     await dao.addMember(bob.address, 10);
     await dao.connect(bob).registerAgent("ipfs://bob");
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("0.1") });
+    await dao.connect(bob).depositNativeToEscrow({ value: ethers.parseEther("0.1") });
 
     const hash1 = ethers.keccak256(ethers.toUtf8Bytes("msg1"));
     const hash2 = ethers.keccak256(ethers.toUtf8Bytes("msg2"));
@@ -1862,6 +1886,7 @@ describe("getInbox", () => {
     const { dao, owner, alice } = await deploy();
     await dao.registerAgent("ipfs://owner");
     await memberAgent(dao, alice);
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("0.1") });
 
     for (let i = 0; i < 5; i++) {
       const hash = ethers.keccak256(ethers.toUtf8Bytes(`inbox-msg${i}`));
@@ -1880,6 +1905,7 @@ describe("getInbox", () => {
     const { dao, owner, alice } = await deploy();
     await dao.registerAgent("ipfs://owner");
     await memberAgent(dao, alice);
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("0.01") });
 
     // owner sends to alice
     await dao.sendDirectMessage(alice.address, "enc1", sampleHash);
@@ -1918,8 +1944,9 @@ describe("Economic Projects: Edge Cases", () => {
     const gasCost = receipt.gasUsed * receipt.gasPrice;
     const aliceAfter = await ethers.provider.getBalance(alice.address);
 
-    // Refund amount is the net contribution (after fee was already deducted on fund)
-    expect(aliceAfter - aliceBefore + gasCost).to.equal(netFunded);
+    // Refund amount is the net contribution minus exit fee (3 bps)
+    const exitFee = netFunded * 3n / 10000n;
+    expect(aliceAfter - aliceBefore + gasCost).to.be.closeTo(netFunded - exitFee, ethers.parseEther("0.0001"));
   });
 
   it("cannot fund a cancelled project", async () => {
@@ -2089,5 +2116,256 @@ describe("AI Service Fee", () => {
     await dao.setAIServiceFee(0);
     await expect(dao.connect(alice).deductAIServiceFee("health"))
       .to.be.revertedWith("AI service fee not configured.");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ███ COMMERCE BLACKHOLE TESTS ████████████████████████████████████████████████
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("Commerce Blackhole: Configuration", () => {
+  it("defaults: messagingFeeWei=0.0001 ETH, exitFeeBps=3", async () => {
+    const { dao } = await deploy();
+    expect(await dao.messagingFeeWei()).to.equal(ethers.parseEther("0.0001"));
+    expect(await dao.exitFeeBps()).to.equal(3n);
+  });
+
+  it("owner can update blackhole config", async () => {
+    const { dao } = await deploy();
+    await dao.setCommerceBlackholeConfig(ethers.parseEther("0.0005"), 10);
+    expect(await dao.messagingFeeWei()).to.equal(ethers.parseEther("0.0005"));
+    expect(await dao.exitFeeBps()).to.equal(10n);
+  });
+
+  it("non-owner cannot update blackhole config", async () => {
+    const { dao, alice } = await deploy();
+    await expect(
+      dao.connect(alice).setCommerceBlackholeConfig(0, 5)
+    ).to.be.revertedWith("Only the owner can call this function.");
+  });
+
+  it("reverts if exitFeeBps below minimum", async () => {
+    const { dao } = await deploy();
+    await expect(
+      dao.setCommerceBlackholeConfig(0, 0)
+    ).to.be.revertedWith("Exit fee cannot be below minimum.");
+  });
+
+  it("reverts if exitFeeBps exceeds 1%", async () => {
+    const { dao } = await deploy();
+    await expect(
+      dao.setCommerceBlackholeConfig(0, 101)
+    ).to.be.revertedWith("Exit fee cannot exceed 1%.");
+  });
+
+  it("previewExitFee returns correct values", async () => {
+    const { dao } = await deploy();
+    const amount = ethers.parseEther("1");
+    const [fee, net] = await dao.previewExitFee(amount);
+    expect(fee).to.equal(amount * 3n / 10000n);
+    expect(net).to.equal(amount - fee);
+  });
+});
+
+describe("Commerce Blackhole: Volume Tracking", () => {
+  it("tracks volume on deposits", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    const amount = ethers.parseEther("1");
+    await dao.connect(alice).depositNativeToEscrow({ value: amount });
+
+    expect(await dao.totalCommerceVolume()).to.equal(amount);
+    expect(await dao.agentCommerceVolume(alice.address)).to.equal(amount);
+    const fee = amount * 5n / 10000n;
+    expect(await dao.totalFeesCollected()).to.equal(fee);
+    expect(await dao.agentFeesPaid(alice.address)).to.equal(fee);
+  });
+
+  it("getBlackholeMetrics returns protocol-wide stats", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1") });
+
+    const metrics = await dao.getBlackholeMetrics();
+    expect(metrics._totalCommerceVolume).to.equal(ethers.parseEther("1"));
+    expect(metrics._totalFeesCollected).to.be.gt(0n);
+    expect(metrics._feeBps).to.equal(5n);
+    expect(metrics._exitFeeBps).to.equal(3n);
+    expect(metrics._messagingFeeWei).to.equal(ethers.parseEther("0.0001"));
+  });
+
+  it("getAgentCommerceMetrics returns per-agent stats", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1") });
+
+    const metrics = await dao.getAgentCommerceMetrics(alice.address);
+    expect(metrics.volume).to.equal(ethers.parseEther("1"));
+    expect(metrics.feesPaid).to.be.gt(0n);
+    expect(metrics.registered).to.be.true;
+  });
+});
+
+describe("Commerce Blackhole: Messaging Fee", () => {
+  const sampleHash = ethers.keccak256(ethers.toUtf8Bytes("blackhole test"));
+
+  it("deducts messaging fee from sender escrow", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    const deposit = ethers.parseEther("0.01");
+    await dao.depositNativeToEscrow({ value: deposit });
+    const depositFee = deposit * 5n / 10000n;
+    const escrowBefore = deposit - depositFee;
+
+    await dao.sendDirectMessage(alice.address, "hello", sampleHash);
+
+    const msgFee = await dao.messagingFeeWei();
+    const [,,escrowAfter] = await dao.getAgentProfile(owner.address);
+    expect(escrowAfter).to.equal(escrowBefore - msgFee);
+  });
+
+  it("emits MessagingFeePaid event", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("0.01") });
+
+    const msgFee = await dao.messagingFeeWei();
+    await expect(dao.sendDirectMessage(alice.address, "hello", sampleHash))
+      .to.emit(dao, "MessagingFeePaid")
+      .withArgs(owner.address, msgFee);
+  });
+
+  it("reverts if insufficient escrow for messaging fee", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    // No escrow deposit
+    await expect(
+      dao.sendDirectMessage(alice.address, "hello", sampleHash)
+    ).to.be.revertedWith("Insufficient escrow for messaging fee.");
+  });
+});
+
+describe("Commerce Blackhole: Exit Fees", () => {
+  it("claimProjectShare deducts exit fee", async () => {
+    const { dao, owner, alice, treasury } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    const block = await ethers.provider.getBlock("latest");
+    const deadline = block.timestamp + 86400;
+    await dao.createEconomicProject("ipfs://proj", ethers.parseEther("1"), deadline);
+    const fundAmt = ethers.parseEther("1");
+    await dao.connect(owner).fundProject(1n, { value: fundAmt });
+    const fundFee = fundAmt * 5n / 10000n;
+    const netFunded = fundAmt - fundFee;
+    await dao.connect(alice).applyToProject(1n);
+    await dao.approveContributor(1n, alice.address, 10000); // 100%
+    await dao.completeProject(1n);
+
+    const treasuryBefore = await ethers.provider.getBalance(treasury.address);
+    await dao.connect(alice).claimProjectShare(1n);
+    const treasuryAfter = await ethers.provider.getBalance(treasury.address);
+
+    // Exit fee should have been paid to treasury
+    const exitFee = netFunded * 3n / 10000n;
+    expect(treasuryAfter - treasuryBefore).to.equal(exitFee);
+  });
+
+  it("leaveDAO deducts exit fee from stake refund", async () => {
+    const { dao, alice, treasury } = await deploy();
+    const stake = ethers.parseEther("1");
+    await dao.connect(alice).stakeAndJoin("ipfs://alice", { value: stake });
+    const joinFee = stake * 5n / 10000n;
+    const netStake = stake - joinFee;
+
+    const treasuryBefore = await ethers.provider.getBalance(treasury.address);
+    await dao.connect(alice).leaveDAO();
+    const treasuryAfter = await ethers.provider.getBalance(treasury.address);
+
+    const exitFee = netStake * 3n / 10000n;
+    expect(treasuryAfter - treasuryBefore).to.equal(exitFee);
+  });
+});
+
+describe("Commerce Blackhole: Batch Operations", () => {
+  it("batchTransferNative sends to multiple agents with fees", async () => {
+    const { dao, owner, alice, bob, treasury } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+
+    const deposit = ethers.parseEther("1");
+    await dao.depositNativeToEscrow({ value: deposit });
+
+    const amt1 = ethers.parseEther("0.1");
+    const amt2 = ethers.parseEther("0.2");
+
+    const treasuryBefore = await ethers.provider.getBalance(treasury.address);
+    const tx = await dao.batchTransferNative(
+      [alice.address, bob.address],
+      [amt1, amt2],
+      ["payment1", "payment2"]
+    );
+    const treasuryAfter = await ethers.provider.getBalance(treasury.address);
+
+    // Verify fees collected
+    const fee1 = amt1 * 5n / 10000n;
+    const fee2 = amt2 * 5n / 10000n;
+    expect(treasuryAfter - treasuryBefore).to.be.gt(0n);
+
+    // Verify recipients got net amounts
+    const [,,aliceEscrow] = await dao.getAgentProfile(alice.address);
+    const [,,bobEscrow] = await dao.getAgentProfile(bob.address);
+    expect(aliceEscrow).to.equal(amt1 - fee1);
+    expect(bobEscrow).to.equal(amt2 - fee2);
+
+    // Verify event emitted
+    await expect(tx).to.emit(dao, "BlackholeBatchTransfer");
+  });
+
+  it("batchTransferNative reverts on array mismatch", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1") });
+
+    await expect(
+      dao.connect(alice).batchTransferNative(
+        [alice.address],
+        [ethers.parseEther("0.1"), ethers.parseEther("0.2")],
+        ["memo"]
+      )
+    ).to.be.revertedWith("Array length mismatch.");
+  });
+
+  it("batchTransferNative reverts on empty batch", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await expect(
+      dao.connect(alice).batchTransferNative([], [], [])
+    ).to.be.revertedWith("Empty batch.");
+  });
+
+  it("batchSettlePaymentRequests settles multiple requests", async () => {
+    const { dao, owner, alice } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+
+    const amt = ethers.parseEther("0.1");
+    // Alice creates 2 payment requests to owner
+    await dao.connect(alice).createAgentPaymentRequest(owner.address, ethers.ZeroAddress, amt, true, "invoice 1");
+    await dao.connect(alice).createAgentPaymentRequest(owner.address, ethers.ZeroAddress, amt, true, "invoice 2");
+
+    const totalAmt = amt * 2n;
+    const tx = await dao.batchSettlePaymentRequests([1n, 2n], { value: totalAmt });
+
+    // Both should be settled
+    const req1 = await dao.agentPaymentRequests(1n);
+    const req2 = await dao.agentPaymentRequests(2n);
+    expect(req1.status).to.equal(1n); // Settled
+    expect(req2.status).to.equal(1n); // Settled
+
+    await expect(tx).to.emit(dao, "BlackholeBatchSettle");
   });
 });

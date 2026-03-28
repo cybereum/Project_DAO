@@ -27,6 +27,7 @@ const FeatureKits = lazy(() => import('./pages/FeatureKits'));
 const AgentReadiness = lazy(() => import('./pages/AgentReadiness'));
 const AgentMessages = lazy(() => import('./pages/AgentMessages'));
 const OwnerDashboard = lazy(() => import('./pages/OwnerDashboard'));
+const CommerceBlackhole = lazy(() => import('./pages/CommerceBlackhole'));
 
 function AppShell({ children }) {
   const location = useLocation();
@@ -75,6 +76,7 @@ export default function App() {
           <Route path="/agent-readiness" element={<AgentReadiness />} />
           <Route path="/messages" element={<AgentMessages />} />
           <Route path="/owner-dashboard" element={<OwnerDashboard />} />
+          <Route path="/commerce-blackhole" element={<CommerceBlackhole />} />
         </Routes>
         </Suspense>
       </AppShell>

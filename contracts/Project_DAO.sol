@@ -165,6 +165,20 @@ contract Project_DAO {
     uint256 public aiServiceFeeWei = 0.0003 ether;
     address public cybereumTreasury;
 
+    // ─── Commerce Blackhole State ───────────────────────────────────────────
+    /// @notice Fee charged per direct message sent (from sender's escrow).
+    uint256 public messagingFeeWei = 0.0001 ether;
+    /// @notice Exit fee in bps charged when value leaves the protocol (claims, refunds, leave).
+    uint256 public exitFeeBps = 3;
+    /// @notice Total protocol commerce volume (all value movements, cumulative).
+    uint256 public totalCommerceVolume;
+    /// @notice Total fees ever collected by the protocol.
+    uint256 public totalFeesCollected;
+    /// @notice Per-agent cumulative commerce volume.
+    mapping(address => uint256) public agentCommerceVolume;
+    /// @notice Per-agent total fees paid to the protocol.
+    mapping(address => uint256) public agentFeesPaid;
+
     event TaskCreated(uint256 id, string description, uint256 deadline, uint256 milestoneId, address assignedMember, string status);
     event TaskUpdated(uint256 id, string description, uint256 deadline, address assignedMember, string status);
     event TaskDeleted(uint256 id);
@@ -232,6 +246,14 @@ contract Project_DAO {
 
     event AIServiceFeeDeducted(address indexed agent, uint256 amount, string serviceType);
     event AIServiceFeeUpdated(uint256 newFeeWei);
+
+    // ─── Commerce Blackhole Events ──────────────────────────────────────────
+    event CommerceVolumeRecorded(address indexed agent, uint256 amount, string context);
+    event MessagingFeePaid(address indexed sender, uint256 fee);
+    event BlackholeBatchTransfer(address indexed from, uint256 transferCount, uint256 totalVolume, uint256 totalFees);
+    event BlackholeBatchSettle(address indexed settler, uint256 settleCount, uint256 totalVolume, uint256 totalFees);
+    event CommerceBlackholeConfigUpdated(uint256 messagingFeeWei, uint256 exitFeeBps);
+    event ExitFeePaid(address indexed agent, uint256 fee, string context);
 
     constructor() {
         owner = msg.sender;
@@ -509,6 +531,7 @@ contract Project_DAO {
             require(ok, "Native fee transfer failed.");
             emit CybereumFeePaid(msg.sender, address(0), fee, _context);
         }
+        _recordVolume(msg.sender, _amount, fee, _context);
         return fee;
     }
 
@@ -520,6 +543,31 @@ contract Project_DAO {
             require(feeTransferSuccess, "Token fee transfer failed.");
             emit CybereumFeePaid(msg.sender, _token, fee, _context);
         }
+        _recordVolume(msg.sender, _amount, fee, _context);
+        return fee;
+    }
+
+    /// @dev Record commerce volume and fee metrics for the blackhole.
+    function _recordVolume(address _agent, uint256 _amount, uint256 _fee, string memory _context) internal {
+        totalCommerceVolume += _amount;
+        totalFeesCollected += _fee;
+        agentCommerceVolume[_agent] += _amount;
+        agentFeesPaid[_agent] += _fee;
+        emit CommerceVolumeRecorded(_agent, _amount, _context);
+    }
+
+    /// @dev Collect an exit fee (used when value leaves the protocol).
+    function _collectExitFee(uint256 _amount, string memory _context) internal returns (uint256) {
+        require(cybereumTreasury != address(0), "Cybereum treasury not configured.");
+        uint256 fee = (_amount * exitFeeBps) / FEE_BPS_DENOMINATOR;
+        if (fee == 0) fee = 1;
+        if (fee > 0) {
+            (bool ok,) = payable(cybereumTreasury).call{value: fee}("");
+            require(ok, "Exit fee transfer failed.");
+            emit ExitFeePaid(msg.sender, fee, _context);
+            emit CybereumFeePaid(msg.sender, address(0), fee, _context);
+        }
+        _recordVolume(msg.sender, _amount, fee, _context);
         return fee;
     }
 
@@ -1265,6 +1313,18 @@ contract Project_DAO {
         require(bytes(_encryptedContent).length > 0, "Message content required.");
         require(_contentHash != bytes32(0), "Content hash required.");
 
+        // Commerce Blackhole: messaging fee from sender's escrow
+        if (messagingFeeWei > 0) {
+            require(agents[msg.sender].nativeEscrowBalance >= messagingFeeWei, "Insufficient escrow for messaging fee.");
+            agents[msg.sender].nativeEscrowBalance -= messagingFeeWei;
+            require(cybereumTreasury != address(0), "Cybereum treasury not configured.");
+            (bool feeOk,) = payable(cybereumTreasury).call{value: messagingFeeWei}("");
+            require(feeOk, "Messaging fee transfer failed.");
+            _recordVolume(msg.sender, messagingFeeWei, messagingFeeWei, "messaging_fee");
+            emit MessagingFeePaid(msg.sender, messagingFeeWei);
+            emit CybereumFeePaid(msg.sender, address(0), messagingFeeWei, "messaging_fee");
+        }
+
         uint256 id = currentDirectMessageId++;
         directMessages[id] = DirectMessage({
             id:               id,
@@ -1549,8 +1609,13 @@ contract Project_DAO {
         }
 
         if (stake > 0) {
-            (bool ok,) = payable(msg.sender).call{value: stake}("");
+            // Commerce Blackhole: exit fee on stake leaving the protocol
+            uint256 exitFee = _collectExitFee(stake, "leave_dao");
+            uint256 netStake = stake - exitFee;
+
+            (bool ok,) = payable(msg.sender).call{value: netStake}("");
             require(ok, "Stake refund failed.");
+            stake = netStake;
         }
 
         emit MemberLeftDAO(msg.sender, stake);
@@ -1747,10 +1812,15 @@ contract Project_DAO {
 
         projectShareClaimed[projectId][msg.sender] = true;
 
-        (bool ok,) = payable(msg.sender).call{value: payout}("");
+        // Commerce Blackhole: exit fee on value leaving the protocol
+        uint256 exitFee = _collectExitFee(payout, "claim_project_share");
+        uint256 netPayout = payout - exitFee;
+        require(netPayout > 0, "Payout too small after exit fee.");
+
+        (bool ok,) = payable(msg.sender).call{value: netPayout}("");
         require(ok, "Payout transfer failed.");
 
-        emit EconomicProjectShareClaimed(projectId, msg.sender, payout);
+        emit EconomicProjectShareClaimed(projectId, msg.sender, netPayout);
     }
 
     /**
@@ -1789,10 +1859,15 @@ contract Project_DAO {
         projectFunderContributions[projectId][msg.sender] = 0;
         proj.totalFunded -= amount;
 
-        (bool ok,) = payable(msg.sender).call{value: amount}("");
+        // Commerce Blackhole: exit fee on value leaving the protocol
+        uint256 exitFee = _collectExitFee(amount, "refund_project_funder");
+        uint256 netRefund = amount - exitFee;
+        require(netRefund > 0, "Refund too small after exit fee.");
+
+        (bool ok,) = payable(msg.sender).call{value: netRefund}("");
         require(ok, "Refund transfer failed.");
 
-        emit EconomicProjectFunderRefunded(projectId, msg.sender, amount);
+        emit EconomicProjectFunderRefunded(projectId, msg.sender, netRefund);
     }
 
     // ─── Economic Project View Functions ─────────────────────────────────────
@@ -1847,5 +1922,171 @@ contract Project_DAO {
             // Return newest first: projectId = total - offset - i
             page[i] = economicProjects[total - offset - i];
         }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // ███ COMMERCE BLACKHOLE — Value Gravity System ███████████████████████████
+    // ═════════════════════════════════════════════════════════════════════════
+    //
+    // Every value movement is tracked. Every exit is taxed. Batch operations
+    // make high-volume commerce easy — and every operation generates fees.
+    // The blackhole sucks in all agent commerce and profits from it.
+
+    // ─── Blackhole Configuration (owner only) ───────────────────────────────
+
+    /// @notice Configure Commerce Blackhole fee parameters.
+    /// @param _messagingFeeWei  Fee per direct message (from escrow).
+    /// @param _exitFeeBps       Exit fee in basis points (on claims/refunds/leave).
+    function setCommerceBlackholeConfig(uint256 _messagingFeeWei, uint256 _exitFeeBps) external onlyOwner {
+        require(_exitFeeBps >= MIN_FEE_BPS, "Exit fee cannot be below minimum.");
+        require(_exitFeeBps <= 100, "Exit fee cannot exceed 1%.");
+        messagingFeeWei = _messagingFeeWei;
+        exitFeeBps = _exitFeeBps;
+        emit CommerceBlackholeConfigUpdated(_messagingFeeWei, _exitFeeBps);
+    }
+
+    // ─── Batch Operations (Commerce Multiplier) ─────────────────────────────
+
+    /**
+     * @notice Batch native ETH transfers to multiple agents in one tx.
+     *         Each transfer collects a protocol fee. Maximises commerce throughput.
+     * @param recipients  Array of recipient agent addresses.
+     * @param amounts     Array of amounts (from sender escrow) per recipient.
+     * @param memos       Array of memo strings per transfer.
+     */
+    function batchTransferNative(
+        address[] calldata recipients,
+        uint256[] calldata amounts,
+        string[] calldata memos
+    ) external onlyRegisteredAgent whenNotPaused {
+        require(recipients.length == amounts.length && amounts.length == memos.length, "Array length mismatch.");
+        require(recipients.length > 0, "Empty batch.");
+        require(recipients.length <= 50, "Batch too large.");
+        require(cybereumTreasury != address(0), "Cybereum treasury not configured.");
+
+        uint256 totalVolume;
+        uint256 totalFees;
+
+        for (uint256 i = 0; i < recipients.length; i++) {
+            require(agents[recipients[i]].registered, "Recipient must be a registered agent.");
+            require(recipients[i] != msg.sender, "Cannot transfer to self.");
+            require(amounts[i] > 0, "Amount must be greater than zero.");
+            require(agents[msg.sender].nativeEscrowBalance >= amounts[i], "Insufficient native escrow balance.");
+
+            uint256 fee = _calculateFee(amounts[i]);
+            require(amounts[i] > fee, "Amount too small after fee.");
+            uint256 netAmount = amounts[i] - fee;
+
+            agents[msg.sender].nativeEscrowBalance -= amounts[i];
+            agents[recipients[i]].nativeEscrowBalance += netAmount;
+
+            if (fee > 0) {
+                (bool feeOk,) = payable(cybereumTreasury).call{value: fee}("");
+                require(feeOk, "Native fee transfer failed.");
+                emit CybereumFeePaid(msg.sender, address(0), fee, "batch_native_transfer");
+            }
+
+            totalVolume += amounts[i];
+            totalFees += fee;
+
+            emit AgentToAgentNativeTransfer(msg.sender, recipients[i], netAmount, memos[i]);
+        }
+
+        _recordVolume(msg.sender, totalVolume, totalFees, "batch_native_transfer");
+        emit BlackholeBatchTransfer(msg.sender, recipients.length, totalVolume, totalFees);
+    }
+
+    /**
+     * @notice Batch-settle multiple payment requests in one tx.
+     *         Each settlement collects a protocol fee. Native-only.
+     * @param requestIds  Array of payment request IDs to settle.
+     */
+    function batchSettlePaymentRequests(
+        uint256[] calldata requestIds
+    ) external payable onlyRegisteredAgent whenNotPaused nonReentrant {
+        require(requestIds.length > 0, "Empty batch.");
+        require(requestIds.length <= 50, "Batch too large.");
+
+        uint256 totalRequired;
+        // Pre-validate and sum required amounts
+        for (uint256 i = 0; i < requestIds.length; i++) {
+            AgentPaymentRequest storage request = agentPaymentRequests[requestIds[i]];
+            require(request.id != 0, "Payment request does not exist.");
+            require(request.status == PaymentStatus.Requested, "Payment request is not open.");
+            require(request.payer == msg.sender, "Only designated payer can settle.");
+            require(request.isNative, "Batch settle only supports native payments.");
+            totalRequired += request.amount;
+        }
+        require(msg.value == totalRequired, "Incorrect total payment amount.");
+
+        uint256 totalVolume;
+        uint256 totalFees;
+
+        for (uint256 i = 0; i < requestIds.length; i++) {
+            AgentPaymentRequest storage request = agentPaymentRequests[requestIds[i]];
+            uint256 fee = _collectNativeFee(request.amount, "batch_settle_payment");
+            uint256 netAmount = request.amount - fee;
+            require(netAmount > 0, "Amount too small after fee.");
+
+            (bool payoutOk,) = payable(request.requester).call{value: netAmount}("");
+            require(payoutOk, "Native payout transfer failed.");
+
+            request.status = PaymentStatus.Settled;
+            request.settledAt = block.timestamp;
+
+            totalVolume += request.amount;
+            totalFees += fee;
+
+            emit AgentPaymentRequestSettled(requestIds[i], msg.sender, request.requester, request.settledAt);
+        }
+
+        emit BlackholeBatchSettle(msg.sender, requestIds.length, totalVolume, totalFees);
+    }
+
+    // ─── Commerce Blackhole View Functions ──────────────────────────────────
+
+    /// @notice Get the global commerce blackhole metrics.
+    function getBlackholeMetrics() external view returns (
+        uint256 _totalCommerceVolume,
+        uint256 _totalFeesCollected,
+        uint256 _agentCount,
+        uint256 _feeBps,
+        uint256 _exitFeeBps,
+        uint256 _messagingFeeWei,
+        uint256 _aiServiceFeeWei,
+        uint256 _assetTransferFlatFeeWei
+    ) {
+        return (
+            totalCommerceVolume,
+            totalFeesCollected,
+            agentAddresses.length,
+            cybereumFeeBps,
+            exitFeeBps,
+            messagingFeeWei,
+            aiServiceFeeWei,
+            assetTransferFlatFeeWei
+        );
+    }
+
+    /// @notice Get a specific agent's commerce metrics.
+    function getAgentCommerceMetrics(address _agent) external view returns (
+        uint256 volume,
+        uint256 feesPaid,
+        uint256 escrowBalance,
+        bool registered
+    ) {
+        return (
+            agentCommerceVolume[_agent],
+            agentFeesPaid[_agent],
+            agents[_agent].nativeEscrowBalance,
+            agents[_agent].registered
+        );
+    }
+
+    /// @notice Preview exit fee for a given amount.
+    function previewExitFee(uint256 _amount) external view returns (uint256 fee, uint256 net) {
+        fee = _amount == 0 ? 0 : (_amount * exitFeeBps) / FEE_BPS_DENOMINATOR;
+        if (_amount > 0 && fee == 0) fee = 1;
+        net = _amount > fee ? _amount - fee : 0;
     }
 }

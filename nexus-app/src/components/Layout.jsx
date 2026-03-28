@@ -5,12 +5,13 @@ import { useApp } from '../store/appStore';
 import {
   LayoutDashboard, FolderKanban, Milestone, Vote, ShieldCheck,
   Trophy, Gem, Wallet, Zap, ChevronRight, Globe,
-  AlertTriangle, ArrowLeft, Radio, Bot, Brain, Lightbulb, ClipboardCheck, MessageCircle
+  AlertTriangle, ArrowLeft, Radio, Bot, Brain, Lightbulb, ClipboardCheck, MessageCircle, Activity
 } from 'lucide-react';
 
 const NAV_ITEMS = [
   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/agent-economy', label: 'Agent Economy', icon: Bot, accent: true },
+  { path: '/commerce-blackhole', label: 'Commerce Blackhole', icon: Activity, accent: true },
   { path: '/nexus-ai', label: 'NexusAI', icon: Brain, accent: true },
   { path: '/feature-kits', label: 'Feature Kits', icon: Lightbulb, accent: true },
   { path: '/agent-readiness', label: 'Agent Audit', icon: ClipboardCheck, accent: true },

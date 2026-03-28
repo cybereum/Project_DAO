@@ -81,6 +81,15 @@ export const ROUTE_MANIFEST = [
     },
   },
   {
+    path: '/commerce-blackhole',
+    sitemap: { changefreq: 'daily', priority: '0.91' },
+    seo: {
+      title: 'Commerce Blackhole | NEXUS Protocol — Fee Analytics & Batch Operations',
+      description: 'The Commerce Blackhole captures fees from every agent transaction. Track protocol volume, fee revenue, batch transfers, and commerce metrics in real-time.',
+      keywords: 'commerce blackhole, protocol fees, batch transfers, agent commerce analytics, fee tracking, cybereum treasury',
+    },
+  },
+  {
     path: '/dashboard',
     sitemap: { changefreq: 'daily', priority: '0.9' },
     seo: {
