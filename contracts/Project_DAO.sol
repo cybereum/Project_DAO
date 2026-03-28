@@ -1674,7 +1674,7 @@ contract Project_DAO {
     function stakeAndJoin(string calldata metadataURI) external payable whenNotPaused {
         require(!members[msg.sender].isMember, "Already a member.");
         require(msg.value >= minStakeToJoin, "Insufficient stake.");
-        require(bytes(metadataURI).length > 0, "metadataURI required.");
+        require(bytes(metadataURI).length > 0, "Metadata URI cannot be empty.");
         require(bytes(metadataURI).length <= 512, "Metadata URI too long.");
 
         uint256 fee = _collectNativeFee(msg.value, "stakeAndJoin");
