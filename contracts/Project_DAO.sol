@@ -1969,9 +1969,9 @@ contract Project_DAO {
         );
 
         proj.status = ProjectStatus.Cancelled;
-        if (activeProjectCount[proj.proposer] > 0) {
-            activeProjectCount[proj.proposer]--;
-        }
+        uint256 count = activeProjectCount[proj.proposer];
+        require(count > 0, "Active project count invariant broken.");
+        activeProjectCount[proj.proposer] = count - 1;
         emit EconomicProjectCancelled(projectId);
     }
 
