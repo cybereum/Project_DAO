@@ -1269,7 +1269,7 @@ describe("Role & Permission Management", () => {
     const { dao } = await deploy();
     // Role 0 is "Owner" created in constructor
     await dao.createRole(ethers.encodeBytes32String("Admin"));
-    const [name, memberCount] = await dao.getRole(1); // index 1 (0 is Owner)
+    const [name, memberCount] = await dao.getRole(2); // 1-based: role 2 is Admin (role 1 is Owner)
     expect(ethers.decodeBytes32String(name)).to.equal("Admin");
     expect(memberCount).to.equal(0n);
   });
@@ -1339,7 +1339,7 @@ describe("Role & Permission Management", () => {
     await dao.addMember(alice.address, 10);
     await dao.createRole(ethers.encodeBytes32String("Reviewer"));
     await dao.assignRole(alice.address, 2);
-    const [name, memberCount] = await dao.getRole(1);
+    const [name, memberCount] = await dao.getRole(2); // 1-based: role 2 is Reviewer
     expect(ethers.decodeBytes32String(name)).to.equal("Reviewer");
     expect(memberCount).to.equal(1n);
   });
@@ -2541,5 +2541,233 @@ describe("Reputation Engine: Decay", () => {
     const repAfter = await dao.agentReputation(alice.address);
     // Should be same or slightly different due to tenure change, but no decay
     expect(repAfter).to.be.gte(repBefore);
+  });
+});
+
+// ─── Production Readiness: Additional Edge Case & Security Tests ─────────────
+
+describe("setMinStakeToJoin", () => {
+  it("owner can set minimum stake", async () => {
+    const { dao } = await deploy();
+    await dao.setMinStakeToJoin(ethers.parseEther("0.5"));
+    expect(await dao.minStakeToJoin()).to.equal(ethers.parseEther("0.5"));
+  });
+
+  it("emits MinStakeToJoinUpdated event", async () => {
+    const { dao } = await deploy();
+    const newStake = ethers.parseEther("1");
+    await expect(dao.setMinStakeToJoin(newStake))
+      .to.emit(dao, "MinStakeToJoinUpdated")
+      .withArgs(0n, newStake);
+  });
+
+  it("non-owner cannot set minimum stake", async () => {
+    const { dao, alice } = await deploy();
+    await expect(
+      dao.connect(alice).setMinStakeToJoin(ethers.parseEther("1"))
+    ).to.be.revertedWith("Only the owner can call this function.");
+  });
+
+  it("stake-and-join enforces minimum stake", async () => {
+    const { dao, alice } = await deploy();
+    await dao.setMinStakeToJoin(ethers.parseEther("1"));
+    await expect(
+      dao.connect(alice).stakeAndJoin("ipfs://test", { value: ethers.parseEther("0.5") })
+    ).to.be.revertedWith("Insufficient stake.");
+  });
+
+  it("stake-and-join succeeds with sufficient stake", async () => {
+    const { dao, alice } = await deploy();
+    await dao.setMinStakeToJoin(ethers.parseEther("0.01"));
+    await dao.connect(alice).stakeAndJoin("ipfs://test", { value: ethers.parseEther("0.02") });
+    expect(await dao.connect(alice).getAgentCount()).to.be.gte(1n);
+  });
+});
+
+describe("Role indexing consistency (1-based)", () => {
+  it("getRole(0) reverts with invalid role ID", async () => {
+    const { dao } = await deploy();
+    await expect(dao.getRole(0)).to.be.revertedWith("Invalid role ID.");
+  });
+
+  it("getRole(1) returns the Owner role created in constructor", async () => {
+    const { dao } = await deploy();
+    const [name, memberCount] = await dao.getRole(1);
+    expect(ethers.decodeBytes32String(name)).to.equal("Owner");
+  });
+
+  it("addPermission, assignRole, getRole all use consistent 1-based IDs", async () => {
+    const { dao, alice } = await deploy();
+    await dao.addMember(alice.address, 10);
+    await dao.createRole(ethers.encodeBytes32String("Tester"));
+    // Tester is roles[1] => 1-based ID = 2
+    await dao.addPermission(2, "run_tests");
+    await dao.assignRole(alice.address, 2);
+    const [name, memberCount] = await dao.getRole(2);
+    expect(ethers.decodeBytes32String(name)).to.equal("Tester");
+    expect(memberCount).to.equal(1n);
+  });
+
+  it("reverts for out-of-range role IDs", async () => {
+    const { dao } = await deploy();
+    await expect(dao.getRole(999)).to.be.revertedWith("Invalid role ID.");
+    await expect(dao.addPermission(999, "perm")).to.be.revertedWith("Invalid role ID.");
+    await expect(dao.assignRole(dao.runner.address, 999)).to.be.revertedWith("Invalid role ID.");
+  });
+
+  it("non-owner cannot assign roles", async () => {
+    const { dao, alice, bob } = await deploy();
+    await dao.addMember(alice.address, 10);
+    await dao.createRole(ethers.encodeBytes32String("Admin"));
+    await expect(
+      dao.connect(alice).assignRole(alice.address, 2)
+    ).to.be.revertedWith("Only the owner can call this function.");
+  });
+
+  it("cannot assign role to non-member", async () => {
+    const { dao, alice } = await deploy();
+    await dao.createRole(ethers.encodeBytes32String("Admin"));
+    await expect(
+      dao.assignRole(alice.address, 2)
+    ).to.be.revertedWith("Invalid member address.");
+  });
+
+  it("cannot assign same role twice", async () => {
+    const { dao, alice } = await deploy();
+    await dao.addMember(alice.address, 10);
+    await dao.createRole(ethers.encodeBytes32String("Admin"));
+    await dao.assignRole(alice.address, 2);
+    await expect(
+      dao.assignRole(alice.address, 2)
+    ).to.be.revertedWith("Member already has this role.");
+  });
+});
+
+describe("Input validation hardening", () => {
+  it("registerAgent rejects empty metadataURI", async () => {
+    const { dao, alice } = await deploy();
+    await dao.addMember(alice.address, 10);
+    await expect(
+      dao.connect(alice).registerAgent("")
+    ).to.be.revertedWith("Metadata URI cannot be empty.");
+  });
+
+  it("registerAgent rejects metadataURI over 512 bytes", async () => {
+    const { dao, alice } = await deploy();
+    await dao.addMember(alice.address, 10);
+    const longURI = "x".repeat(513);
+    await expect(
+      dao.connect(alice).registerAgent(longURI)
+    ).to.be.revertedWith("Metadata URI too long.");
+  });
+
+  it("updateAgentMetadata rejects empty metadataURI", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await expect(
+      dao.connect(alice).updateAgentMetadata("")
+    ).to.be.revertedWith("Metadata URI cannot be empty.");
+  });
+
+  it("stakeAndJoin rejects metadataURI over 512 bytes", async () => {
+    const { dao, alice } = await deploy();
+    const longURI = "x".repeat(513);
+    await expect(
+      dao.connect(alice).stakeAndJoin(longURI, { value: ethers.parseEther("0.01") })
+    ).to.be.revertedWith("Metadata URI too long.");
+  });
+
+  it("transferNativeBetweenAgents rejects unregistered recipient", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("0.1") });
+    await expect(
+      dao.connect(alice).transferNativeBetweenAgents(bob.address, ethers.parseEther("0.01"), "test")
+    ).to.be.revertedWith("Recipient must be a registered agent.");
+  });
+
+  it("transferNativeBetweenAgents rejects self-transfer", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("0.1") });
+    await expect(
+      dao.connect(alice).transferNativeBetweenAgents(alice.address, ethers.parseEther("0.01"), "test")
+    ).to.be.revertedWith("Cannot transfer to self.");
+  });
+});
+
+describe("Economic project edge cases", () => {
+  it("cannot fund a cancelled project", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    const block = await ethers.provider.getBlock("latest");
+    const deadline = block.timestamp + 86400 * 30;
+    await dao.connect(alice).createEconomicProject("ipfs://proj", ethers.parseEther("1"), deadline);
+    await dao.connect(alice).cancelProject(1);
+    await expect(
+      dao.connect(bob).fundProject(1, { value: ethers.parseEther("0.1") })
+    ).to.be.revertedWith("Project not accepting funds.");
+  });
+
+  it("non-proposer cannot cancel project", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    const block = await ethers.provider.getBlock("latest");
+    const deadline = block.timestamp + 86400 * 30;
+    await dao.connect(alice).createEconomicProject("ipfs://proj", ethers.parseEther("1"), deadline);
+    await expect(
+      dao.connect(bob).cancelProject(1)
+    ).to.be.revertedWith("Only proposer or owner can cancel.");
+  });
+
+  it("cannot apply to own project", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    const block = await ethers.provider.getBlock("latest");
+    const deadline = block.timestamp + 86400 * 30;
+    await dao.connect(alice).createEconomicProject("ipfs://proj", ethers.parseEther("1"), deadline);
+    await expect(
+      dao.connect(alice).applyToProject(1)
+    ).to.be.revertedWith("Proposer is already lead contributor.");
+  });
+});
+
+describe("Pause affects all state-changing functions", () => {
+  it("registerAgent reverts when paused", async () => {
+    const { dao, alice } = await deploy();
+    await dao.addMember(alice.address, 10);
+    await dao.pauseContract();
+    await expect(
+      dao.connect(alice).registerAgent("ipfs://test")
+    ).to.be.revertedWith("Contract is paused.");
+  });
+
+  it("depositNativeToEscrow reverts when paused", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await dao.pauseContract();
+    await expect(
+      dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("0.1") })
+    ).to.be.revertedWith("Contract is paused.");
+  });
+
+  it("stakeAndJoin reverts when paused", async () => {
+    const { dao, alice } = await deploy();
+    await dao.pauseContract();
+    await expect(
+      dao.connect(alice).stakeAndJoin("ipfs://test", { value: ethers.parseEther("0.01") })
+    ).to.be.revertedWith("Contract is paused.");
+  });
+
+  it("createAgentPaymentRequest reverts when paused", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    await dao.pauseContract();
+    await expect(
+      dao.connect(alice).createAgentPaymentRequest(bob.address, ethers.ZeroAddress, ethers.parseEther("0.01"), true, "test")
+    ).to.be.revertedWith("Contract is paused.");
   });
 });

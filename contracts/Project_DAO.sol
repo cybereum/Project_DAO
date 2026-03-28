@@ -319,8 +319,8 @@ contract Project_DAO {
     // --- Role Management ---
 
     function getRole(uint256 _roleId) public view returns (bytes32, uint256) {
-        require(_roleId < roles.length, "Invalid role ID.");
-        Role storage role = roles[_roleId];
+        require(_roleId > 0 && _roleId <= roles.length, "Invalid role ID.");
+        Role storage role = roles[_roleId - 1];
         return (role.name, role.members.length);
     }
 
@@ -679,6 +679,8 @@ contract Project_DAO {
     }
 
     function registerAgent(string memory _metadataURI) public onlyMember whenNotPaused {
+        require(bytes(_metadataURI).length > 0, "Metadata URI cannot be empty.");
+        require(bytes(_metadataURI).length <= 512, "Metadata URI too long.");
         AgentProfile storage profile = agents[msg.sender];
         require(!profile.registered, "Agent already registered.");
         profile.registered = true;
@@ -690,6 +692,8 @@ contract Project_DAO {
     }
 
     function updateAgentMetadata(string memory _metadataURI) public onlyRegisteredAgent whenNotPaused {
+        require(bytes(_metadataURI).length > 0, "Metadata URI cannot be empty.");
+        require(bytes(_metadataURI).length <= 512, "Metadata URI too long.");
         agents[msg.sender].metadataURI = _metadataURI;
         emit AgentMetadataUpdated(msg.sender, _metadataURI);
     }
@@ -1652,9 +1656,13 @@ contract Project_DAO {
     event MemberJoinedByStake(address indexed member, uint256 netStake);
     event MemberLeftDAO(address indexed member, uint256 refundedStake);
 
+    event MinStakeToJoinUpdated(uint256 oldMinStake, uint256 newMinStake);
+
     /// @notice Owner can set the minimum stake floor for self-registration.
     function setMinStakeToJoin(uint256 _minStake) external onlyOwner {
+        uint256 oldMinStake = minStakeToJoin;
         minStakeToJoin = _minStake;
+        emit MinStakeToJoinUpdated(oldMinStake, _minStake);
     }
 
     /**
@@ -1667,6 +1675,7 @@ contract Project_DAO {
         require(!members[msg.sender].isMember, "Already a member.");
         require(msg.value >= minStakeToJoin, "Insufficient stake.");
         require(bytes(metadataURI).length > 0, "metadataURI required.");
+        require(bytes(metadataURI).length <= 512, "Metadata URI too long.");
 
         uint256 fee = _collectNativeFee(msg.value, "stakeAndJoin");
         uint256 netStake = msg.value - fee;

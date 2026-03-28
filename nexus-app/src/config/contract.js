@@ -1,6 +1,15 @@
 export const PROJECT_DAO_ADDRESS = import.meta.env.VITE_PROJECT_DAO_ADDRESS || '';
 
 export const PROJECT_DAO_ABI = [
+  // ─── Member & ownership management ──────────────────────────────────────
+  'function owner() external view returns (address)',
+  'function members(address) external view returns (address memberAddress, uint256 votingPower, bool isMember)',
+  'function addMember(address _newMember, uint256 _votingPower) external',
+  'function removeMember(address _member) external',
+  'function changeOwner(address _newOwner) external',
+  'function pauseContract() external',
+  'function resumeContract() external',
+
   // ─── Governance: proposals ───────────────────────────────────────────────
   'function vote(uint256 _proposalId, bool _vote) external',
   'function getProposal(uint256 _proposalId) external view returns (tuple(uint256 id,string description,uint256 votingDeadline,bool executed,bool proposalPassed,uint256 yesVotes,uint256 noVotes,uint256 votePercentage))',
@@ -97,6 +106,7 @@ export const PROJECT_DAO_ABI = [
   'function memberStakes(address member) external view returns (uint256)',
   'event MemberJoinedByStake(address indexed member, uint256 netStake)',
   'event MemberLeftDAO(address indexed member, uint256 refundedStake)',
+  'event MinStakeToJoinUpdated(uint256 oldMinStake, uint256 newMinStake)',
 
   // ─── Economic Project Primitives ─────────────────────────────────────────
   'function createEconomicProject(string calldata metadataURI, uint256 targetBudget, uint256 deadline) external returns (uint256)',
@@ -125,6 +135,13 @@ export const PROJECT_DAO_ABI = [
   'event EconomicProjectCancelled(uint256 indexed projectId)',
   'event EconomicProjectShareClaimed(uint256 indexed projectId, address indexed contributor, uint256 amount)',
   'event EconomicProjectFunderRefunded(uint256 indexed projectId, address indexed funder, uint256 amount)',
+
+  // ─── AI Service Fees ─────────────────────────────────────────────────────
+  'function deductAIServiceFee(string calldata _serviceType) external',
+  'function setAIServiceFee(uint256 _feeWei) external',
+  'function aiServiceFeeWei() external view returns (uint256)',
+  'event AIServiceFeeDeducted(address indexed agent, uint256 amount, string serviceType)',
+  'event AIServiceFeeUpdated(uint256 newFee)',
 
   // ─── Commerce Blackhole ─────────────────────────────────────────────────
   'function messagingFeeWei() external view returns (uint256)',

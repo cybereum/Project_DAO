@@ -397,6 +397,8 @@ export function useAppState() {
 
   const agentTransferNative = useCallback(async (toAddress, amountWei, memo) => {
     setWalletError('');
+    if (!isAddress(toAddress)) { setWalletError('Invalid recipient address.'); return null; }
+    if (!amountWei || amountWei <= 0n) { setWalletError('Amount must be greater than zero.'); return null; }
     const contract = await getDaoWriteContract();
     if (!contract) { setWalletError('Wallet not connected or contract not configured.'); return null; }
     try {
@@ -415,6 +417,8 @@ export function useAppState() {
 
   const agentCreatePaymentRequest = useCallback(async (payer, token, amount, isNative, description) => {
     setWalletError('');
+    if (!isAddress(payer)) { setWalletError('Invalid payer address.'); return null; }
+    if (!amount || amount <= 0n) { setWalletError('Amount must be greater than zero.'); return null; }
     const contract = await getDaoWriteContract();
     if (!contract) { setWalletError('Wallet not connected or contract not configured.'); return null; }
     try {

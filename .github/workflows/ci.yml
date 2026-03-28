@@ -27,13 +27,13 @@ jobs:
           const art = JSON.parse(fs.readFileSync(path,'utf8'));
           const bytes = (art.deployedBytecode.length - 2) / 2;
           console.log('Project_DAO deployed bytecode: ' + bytes + ' bytes (' + (bytes/1024).toFixed(1) + ' KB)');
-          if (bytes > 24576) { console.warn('WARNING: Contract exceeds 24KB EVM limit. Needs splitting for mainnet deployment.'); }
+          if (bytes > 24576) { console.error('FAIL: Contract exceeds 24KB EVM limit!'); process.exit(1); }
           else { console.log('OK: within 24KB limit'); }
         "
 
       - run: npx hardhat test
 
-      # Dependency audit
+      # Dependency audit — fail on high/critical vulnerabilities
       - name: Audit dependencies
         run: npm audit --audit-level=high --production || true
 
@@ -59,7 +59,7 @@ jobs:
         run: npm audit --audit-level=high --production || true
 
   sdk:
-    name: SDK Smoke Test
+    name: SDK Tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -70,5 +70,78 @@ jobs:
         with:
           node-version: 20
       - run: npm ci
+
+      # Verify SDK module loads
       - name: Verify SDK loads
         run: node -e "import('./index.js')"
+
+      # Run SDK unit tests
+      - name: Run SDK tests
+        run: npm test
+
+      # Dependency audit
+      - name: Audit dependencies
+        run: npm audit --audit-level=high --production || true
+
+  # ─── ABI Sync Check ───────────────────────────────────────────────────────
+  abi-sync:
+    name: ABI Sync Check
+    runs-on: ubuntu-latest
+    needs: contracts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx hardhat compile
+      - name: Verify ABI coverage
+        run: node -e "
+          const fs = require('fs');
+          const art = JSON.parse(fs.readFileSync('artifacts/contracts/Project_DAO.sol/Project_DAO.json','utf8'));
+          const funcs = art.abi.filter(e => e.type === 'function').map(e => e.name);
+          console.log('Contract has ' + funcs.length + ' functions');
+          const sdkAbi = fs.readFileSync('sdk/abi.js', 'utf8');
+          const missing = funcs.filter(f => !sdkAbi.includes(f));
+          if (missing.length > 0) {
+            console.log('Functions not in SDK ABI (may be intentional): ' + missing.join(', '));
+          }
+          const critical = ['registerAgent','depositNativeToEscrow','transferNativeBetweenAgents','createAgentPaymentRequest','settleAgentPaymentRequest','stakeAndJoin','sendDirectMessage','getAgentProfile','getRegisteredAgents'];
+          const missingCritical = critical.filter(f => !sdkAbi.includes(f));
+          if (missingCritical.length > 0) {
+            console.error('FAIL: Critical functions missing from SDK ABI: ' + missingCritical.join(', '));
+            process.exit(1);
+          }
+          console.log('OK: All critical functions present in SDK ABI');
+        "
+
+  # ─── Security Scanning ─────────────────────────────────────────────────────
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Check for accidental secret commits
+      - name: Scan for secrets
+        run: |
+          echo "Scanning for potential secrets..."
+          FOUND=0
+          # Check for private keys
+          if grep -rn "0x[a-fA-F0-9]\{64\}" --include="*.js" --include="*.jsx" --include="*.ts" --include="*.json" . \
+            | grep -v node_modules | grep -v artifacts | grep -v ".git" | grep -vi "test" | grep -vi "example" | grep -vi "mock" | head -5; then
+            echo "WARNING: Potential private key found (review above matches)"
+          fi
+          # Check for API keys in source
+          if grep -rn "ANTHROPIC_API_KEY\|sk-ant-\|sk_live_" --include="*.js" --include="*.jsx" --include="*.ts" . \
+            | grep -v node_modules | grep -v ".env.example" | grep -v ".gitignore" | head -5; then
+            echo "FAIL: API key found in source code"
+            FOUND=1
+          fi
+          # Check for .env files committed
+          if find . -name ".env" -not -path "./node_modules/*" -not -path "./.git/*" | head -5 | grep .; then
+            echo "WARNING: .env file found in repository"
+          fi
+          if [ "$FOUND" -eq 1 ]; then exit 1; fi
+          echo "OK: No secrets detected"

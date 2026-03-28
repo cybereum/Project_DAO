@@ -200,15 +200,47 @@ export class AgentClient {
   /**
    * @private
    * Enforces chain verification before executing any write transaction.
-   * Since verifyChain() memoizes after the first check, this is effectively
-   * free on all subsequent write calls within the same session.
+   * Includes retry logic with exponential backoff for transient failures.
    * @template T
    * @param {() => Promise<T>} fn  Function that submits the transaction.
+   * @param {Object} [opts]
+   * @param {number} [opts.retries=2]       Max retries on transient errors.
+   * @param {number} [opts.timeoutMs=120000] Timeout per attempt in ms.
    * @returns {Promise<T>}
    */
-  async _write(fn) {
+  async _write(fn, { retries = 2, timeoutMs = 120_000 } = {}) {
     await this.verifyChain();
-    return fn();
+
+    let lastError;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const result = await this._withTimeout(fn(), timeoutMs);
+        return result;
+      } catch (err) {
+        lastError = err;
+        const msg = err?.message || '';
+        const isTransient = /ETIMEDOUT|ECONNRESET|ECONNREFUSED|SERVER_ERROR|NETWORK_ERROR|noNetwork|timeout/i.test(msg);
+        if (!isTransient || attempt === retries) throw err;
+        const delay = 1000 * 2 ** attempt; // 1s, 2s, 4s
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+    throw lastError;
+  }
+
+  /**
+   * @private
+   * Wrap a promise with a timeout.
+   */
+  _withTimeout(promise, ms) {
+    if (!ms || ms <= 0) return promise;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`Transaction timed out after ${ms}ms`)), ms);
+      promise.then(
+        val => { clearTimeout(timer); resolve(val); },
+        err => { clearTimeout(timer); reject(err); }
+      );
+    });
   }
 
   /** Extract a named arg from a transaction receipt's event logs. */
@@ -439,10 +471,47 @@ export class AgentClient {
     return tx.wait();
   }
 
+  /** Approve a contributor for a project with a revenue share (in bps). */
+  async approveContributor(projectId, contributorAddress, sharesBps) {
+    this._validateAddress(contributorAddress, 'contributor');
+    const tx = await this._write(() => this.contract.approveContributor(projectId, contributorAddress, sharesBps));
+    return tx.wait();
+  }
+
+  /** Mark a project as completed (proposer only). */
+  async completeProject(projectId) {
+    const tx = await this._write(() => this.contract.completeProject(projectId));
+    return tx.wait();
+  }
+
+  /** Cancel a project (proposer only). */
+  async cancelProject(projectId) {
+    const tx = await this._write(() => this.contract.cancelProject(projectId));
+    return tx.wait();
+  }
+
   /** Claim your revenue share from a completed project. */
   async claimProjectShare(projectId) {
     const tx = await this._write(() => this.contract.claimProjectShare(projectId));
     return tx.wait();
+  }
+
+  /** Refund a funder from a cancelled project. */
+  async refundProjectFunder(projectId) {
+    const tx = await this._write(() => this.contract.refundProjectFunder(projectId));
+    return tx.wait();
+  }
+
+  /** Get details of an economic project. */
+  async getProject(projectId) {
+    const p = await this.contract.getEconomicProject(projectId);
+    return {
+      id: p.id, proposer: p.proposer, metadataURI: p.metadataURI,
+      targetBudget: p.targetBudget, totalFunded: p.totalFunded,
+      deadline: p.deadline, status: Number(p.status),
+      createdAt: p.createdAt, contributorCount: Number(p.contributorCount),
+      funderCount: Number(p.funderCount),
+    };
   }
 
   // ─── Secure Direct Messaging ───────────────────────────────────────────
