@@ -1983,3 +1983,111 @@ describe("Economic Projects: Edge Cases", () => {
     expect(contributors[0]).to.equal(alice.address);
   });
 });
+
+// ─── AI Service Fee ──────────────────────────────────────────────────────────
+
+describe("AI Service Fee", () => {
+  it("defaults to 0.0003 ETH", async () => {
+    const { dao } = await deploy();
+    expect(await dao.aiServiceFeeWei()).to.equal(ethers.parseEther("0.0003"));
+  });
+
+  it("owner can update AI service fee", async () => {
+    const { dao } = await deploy();
+    await dao.setAIServiceFee(ethers.parseEther("0.001"));
+    expect(await dao.aiServiceFeeWei()).to.equal(ethers.parseEther("0.001"));
+  });
+
+  it("emits AIServiceFeeUpdated on config change", async () => {
+    const { dao } = await deploy();
+    const newFee = ethers.parseEther("0.0005");
+    await expect(dao.setAIServiceFee(newFee))
+      .to.emit(dao, "AIServiceFeeUpdated")
+      .withArgs(newFee);
+  });
+
+  it("non-owner cannot update AI service fee", async () => {
+    const { dao, alice } = await deploy();
+    await expect(dao.connect(alice).setAIServiceFee(1000))
+      .to.be.revertedWith("Only the owner can call this function.");
+  });
+
+  it("registered agent can deduct AI service fee from escrow", async () => {
+    const { dao, alice, treasury } = await deploy();
+    await memberAgent(dao, alice);
+    const depositAmount = ethers.parseEther("0.01");
+    await dao.connect(alice).depositNativeToEscrow({ value: depositAmount });
+
+    const treasuryBefore = await ethers.provider.getBalance(treasury.address);
+    await dao.connect(alice).deductAIServiceFee("health");
+    const treasuryAfter = await ethers.provider.getBalance(treasury.address);
+
+    const fee = ethers.parseEther("0.0003");
+    expect(treasuryAfter - treasuryBefore).to.equal(fee);
+  });
+
+  it("emits AIServiceFeeDeducted and CybereumFeePaid", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("0.01") });
+
+    const fee = ethers.parseEther("0.0003");
+    await expect(dao.connect(alice).deductAIServiceFee("security"))
+      .to.emit(dao, "AIServiceFeeDeducted")
+      .withArgs(alice.address, fee, "security")
+      .and.to.emit(dao, "CybereumFeePaid");
+  });
+
+  it("reduces agent escrow balance by fee amount", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    const deposit = ethers.parseEther("0.01");
+    await dao.connect(alice).depositNativeToEscrow({ value: deposit });
+
+    const depositFee = (deposit * 5n) / 10000n;
+    const escrowBefore = deposit - depositFee;
+
+    await dao.connect(alice).deductAIServiceFee("ux");
+    const profile = await dao.getAgentProfile(alice.address);
+    const aiFee = ethers.parseEther("0.0003");
+    expect(profile.nativeEscrowBalance).to.equal(escrowBefore - aiFee);
+  });
+
+  it("reverts when escrow balance is insufficient", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    // No deposit — escrow is 0
+    await expect(dao.connect(alice).deductAIServiceFee("health"))
+      .to.be.revertedWith("Insufficient escrow balance for AI service fee.");
+  });
+
+  it("reverts for non-registered agent", async () => {
+    const { dao, alice } = await deploy();
+    await expect(dao.connect(alice).deductAIServiceFee("health"))
+      .to.be.revertedWith("Only registered agents can call this function.");
+  });
+
+  it("reverts when contract is paused", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("0.01") });
+    await dao.pauseContract();
+    await expect(dao.connect(alice).deductAIServiceFee("health"))
+      .to.be.reverted;
+  });
+
+  it("owner can set fee to zero (free AI)", async () => {
+    const { dao } = await deploy();
+    await dao.setAIServiceFee(0);
+    expect(await dao.aiServiceFeeWei()).to.equal(0n);
+  });
+
+  it("deductAIServiceFee reverts when fee is zero", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("0.01") });
+    await dao.setAIServiceFee(0);
+    await expect(dao.connect(alice).deductAIServiceFee("health"))
+      .to.be.revertedWith("AI service fee not configured.");
+  });
+});
