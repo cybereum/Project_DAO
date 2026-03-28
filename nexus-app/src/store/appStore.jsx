@@ -337,8 +337,11 @@ export function useAppState() {
     setNfts(prev => [...prev, { ...nft, id: prev.length + 1, owner: walletAddress || '0x0000...0000', image: `gradient-${(prev.length % 6) + 1}` }]);
   }, [walletAddress]);
 
-  // ─── Data load error (surfaced to UI instead of silently swallowed) ────────
   const [dataLoadError, setDataLoadError] = useState('');
+  const handleLoadError = useCallback((label, err) => {
+    setDataLoadError(`Failed to load ${label}.`);
+    console.error(`${label} failed:`, err);
+  }, []);
 
   // ─── Agent economy state ───────────────────────────────────────────────────
   const [agentProfile, setAgentProfile] = useState(null);
@@ -362,8 +365,8 @@ export function useAppState() {
       ]);
       setAgentFeeBps(Number(feeBps));
       setAgentFlatFeeWei(flatFee.toString());
-    } catch (err) { setDataLoadError('Failed to load fee config. Check your network connection.'); console.error('loadAgentConfig failed:', err); }
-  }, [getDaoReadContract]);
+    } catch (err) { handleLoadError('fee config', err); }
+  }, [getDaoReadContract, handleLoadError]);
 
   const loadAgentProfile = useCallback(async () => {
     if (!walletAddress) return;
@@ -376,8 +379,8 @@ export function useAppState() {
         metadataURI: profile.metadataURI,
         nativeEscrowBalance: profile.nativeEscrowBalance.toString(),
       });
-    } catch (err) { setDataLoadError('Failed to load agent profile.'); console.error('loadAgentProfile failed:', err); }
-  }, [walletAddress, getDaoReadContract]);
+    } catch (err) { handleLoadError('agent profile', err); }
+  }, [walletAddress, getDaoReadContract, handleLoadError]);
 
   const agentRegister = useCallback(async (metadataURI) => {
     setWalletError('');
@@ -499,8 +502,8 @@ export function useAppState() {
     try {
       const bal = await contract.getAgentTokenBalance(walletAddress, tokenAddress);
       setAgentTokenBalances(prev => ({ ...prev, [tokenAddress.toLowerCase()]: bal.toString() }));
-    } catch (err) { setDataLoadError('Failed to load token balance.'); console.error('agentLoadTokenBalance failed:', err); }
-  }, [walletAddress, getDaoReadContract]);
+    } catch (err) { handleLoadError('token balance', err); }
+  }, [walletAddress, getDaoReadContract, handleLoadError]);
 
   const loadAgentActivity = useCallback(async ({ forceFull = false } = {}) => {
     if (!walletAddress) return;
@@ -730,9 +733,9 @@ export function useAppState() {
         }))
       );
       return Number(total);
-    } catch (err) { setDataLoadError('Failed to load projects.'); console.error('loadEconomicProjects failed:', err); }
+    } catch (err) { handleLoadError('projects', err); }
     finally { setEconomicProjectsLoading(false); }
-  }, [getDaoReadContract]);
+  }, [getDaoReadContract, handleLoadError]);
 
   const createEconomicProject = useCallback(async (metadataURI, targetBudgetWei, deadlineTs) => {
     setWalletError('');
@@ -906,9 +909,9 @@ export function useAppState() {
       const [messageIds, total] = await contract.getInbox(offset, limit);
       const messages = await hydrateMessages(contract, messageIds);
       setInbox({ messages, total: Number(total) });
-    } catch (err) { setDataLoadError('Failed to load inbox.'); console.error('loadInbox failed:', err); setInbox({ messages: [], total: 0 }); }
+    } catch (err) { handleLoadError('inbox', err); setInbox({ messages: [], total: 0 }); }
     finally { setInboxLoading(false); }
-  }, [walletAddress, getDaoReadContract, hydrateMessages]);
+  }, [walletAddress, getDaoReadContract, hydrateMessages, handleLoadError]);
 
   const loadConversation = useCallback(async (otherAgent, offset = 0, limit = 50) => {
     if (!walletAddress) return;
@@ -919,9 +922,9 @@ export function useAppState() {
       const [messageIds, total] = await contract.getConversation(otherAgent, offset, limit);
       const messages = await hydrateMessages(contract, messageIds);
       setConversationMessages({ messages, total: Number(total) });
-    } catch (err) { setDataLoadError('Failed to load conversation.'); console.error('loadConversation failed:', err); setConversationMessages({ messages: [], total: 0 }); }
+    } catch (err) { handleLoadError('conversation', err); setConversationMessages({ messages: [], total: 0 }); }
     finally { setConversationLoading(false); }
-  }, [walletAddress, getDaoReadContract, hydrateMessages]);
+  }, [walletAddress, getDaoReadContract, hydrateMessages, handleLoadError]);
 
   const agentSendMessage = useCallback(async (toAddress, encryptedContent, contentHash) => {
     setWalletError('');
@@ -979,9 +982,9 @@ export function useAppState() {
         }))
       );
       return Number(total);
-    } catch (err) { setDataLoadError('Failed to load feature kits.'); console.error('loadFeatureKits failed:', err); }
+    } catch (err) { handleLoadError('feature kits', err); }
     finally { setFeatureKitsLoading(false); }
-  }, [getDaoReadContract]);
+  }, [getDaoReadContract, handleLoadError]);
 
   const submitFeatureKit = useCallback(async (metadataURI, priority) => {
     setWalletError('');

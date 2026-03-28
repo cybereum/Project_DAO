@@ -3276,10 +3276,8 @@ describe("Event emissions for audit trail", () => {
 
 describe("nonReentrant on token escrow functions", () => {
   it("withdrawTokenFromEscrow has nonReentrant modifier", async () => {
-    // Verify function exists and is callable (modifier is structural, tested via compilation)
     const { dao, alice } = await deploy();
     await memberAgent(dao, alice);
-    // Attempt to withdraw with no balance — should revert with balance error, not reentrancy
     await expect(
       dao.connect(alice).withdrawTokenFromEscrow(ethers.ZeroAddress, 1)
     ).to.be.revertedWith("Invalid token address.");
@@ -3297,10 +3295,8 @@ describe("nonReentrant on token escrow functions", () => {
 
 // ─── Production Readiness: Treasury Validation on Deposit ───────────────────
 
-describe("depositNativeToEscrow treasury validation", () => {
-  it("has nonReentrant and treasury guard (constructor defaults treasury to owner)", async () => {
-    // Constructor sets cybereumTreasury = owner, so the treasury check is always satisfied
-    // by default. This test verifies the deposit path works correctly with the added guards.
+describe("depositNativeToEscrow nonReentrant guard", () => {
+  it("deposit sends fee to treasury and credits escrow", async () => {
     const { dao, alice, treasury } = await deploy();
     await memberAgent(dao, alice);
     const balBefore = await ethers.provider.getBalance(treasury.address);

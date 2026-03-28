@@ -708,7 +708,6 @@ contract Project_DAO {
 
     function depositNativeToEscrow() public payable onlyRegisteredAgent whenNotPaused nonReentrant {
         require(msg.value > 0, "Deposit amount must be greater than zero.");
-        require(cybereumTreasury != address(0), "Cybereum treasury not configured.");
         uint256 fee = _collectNativeFee(msg.value, "deposit_native_escrow");
         uint256 netAmount = msg.value - fee;
         require(netAmount > 0, "Amount too small after fee.");

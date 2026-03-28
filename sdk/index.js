@@ -36,12 +36,8 @@ export class AgentClient {
     if (!contractAddress) throw new Error('contractAddress is required');
     if (!privateKey) throw new Error('privateKey is required');
 
-    // Validate contract address format
-    try {
-      ethers.getAddress(contractAddress);
-    } catch {
-      throw new Error(`Invalid contractAddress: ${contractAddress}. Must be a valid Ethereum address.`);
-    }
+    // Validate contract address format (reuses _validateAddress logic at construction time)
+    ethers.getAddress(contractAddress); // throws TypeError on invalid address
 
     this.provider = new ethers.JsonRpcProvider(rpcUrl);
     this.wallet = new ethers.Wallet(privateKey, this.provider);
