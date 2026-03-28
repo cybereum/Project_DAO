@@ -840,7 +840,7 @@ The file `sdk/deployments.json` maps chain IDs to contract addresses and RPC hin
 
 **Assessment date: 2026-03-28**
 
-### Overall: 7.2 / 10 (up from ~5.5 before this pass)
+### Overall: 7.5 / 10 (up from ~5.5 before this pass)
 
 | Category | Before | After | Details |
 |---|---|---|---|
@@ -861,6 +861,9 @@ The file `sdk/deployments.json` maps chain IDs to contract addresses and RPC hin
 - `disputeProposal` — now emits `ProposalDisputeCreated` event
 - `_resolveProposalDispute` / `resolveProposalDispute` — now emit `ProposalDisputeResolved` event
 - `changeOwner` — now emits `OwnerChanged` event
+- `getMemberCount` — replaced O(n) loop with O(1) `memberCount` counter variable
+- `batchTransferNative` — accumulates fees, single treasury transfer (saves ~21k gas per batch item)
+- `memberCount` counter maintained in `addMember`, `removeMember`, `stakeAndJoin`, `leaveDAO`, `changeOwner`
 
 **SDK (sdk/index.js):**
 - Constructor validates `contractAddress` format with `ethers.getAddress()`
@@ -882,9 +885,7 @@ The file `sdk/deployments.json` maps chain IDs to contract addresses and RPC hin
 | MEDIUM | Owner dashboard uses client-side passcode (`VITE_OWNER_DASHBOARD_PASSCODE`) — needs server-side auth | Medium |
 | MEDIUM | No E2E tests for frontend ↔ contract integration | Medium |
 | MEDIUM | `addMember`/`removeMember` iterate all milestones (O(n)) — gas cost grows with milestones | Medium |
-| MEDIUM | `getMemberCount` iterates full `memberAddresses` array — use counter variable instead | Small |
 | LOW | No TypeScript — runtime type errors possible in frontend/SDK | Large |
-| LOW | `batchTransferNative` sends treasury fee per iteration — accumulate and send once | Small |
 | LOW | Proposal ID indexing is 1-based but array is 0-based — confusing but functional | Small |
 
 ---
