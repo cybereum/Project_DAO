@@ -18,7 +18,24 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx hardhat compile
+
+      # Report contract bytecode size (24KB EVM limit)
+      - name: Report contract size
+        run: node -e "
+          const fs = require('fs');
+          const path = 'artifacts/contracts/Project_DAO.sol/Project_DAO.json';
+          const art = JSON.parse(fs.readFileSync(path,'utf8'));
+          const bytes = (art.deployedBytecode.length - 2) / 2;
+          console.log('Project_DAO deployed bytecode: ' + bytes + ' bytes (' + (bytes/1024).toFixed(1) + ' KB)');
+          if (bytes > 24576) { console.warn('WARNING: Contract exceeds 24KB EVM limit. Needs splitting for mainnet deployment.'); }
+          else { console.log('OK: within 24KB limit'); }
+        "
+
       - run: npx hardhat test
+
+      # Dependency audit
+      - name: Audit dependencies
+        run: npm audit --audit-level=high || true
 
   frontend:
     name: Frontend Build & Lint
@@ -36,3 +53,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run build
+
+      # Dependency audit
+      - name: Audit dependencies
+        run: npm audit --audit-level=high || true

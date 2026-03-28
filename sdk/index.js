@@ -220,6 +220,21 @@ export class AgentClient {
     return null;
   }
 
+  /**
+   * @private
+   * Validate an Ethereum address using ethers.getAddress (checksums it).
+   * @param {string} addr       The address to validate.
+   * @param {string} paramName  Human-readable parameter name for error messages.
+   * @returns {string} The checksummed address.
+   */
+  _validateAddress(addr, paramName) {
+    try {
+      return ethers.getAddress(addr);
+    } catch {
+      throw new Error(`Invalid ${paramName} address: ${addr}`);
+    }
+  }
+
   // ─── Identity ──────────────────────────────────────────────────────────
 
   /** Register this agent on-chain with an IPFS metadata URI. */
@@ -236,6 +251,7 @@ export class AgentClient {
 
   /** Get profile for any agent address. */
   async getProfile(address = this.address) {
+    if (address !== this.address) this._validateAddress(address, 'agent');
     const [registered, metadataURI, nativeEscrowBalance] = await this.contract.getAgentProfile(address);
     return { registered, metadataURI, nativeEscrowBalance };
   }
@@ -282,6 +298,7 @@ export class AgentClient {
   /** Deposit ETH into escrow. Amount in ETH string (e.g. '0.1'). */
   async depositNative(amountEth) {
     const value = ethers.parseEther(amountEth);
+    if (value <= 0n) throw new Error('Amount must be greater than zero');
     const tx = await this._write(() => this.contract.depositNativeToEscrow({ value }));
     return tx.wait();
   }
@@ -294,6 +311,7 @@ export class AgentClient {
 
   /** Transfer ETH from your escrow to another agent. Amount in wei. */
   async transferNative(toAddress, amountWei, memo = '') {
+    this._validateAddress(toAddress, 'recipient');
     const tx = await this._write(() => this.contract.transferNativeBetweenAgents(toAddress, amountWei, memo));
     return tx.wait();
   }
@@ -308,24 +326,29 @@ export class AgentClient {
 
   /** Deposit ERC-20 tokens (must approve contract first). */
   async depositToken(tokenAddress, amountWei) {
+    this._validateAddress(tokenAddress, 'token');
     const tx = await this._write(() => this.contract.depositTokenToEscrow(tokenAddress, amountWei));
     return tx.wait();
   }
 
   /** Withdraw ERC-20 tokens from escrow. */
   async withdrawToken(tokenAddress, amountWei) {
+    this._validateAddress(tokenAddress, 'token');
     const tx = await this._write(() => this.contract.withdrawTokenFromEscrow(tokenAddress, amountWei));
     return tx.wait();
   }
 
   /** Transfer ERC-20 tokens to another agent's escrow. */
   async transferToken(tokenAddress, toAddress, amountWei, memo = '') {
+    this._validateAddress(tokenAddress, 'token');
+    this._validateAddress(toAddress, 'recipient');
     const tx = await this._write(() => this.contract.transferTokenBetweenAgents(tokenAddress, toAddress, amountWei, memo));
     return tx.wait();
   }
 
   /** Get this agent's token escrow balance. */
   async getTokenBalance(tokenAddress) {
+    this._validateAddress(tokenAddress, 'token');
     return this.contract.getAgentTokenBalance(this.address, tokenAddress);
   }
 
@@ -336,6 +359,7 @@ export class AgentClient {
    * @returns {bigint} requestId
    */
   async createPaymentRequest(payerAddress, amount, { isNative = true, tokenAddress = ethers.ZeroAddress, description = '' } = {}) {
+    this._validateAddress(payerAddress, 'payer');
     const tx = await this._write(() => this.contract.createAgentPaymentRequest(payerAddress, tokenAddress, amount, isNative, description));
     const receipt = await tx.wait();
     return this._extractEventArg(receipt, 'AgentPaymentRequestCreated', 'requestId') ?? receipt;
@@ -371,6 +395,7 @@ export class AgentClient {
   /** Stake ETH to join the DAO and register as an agent in one transaction. */
   async stakeAndJoin(metadataURI, stakeEth) {
     const value = ethers.parseEther(stakeEth);
+    if (value <= 0n) throw new Error('Amount must be greater than zero');
     const tx = await this._write(() => this.contract.stakeAndJoin(metadataURI, { value }));
     return tx.wait();
   }
@@ -398,6 +423,7 @@ export class AgentClient {
   /** Fund a project with ETH. */
   async fundProject(projectId, amountEth) {
     const value = ethers.parseEther(amountEth);
+    if (value <= 0n) throw new Error('Amount must be greater than zero');
     const tx = await this._write(() => this.contract.fundProject(projectId, { value }));
     return tx.wait();
   }
@@ -423,6 +449,7 @@ export class AgentClient {
    * @param {string} contentHash     keccak256 hash of the plaintext (hex, 32 bytes). Use ethers.keccak256(ethers.toUtf8Bytes(plaintext)).
    */
   async sendMessage(toAddress, encryptedContent, contentHash) {
+    this._validateAddress(toAddress, 'recipient');
     const tx = await this._write(() => this.contract.sendDirectMessage(toAddress, encryptedContent, contentHash));
     const receipt = await tx.wait();
     return this._extractEventArg(receipt, 'DirectMessageSent', 'messageId') ?? receipt;
@@ -452,6 +479,7 @@ export class AgentClient {
    * @returns {{ messageIds: bigint[], total: bigint }}
    */
   async getConversation(otherAgent, offset = 0, limit = 50) {
+    this._validateAddress(otherAgent, 'otherAgent');
     const [messageIds, total] = await this.contract.getConversation(otherAgent, offset, limit);
     return { messageIds, total };
   }
