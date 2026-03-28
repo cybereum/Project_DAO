@@ -319,8 +319,8 @@ contract Project_DAO {
     // --- Role Management ---
 
     function getRole(uint256 _roleId) public view returns (bytes32, uint256) {
-        require(_roleId > 0 && _roleId <= roles.length, "Invalid role ID.");
-        Role storage role = roles[_roleId - 1];
+        require(_roleId < roles.length, "Invalid role ID.");
+        Role storage role = roles[_roleId];
         return (role.name, role.members.length);
     }
 
