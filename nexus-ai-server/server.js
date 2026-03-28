@@ -66,6 +66,20 @@ app.use((req, res, next) => {
 
 app.use('/api/', rateLimit);
 
+// API key authentication — permissive in dev (no key = no auth), enforced when env var is set
+const API_KEY = process.env.NEXUS_AI_API_KEY;
+
+function apiAuth(req, res, next) {
+  if (!API_KEY) return next(); // Skip auth if no key configured (dev mode)
+  const provided = req.headers['x-api-key'] || req.query.apiKey;
+  if (provided !== API_KEY) {
+    return res.status(401).json({ error: 'Invalid or missing API key.' });
+  }
+  next();
+}
+
+app.use('/api/', apiAuth);
+
 const client = new Anthropic(); // reads ANTHROPIC_API_KEY from env
 
 const ALLOWED_OUTCOMES = new Set(['adopted', 'successful', 'rejected', 'noisy']);

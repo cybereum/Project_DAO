@@ -1,30 +1,32 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
 import { AppProvider } from './store/appStore';
 import ErrorBoundary from './components/ErrorBoundary';
 import Layout from './components/Layout';
 import SEOHead from './components/SEOHead';
 import Landing from './pages/Landing';
-import Dashboard from './pages/Dashboard';
-import GlobalPulse from './pages/GlobalPulse';
-import Projects from './pages/Projects';
-import ProjectDetail from './pages/ProjectDetail';
-import Milestones from './pages/Milestones';
-import Proposals from './pages/Proposals';
-import Verification from './pages/Verification';
-import Reputation from './pages/Reputation';
-import Assets from './pages/Assets';
-import AgentEconomy from './pages/AgentEconomy';
-import AgentsLanding from './pages/AgentsLanding';
-import BuildersLanding from './pages/BuildersLanding';
-import NgoLanding from './pages/NgoLanding';
-import EnterpriseLanding from './pages/EnterpriseLanding';
-import CitiesLanding from './pages/CitiesLanding';
-import NexusAI from './pages/NexusAI';
-import FeatureKits from './pages/FeatureKits';
-import AgentReadiness from './pages/AgentReadiness';
-import AgentMessages from './pages/AgentMessages';
-import OwnerDashboard from './pages/OwnerDashboard';
 import { PUBLIC_ROUTES } from './config/routes';
+
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const GlobalPulse = lazy(() => import('./pages/GlobalPulse'));
+const Projects = lazy(() => import('./pages/Projects'));
+const ProjectDetail = lazy(() => import('./pages/ProjectDetail'));
+const Milestones = lazy(() => import('./pages/Milestones'));
+const Proposals = lazy(() => import('./pages/Proposals'));
+const Verification = lazy(() => import('./pages/Verification'));
+const Reputation = lazy(() => import('./pages/Reputation'));
+const Assets = lazy(() => import('./pages/Assets'));
+const AgentEconomy = lazy(() => import('./pages/AgentEconomy'));
+const AgentsLanding = lazy(() => import('./pages/AgentsLanding'));
+const BuildersLanding = lazy(() => import('./pages/BuildersLanding'));
+const NgoLanding = lazy(() => import('./pages/NgoLanding'));
+const EnterpriseLanding = lazy(() => import('./pages/EnterpriseLanding'));
+const CitiesLanding = lazy(() => import('./pages/CitiesLanding'));
+const NexusAI = lazy(() => import('./pages/NexusAI'));
+const FeatureKits = lazy(() => import('./pages/FeatureKits'));
+const AgentReadiness = lazy(() => import('./pages/AgentReadiness'));
+const AgentMessages = lazy(() => import('./pages/AgentMessages'));
+const OwnerDashboard = lazy(() => import('./pages/OwnerDashboard'));
 
 function AppShell({ children }) {
   const location = useLocation();
@@ -47,6 +49,7 @@ export default function App() {
     <AppProvider>
       <SEOHead />
       <AppShell>
+        <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-gray-950 text-white">Loading...</div>}>
         <Routes>
           {/* Public landing pages — no shell */}
           <Route path="/" element={<Landing />} />
@@ -73,6 +76,7 @@ export default function App() {
           <Route path="/messages" element={<AgentMessages />} />
           <Route path="/owner-dashboard" element={<OwnerDashboard />} />
         </Routes>
+        </Suspense>
       </AppShell>
     </AppProvider>
     </ErrorBoundary>
