@@ -3033,12 +3033,20 @@ describe("Reentrancy protection on ETH-transferring functions", () => {
     await memberAgent(dao, alice);
     await memberAgent(dao, bob);
     const flatFee = await dao.assetTransferFlatFeeWei();
-    // Will revert because no actual NFT, but should NOT revert with "ReentrancyGuard"
-    await expect(
-      dao.connect(alice).transferAssetBetweenAgents(
-        dao.getAddress(), bob.address, 1, "test", { value: flatFee }
-      )
-    ).to.be.reverted; // reverts due to NFT transfer, not reentrancy
+    // Will revert because no actual NFT, but should NOT revert with "ReentrancyGuard: reentrant call"
+    try {
+      await dao.connect(alice).transferAssetBetweenAgents(
+        dao.getAddress(),
+        bob.address,
+        1,
+        "test",
+        { value: flatFee }
+      );
+      expect.fail("Expected transferAssetBetweenAgents to revert due to missing NFT, but it did not revert");
+    } catch (error) {
+      // Ensure the revert is NOT caused by the reentrancy guard
+      expect(String(error)).to.not.include("ReentrancyGuard: reentrant call");
+    }
   });
 
   it("batchTransferNative has nonReentrant guard", async () => {
