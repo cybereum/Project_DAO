@@ -1915,9 +1915,8 @@ contract Project_DAO {
         );
 
         proj.status = ProjectStatus.Completed;
-        if (activeProjectCount[proj.proposer] > 0) {
-            activeProjectCount[proj.proposer]--;
-        }
+        require(activeProjectCount[proj.proposer] > 0, "Active project count underflow.");
+        activeProjectCount[proj.proposer]--;
         emit EconomicProjectCompleted(projectId);
     }
 
