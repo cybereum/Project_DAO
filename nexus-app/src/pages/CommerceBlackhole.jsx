@@ -35,7 +35,7 @@ function FeeRail({ label, bps, description }) {
 }
 
 export default function CommerceBlackhole() {
-  const { contract, account } = useApp();
+  const { getDaoReadContract, getDaoWriteContract, walletAddress } = useApp();
   const [metrics, setMetrics] = useState(null);
   const [agentMetrics, setAgentMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -47,6 +47,7 @@ export default function CommerceBlackhole() {
   const [batchStatus, setBatchStatus] = useState('');
 
   const loadMetrics = useCallback(async () => {
+    const contract = getDaoReadContract();
     if (!contract) return;
     try {
       setLoading(true);
@@ -62,8 +63,8 @@ export default function CommerceBlackhole() {
         assetFlatFee: m._assetTransferFlatFeeWei,
       });
 
-      if (account) {
-        const am = await contract.getAgentCommerceMetrics(account);
+      if (walletAddress) {
+        const am = await contract.getAgentCommerceMetrics(walletAddress);
         setAgentMetrics({
           volume: am.volume,
           feesPaid: am.feesPaid,
@@ -76,11 +77,12 @@ export default function CommerceBlackhole() {
     } finally {
       setLoading(false);
     }
-  }, [contract, account]);
+  }, [getDaoReadContract, walletAddress]);
 
   useEffect(() => { loadMetrics(); }, [loadMetrics]);
 
   const handleBatchTransfer = async () => {
+    const contract = await getDaoWriteContract();
     if (!contract) return;
     try {
       setBatchStatus('Processing batch transfer...');

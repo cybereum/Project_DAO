@@ -2369,3 +2369,176 @@ describe("Commerce Blackhole: Batch Operations", () => {
     await expect(tx).to.emit(dao, "BlackholeBatchSettle");
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ███ REPUTATION ENGINE TESTS █████████████████████████████████████████████████
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("Reputation Engine: Score Calculation", () => {
+  it("new agent starts at 0 reputation", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    expect(await dao.agentReputation(alice.address)).to.equal(0n);
+  });
+
+  it("reputation increases after deposit (volume + tx count)", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1") });
+    const rep = await dao.agentReputation(alice.address);
+    expect(rep).to.be.gt(0n);
+  });
+
+  it("transaction count increases with more commerce", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("2") });
+    expect(await dao.agentTransactionCount(alice.address)).to.equal(1n);
+
+    await dao.connect(alice).transferNativeBetweenAgents(bob.address, ethers.parseEther("0.01"), "tx2");
+    expect(await dao.agentTransactionCount(alice.address)).to.equal(2n);
+
+    // Reputation should reflect both volume and tx count
+    const rep = await dao.agentReputation(alice.address);
+    expect(rep).to.be.gt(0n);
+  });
+
+  it("getAgentReputation returns full profile", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1") });
+
+    const rep = await dao.getAgentReputation(alice.address);
+    expect(rep.score).to.be.gt(0n);
+    expect(rep.tier).to.be.gte(0n);
+    expect(rep.transactionCount).to.equal(1n);
+    expect(rep.lastActiveAt).to.be.gt(0n);
+    expect(rep.registeredAt).to.be.gt(0n);
+  });
+
+  it("reputation maxes at 1000", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    // Large volume to max out volume score
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("10") });
+    // Many transactions to max out tx score
+    for (let i = 0; i < 50; i++) {
+      await dao.connect(alice).transferNativeBetweenAgents(bob.address, ethers.parseEther("0.001"), `tx${i}`);
+    }
+    const rep = await dao.agentReputation(alice.address);
+    expect(rep).to.be.lte(1000n);
+  });
+});
+
+describe("Reputation Engine: Tiers & Incentives", () => {
+  it("getReputationLeaderboard returns agent data", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1") });
+
+    const [agents, scores, tiers, total] = await dao.getReputationLeaderboard(0, 10);
+    expect(total).to.be.gte(2n);
+    expect(agents.length).to.be.gte(2);
+    // alice should have some score
+    const aliceIdx = agents.indexOf(alice.address);
+    expect(scores[aliceIdx]).to.be.gt(0n);
+  });
+
+  it("higher reputation tier gets messaging fee discount", async () => {
+    const { dao, owner, alice, bob } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+
+    // Give alice high reputation: lots of volume + txns
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("5") });
+    for (let i = 0; i < 50; i++) {
+      await dao.connect(alice).transferNativeBetweenAgents(bob.address, ethers.parseEther("0.001"), `tx${i}`);
+    }
+
+    // Give owner minimal reputation
+    await dao.depositNativeToEscrow({ value: ethers.parseEther("0.01") });
+
+    const aliceRep = await dao.getAgentReputation(alice.address);
+    const ownerRep = await dao.getAgentReputation(owner.address);
+
+    // Alice should have a higher tier
+    expect(aliceRep.tier).to.be.gte(ownerRep.tier);
+    // Alice should have a discount
+    expect(aliceRep.messagingFeeDiscount).to.be.gte(ownerRep.messagingFeeDiscount);
+  });
+
+  it("refreshReputation can be called by anyone", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1") });
+
+    // bob can refresh alice's reputation
+    await dao.connect(bob).refreshReputation(alice.address);
+    const rep = await dao.agentReputation(alice.address);
+    expect(rep).to.be.gt(0n);
+  });
+
+  it("refreshReputation reverts for unregistered agent", async () => {
+    const { dao, alice } = await deploy();
+    await expect(dao.refreshReputation(alice.address)).to.be.revertedWith("Agent not registered.");
+  });
+});
+
+describe("Reputation Engine: Decay", () => {
+  it("owner can configure decay parameters", async () => {
+    const { dao } = await deploy();
+    await dao.setReputationDecayConfig(5, 3 * 86400); // 5 pts/day, 3 day grace
+    expect(await dao.reputationDecayPerDay()).to.equal(5n);
+    expect(await dao.reputationDecayGracePeriod()).to.equal(3n * 86400n);
+  });
+
+  it("decay reduces reputation after grace period", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+
+    // Set high decay rate for testing: 50 pts/day, 1 day grace
+    await dao.setReputationDecayConfig(50, 86400);
+
+    // Build up reputation
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("3") });
+    for (let i = 0; i < 20; i++) {
+      await dao.connect(alice).transferNativeBetweenAgents(bob.address, ethers.parseEther("0.001"), `tx${i}`);
+    }
+    const repBefore = await dao.agentReputation(alice.address);
+    expect(repBefore).to.be.gt(0n);
+
+    // Fast forward 365 days (1 day grace + 364 days of 50pts/day = 18200 decay)
+    await ethers.provider.send("evm_increaseTime", [365 * 86400]);
+    await ethers.provider.send("evm_mine");
+
+    // Refresh reputation — should be heavily decayed
+    await dao.refreshReputation(alice.address);
+    const repAfter = await dao.agentReputation(alice.address);
+    // Decay should overwhelm the tenure gain
+    expect(repAfter).to.equal(0n);
+  });
+
+  it("no decay within grace period", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1") });
+    const repBefore = await dao.agentReputation(alice.address);
+
+    // Fast forward 5 days (within 7-day grace)
+    await ethers.provider.send("evm_increaseTime", [5 * 86400]);
+    await ethers.provider.send("evm_mine");
+
+    await dao.refreshReputation(alice.address);
+    const repAfter = await dao.agentReputation(alice.address);
+    // Should be same or slightly different due to tenure change, but no decay
+    expect(repAfter).to.be.gte(repBefore);
+  });
+});

@@ -179,6 +179,26 @@ contract Project_DAO {
     /// @notice Per-agent total fees paid to the protocol.
     mapping(address => uint256) public agentFeesPaid;
 
+    // ─── Reputation Engine State ────────────────────────────────────────────
+    /// @notice Per-agent reputation score (0-1000).
+    mapping(address => uint256) public agentReputation;
+    /// @notice Per-agent transaction count (all commerce operations).
+    mapping(address => uint256) public agentTransactionCount;
+    /// @notice Timestamp of each agent's last commerce action.
+    mapping(address => uint256) public agentLastActiveAt;
+    /// @notice Timestamp when agent first registered (for tenure calculation).
+    mapping(address => uint256) public agentRegisteredAt;
+    /// @notice Reputation tier thresholds and messaging fee discount bps per tier.
+    ///         Tier 0=Bronze(0-249), 1=Silver(250-499), 2=Gold(500-749), 3=Platinum(750-1000)
+    uint256 public constant REP_MAX = 1000;
+    uint256 public constant REP_TIER_SILVER = 250;
+    uint256 public constant REP_TIER_GOLD = 500;
+    uint256 public constant REP_TIER_PLATINUM = 750;
+    /// @notice Decay rate: reputation points lost per day of inactivity (after 7-day grace).
+    uint256 public reputationDecayPerDay = 2;
+    /// @notice Grace period before decay kicks in (seconds).
+    uint256 public reputationDecayGracePeriod = 7 days;
+
     event TaskCreated(uint256 id, string description, uint256 deadline, uint256 milestoneId, address assignedMember, string status);
     event TaskUpdated(uint256 id, string description, uint256 deadline, address assignedMember, string status);
     event TaskDeleted(uint256 id);
@@ -254,6 +274,8 @@ contract Project_DAO {
     event BlackholeBatchSettle(address indexed settler, uint256 settleCount, uint256 totalVolume, uint256 totalFees);
     event CommerceBlackholeConfigUpdated(uint256 messagingFeeWei, uint256 exitFeeBps);
     event ExitFeePaid(address indexed agent, uint256 fee, string context);
+    event ReputationUpdated(address indexed agent, uint256 oldScore, uint256 newScore, uint256 tier);
+    event ReputationDecayApplied(address indexed agent, uint256 pointsDecayed, uint256 newScore);
 
     constructor() {
         owner = msg.sender;
@@ -547,13 +569,95 @@ contract Project_DAO {
         return fee;
     }
 
-    /// @dev Record commerce volume and fee metrics for the blackhole.
+    /// @dev Record commerce volume and fee metrics for the blackhole, then refresh reputation.
     function _recordVolume(address _agent, uint256 _amount, uint256 _fee, string memory _context) internal {
         totalCommerceVolume += _amount;
         totalFeesCollected += _fee;
         agentCommerceVolume[_agent] += _amount;
         agentFeesPaid[_agent] += _fee;
+        agentTransactionCount[_agent]++;
+        agentLastActiveAt[_agent] = block.timestamp;
         emit CommerceVolumeRecorded(_agent, _amount, _context);
+        _refreshReputation(_agent);
+    }
+
+    // ─── Reputation Engine (Internal) ───────────────────────────────────────
+
+    /**
+     * @dev Recalculate an agent's reputation score based on commerce activity.
+     *      Score = volumeScore + txCountScore + tenureScore + escrowScore - decay
+     *      Each component maxes at 250 → total max 1000.
+     */
+    function _refreshReputation(address _agent) internal {
+        if (!agents[_agent].registered) return;
+
+        uint256 oldScore = agentReputation[_agent];
+
+        // Component 1: Volume score (0-250)
+        // 1 ETH volume = 50 points, max 250 at 5 ETH
+        uint256 volumeEth = agentCommerceVolume[_agent] / 1 ether;
+        uint256 volumeScore = volumeEth * 50;
+        if (volumeScore > 250) volumeScore = 250;
+
+        // Component 2: Transaction count score (0-250)
+        // Each tx = 5 points, max 250 at 50 txns
+        uint256 txScore = agentTransactionCount[_agent] * 5;
+        if (txScore > 250) txScore = 250;
+
+        // Component 3: Tenure score (0-250)
+        // 1 point per day of membership, max 250 at ~8 months
+        uint256 registeredAt = agentRegisteredAt[_agent];
+        uint256 tenureScore = 0;
+        if (registeredAt > 0 && block.timestamp > registeredAt) {
+            tenureScore = (block.timestamp - registeredAt) / 1 days;
+            if (tenureScore > 250) tenureScore = 250;
+        }
+
+        // Component 4: Escrow commitment score (0-250)
+        // 0.1 ETH escrowed = 50 points, max 250 at 0.5 ETH
+        uint256 escrowEth = agents[_agent].nativeEscrowBalance / 0.1 ether;
+        uint256 escrowScore = escrowEth * 50;
+        if (escrowScore > 250) escrowScore = 250;
+
+        uint256 rawScore = volumeScore + txScore + tenureScore + escrowScore;
+
+        // Apply decay for inactivity
+        uint256 lastActive = agentLastActiveAt[_agent];
+        uint256 decay = 0;
+        if (lastActive > 0 && block.timestamp > lastActive + reputationDecayGracePeriod) {
+            uint256 inactiveDays = (block.timestamp - lastActive - reputationDecayGracePeriod) / 1 days;
+            decay = inactiveDays * reputationDecayPerDay;
+        }
+
+        uint256 newScore = rawScore > decay ? rawScore - decay : 0;
+        if (newScore > REP_MAX) newScore = REP_MAX;
+
+        agentReputation[_agent] = newScore;
+
+        if (newScore != oldScore) {
+            emit ReputationUpdated(_agent, oldScore, newScore, _getReputationTier(newScore));
+        }
+    }
+
+    /// @dev Get tier (0=Bronze, 1=Silver, 2=Gold, 3=Platinum) for a score.
+    function _getReputationTier(uint256 _score) internal pure returns (uint256) {
+        if (_score >= REP_TIER_PLATINUM) return 3;
+        if (_score >= REP_TIER_GOLD) return 2;
+        if (_score >= REP_TIER_SILVER) return 1;
+        return 0;
+    }
+
+    /**
+     * @dev Get the messaging fee discount for an agent based on their tier.
+     *      Bronze: 0%, Silver: 10%, Gold: 25%, Platinum: 50%
+     */
+    function _getMessagingFeeForAgent(address _agent) internal view returns (uint256) {
+        uint256 tier = _getReputationTier(agentReputation[_agent]);
+        uint256 baseFee = messagingFeeWei;
+        if (tier == 3) return baseFee / 2;         // Platinum: 50% off
+        if (tier == 2) return baseFee * 75 / 100;  // Gold: 25% off
+        if (tier == 1) return baseFee * 90 / 100;  // Silver: 10% off
+        return baseFee;                             // Bronze: full price
     }
 
     /// @dev Collect an exit fee (used when value leaves the protocol).
@@ -577,6 +681,8 @@ contract Project_DAO {
         profile.registered = true;
         profile.metadataURI = _metadataURI;
         agentAddresses.push(msg.sender);
+        agentRegisteredAt[msg.sender] = block.timestamp;
+        agentLastActiveAt[msg.sender] = block.timestamp;
         emit AgentRegistered(msg.sender, _metadataURI);
     }
 
@@ -610,6 +716,7 @@ contract Project_DAO {
         }
         (bool withdrawOk,) = payable(msg.sender).call{value: netAmount}("");
         require(withdrawOk, "Native withdrawal transfer failed.");
+        _recordVolume(msg.sender, _amount, fee, "withdraw_native_escrow");
         emit AgentNativeEscrowWithdrawn(msg.sender, netAmount);
     }
 
@@ -631,6 +738,7 @@ contract Project_DAO {
             require(feeOk, "Native fee transfer failed.");
             emit CybereumFeePaid(msg.sender, address(0), fee, "agent_native_transfer");
         }
+        _recordVolume(msg.sender, _amount, fee, "agent_native_transfer");
 
         emit AgentToAgentNativeTransfer(msg.sender, _to, netAmount, _memo);
     }
@@ -666,6 +774,7 @@ contract Project_DAO {
 
         bool success = IERC20(_token).transfer(msg.sender, netAmount);
         require(success, "Token transfer failed.");
+        _recordVolume(msg.sender, _amount, fee, "withdraw_token_escrow");
         emit AgentTokenEscrowWithdrawn(msg.sender, _token, netAmount);
     }
 
@@ -689,6 +798,7 @@ contract Project_DAO {
             emit CybereumFeePaid(msg.sender, _token, fee, "agent_token_transfer");
         }
 
+        _recordVolume(msg.sender, _amount, fee, "agent_token_transfer");
         emit AgentToAgentTokenTransfer(msg.sender, _to, _token, netAmount, _memo);
     }
 
@@ -708,6 +818,7 @@ contract Project_DAO {
         require(feeOk, "Native fee transfer failed.");
         emit CybereumFeePaid(msg.sender, address(0), msg.value, "agent_asset_transfer");
 
+        _recordVolume(msg.sender, msg.value, msg.value, "agent_asset_transfer");
         IERC721Lite(_assetContract).transferFrom(msg.sender, _to, _assetId);
         emit AgentAssetTransfer(msg.sender, _to, _assetContract, _assetId, _memo);
     }
@@ -1313,16 +1424,17 @@ contract Project_DAO {
         require(bytes(_encryptedContent).length > 0, "Message content required.");
         require(_contentHash != bytes32(0), "Content hash required.");
 
-        // Commerce Blackhole: messaging fee from sender's escrow
+        // Commerce Blackhole: messaging fee from sender's escrow (reputation discount applies)
         if (messagingFeeWei > 0) {
-            require(agents[msg.sender].nativeEscrowBalance >= messagingFeeWei, "Insufficient escrow for messaging fee.");
-            agents[msg.sender].nativeEscrowBalance -= messagingFeeWei;
+            uint256 actualMsgFee = _getMessagingFeeForAgent(msg.sender);
+            require(agents[msg.sender].nativeEscrowBalance >= actualMsgFee, "Insufficient escrow for messaging fee.");
+            agents[msg.sender].nativeEscrowBalance -= actualMsgFee;
             require(cybereumTreasury != address(0), "Cybereum treasury not configured.");
-            (bool feeOk,) = payable(cybereumTreasury).call{value: messagingFeeWei}("");
+            (bool feeOk,) = payable(cybereumTreasury).call{value: actualMsgFee}("");
             require(feeOk, "Messaging fee transfer failed.");
-            _recordVolume(msg.sender, messagingFeeWei, messagingFeeWei, "messaging_fee");
-            emit MessagingFeePaid(msg.sender, messagingFeeWei);
-            emit CybereumFeePaid(msg.sender, address(0), messagingFeeWei, "messaging_fee");
+            _recordVolume(msg.sender, actualMsgFee, actualMsgFee, "messaging_fee");
+            emit MessagingFeePaid(msg.sender, actualMsgFee);
+            emit CybereumFeePaid(msg.sender, address(0), actualMsgFee, "messaging_fee");
         }
 
         uint256 id = currentDirectMessageId++;
@@ -1572,6 +1684,8 @@ contract Project_DAO {
             nativeEscrowBalance: 0
         });
         agentAddresses.push(msg.sender);
+        agentRegisteredAt[msg.sender] = block.timestamp;
+        agentLastActiveAt[msg.sender] = block.timestamp;
 
         emit MemberJoinedByStake(msg.sender, netStake);
         emit AgentRegistered(msg.sender, metadataURI);
@@ -2088,5 +2202,64 @@ contract Project_DAO {
         fee = _amount == 0 ? 0 : (_amount * exitFeeBps) / FEE_BPS_DENOMINATOR;
         if (_amount > 0 && fee == 0) fee = 1;
         net = _amount > fee ? _amount - fee : 0;
+    }
+
+    // ─── Reputation Engine (Public) ─────────────────────────────────────────
+
+    /// @notice Get an agent's full reputation profile.
+    function getAgentReputation(address _agent) external view returns (
+        uint256 score,
+        uint256 tier,
+        uint256 transactionCount,
+        uint256 lastActiveAt,
+        uint256 registeredAt,
+        uint256 messagingFeeDiscount
+    ) {
+        score = agentReputation[_agent];
+        tier = _getReputationTier(score);
+        transactionCount = agentTransactionCount[_agent];
+        lastActiveAt = agentLastActiveAt[_agent];
+        registeredAt = agentRegisteredAt[_agent];
+        // Discount percentage: 0, 10, 25, or 50
+        if (tier == 3) messagingFeeDiscount = 50;
+        else if (tier == 2) messagingFeeDiscount = 25;
+        else if (tier == 1) messagingFeeDiscount = 10;
+        else messagingFeeDiscount = 0;
+    }
+
+    /// @notice Get paginated reputation leaderboard (sorted by registration order, caller sorts off-chain).
+    function getReputationLeaderboard(uint256 offset, uint256 limit) external view returns (
+        address[] memory agents_,
+        uint256[] memory scores,
+        uint256[] memory tiers,
+        uint256 total
+    ) {
+        total = agentAddresses.length;
+        if (offset >= total) return (new address[](0), new uint256[](0), new uint256[](0), total);
+        uint256 end = offset + limit;
+        if (end > total) end = total;
+        uint256 count = end - offset;
+        agents_ = new address[](count);
+        scores = new uint256[](count);
+        tiers = new uint256[](count);
+        for (uint256 i = 0; i < count; i++) {
+            address a = agentAddresses[offset + i];
+            agents_[i] = a;
+            scores[i] = agentReputation[a];
+            tiers[i] = _getReputationTier(agentReputation[a]);
+        }
+    }
+
+    /// @notice Manually trigger reputation refresh for an agent (anyone can call).
+    ///         Useful for applying decay to inactive agents.
+    function refreshReputation(address _agent) external whenNotPaused {
+        require(agents[_agent].registered, "Agent not registered.");
+        _refreshReputation(_agent);
+    }
+
+    /// @notice Owner can configure reputation decay parameters.
+    function setReputationDecayConfig(uint256 _decayPerDay, uint256 _gracePeriod) external onlyOwner {
+        reputationDecayPerDay = _decayPerDay;
+        reputationDecayGracePeriod = _gracePeriod;
     }
 }

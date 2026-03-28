@@ -91,4 +91,13 @@ export const PROJECT_DAO_ABI = [
   'event BlackholeBatchTransfer(address indexed from, uint256 transferCount, uint256 totalVolume, uint256 totalFees)',
   'event BlackholeBatchSettle(address indexed settler, uint256 settleCount, uint256 totalVolume, uint256 totalFees)',
   'event ExitFeePaid(address indexed agent, uint256 fee, string context)',
+
+  // ─── Reputation Engine ─────────────────────────────────────────────────
+  'function getAgentReputation(address _agent) external view returns (uint256 score, uint256 tier, uint256 transactionCount, uint256 lastActiveAt, uint256 registeredAt, uint256 messagingFeeDiscount)',
+  'function getReputationLeaderboard(uint256 offset, uint256 limit) external view returns (address[] agents_, uint256[] scores, uint256[] tiers, uint256 total)',
+  'function refreshReputation(address _agent) external',
+  'function agentReputation(address) external view returns (uint256)',
+  'function agentTransactionCount(address) external view returns (uint256)',
+  'event ReputationUpdated(address indexed agent, uint256 newScore, uint256 tier)',
+  'event ReputationDecayApplied(address indexed agent, uint256 decayAmount, uint256 newScore)',
 ];

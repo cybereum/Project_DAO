@@ -571,6 +571,57 @@ export class AgentClient {
     return tx.wait();
   }
 
+  // ─── Reputation Engine ──────────────────────────────────────────────────
+
+  /**
+   * Get full reputation profile for an agent.
+   * @returns {Promise<{score, tier, transactionCount, lastActiveAt, registeredAt, messagingFeeDiscount}>}
+   */
+  async getAgentReputation(address = this.address) {
+    if (address !== this.address) this._validateAddress(address, 'agent');
+    const r = await this.contract.getAgentReputation(address);
+    return {
+      score: Number(r.score),
+      tier: Number(r.tier),
+      transactionCount: Number(r.transactionCount),
+      lastActiveAt: Number(r.lastActiveAt),
+      registeredAt: Number(r.registeredAt),
+      messagingFeeDiscount: Number(r.messagingFeeDiscount),
+    };
+  }
+
+  /**
+   * Get paginated reputation leaderboard.
+   * @returns {Promise<{agents: Array<{address, score, tier}>, total}>}
+   */
+  async getReputationLeaderboard(offset = 0, limit = 50) {
+    const [agents_, scores, tiers, total] = await this.contract.getReputationLeaderboard(offset, limit);
+    return {
+      agents: agents_.map((addr, i) => ({
+        address: addr,
+        score: Number(scores[i]),
+        tier: Number(tiers[i]),
+      })),
+      total: Number(total),
+    };
+  }
+
+  /**
+   * Manually trigger reputation refresh for an agent (applies decay).
+   */
+  async refreshReputation(address) {
+    this._validateAddress(address, 'agent');
+    const tx = await this._write(() => this.contract.refreshReputation(address));
+    return tx.wait();
+  }
+
+  /** Listen for reputation updates. */
+  onReputationUpdated(callback) {
+    this.contract.on('ReputationUpdated', (agent, newScore, tier) => {
+      callback({ agent, score: Number(newScore), tier: Number(tier) });
+    });
+  }
+
   // ─── Event Listening ───────────────────────────────────────────────────
 
   /** Listen for incoming payment requests addressed to this agent. */
