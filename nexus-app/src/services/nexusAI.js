@@ -92,12 +92,14 @@ export const nexusAI = {
    * @param {(text: string) => void} onChunk
    * @returns {Promise<string>}
    */
-  async analyseStream(mode = 'health', onChunk) {
+  async analyseStream(mode = 'health', onChunk, { paymentTxHash } = {}) {
     let raw = '';
     try {
+      const headers = { 'Content-Type': 'application/json', 'x-wallet-address': _wallet };
+      if (paymentTxHash) headers['x-payment-tx'] = paymentTxHash;
       const res = await fetch(`${BASE_URL}/api/analyse`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-wallet-address': _wallet },
+        headers,
         body: JSON.stringify({ mode, stream: true }),
       });
 

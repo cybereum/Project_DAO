@@ -84,10 +84,10 @@ app.use('/api/', apiAuth);
 const FREE_TIER_DAILY_LIMIT = 5;
 const usageMap = new Map(); // wallet -> { date, count }
 
-function checkFreeTier(walletAddress) {
-  if (!walletAddress) return { allowed: true, remaining: FREE_TIER_DAILY_LIMIT }; // anonymous = free tier
+function checkFreeTier(key) {
+  if (!key) return { allowed: false, remaining: 0 }; // no identifier = denied
   const today = new Date().toISOString().slice(0, 10);
-  const entry = usageMap.get(walletAddress);
+  const entry = usageMap.get(key);
   if (!entry || entry.date !== today) {
     return { allowed: true, remaining: FREE_TIER_DAILY_LIMIT };
   }
@@ -95,8 +95,8 @@ function checkFreeTier(walletAddress) {
   return { allowed: remaining > 0, remaining };
 }
 
-function recordUsage(walletAddress) {
-  if (!walletAddress) return;
+function recordUsage(key) {
+  if (!key) return;
   const today = new Date().toISOString().slice(0, 10);
   const entry = usageMap.get(walletAddress);
   if (!entry || entry.date !== today) {
@@ -113,6 +113,52 @@ setInterval(() => {
     if (entry.date !== today) usageMap.delete(wallet);
   }
 }, 60 * 60_000); // every hour
+
+// ── On-chain payment verification ──
+// AIServiceFeeDeducted(address indexed agent, uint256 amount, string serviceType)
+// keccak256("AIServiceFeeDeducted(address,uint256,string)")
+const AI_FEE_EVENT_TOPIC = '0xae0592be0ec5dc0e84cc897c5caab610b0ee5cc800d5102516f6f19c90a1050d';
+const RPC_URL = process.env.RPC_URL || '';
+const VERIFIED_TX_CACHE = new Map(); // txHash -> timestamp (prevent replay)
+
+async function verifyPaymentTx(txHash, expectedWallet) {
+  if (!RPC_URL) return true; // Skip verification if no RPC configured (dev mode)
+  if (!txHash || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) return false;
+  if (VERIFIED_TX_CACHE.has(txHash)) return false; // Prevent replay
+
+  try {
+    const resp = await fetch(RPC_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 1,
+        method: 'eth_getTransactionReceipt',
+        params: [txHash],
+      }),
+    });
+    const { result: receipt } = await resp.json();
+    if (!receipt || receipt.status !== '0x1') return false;
+
+    // Verify the tx sender matches the claimed wallet
+    if (expectedWallet && receipt.from.toLowerCase() !== expectedWallet.toLowerCase()) return false;
+
+    // Check that the receipt contains an AIServiceFeeDeducted event log
+    const hasEvent = receipt.logs.some(log =>
+      log.topics && log.topics[0] && log.topics[0].toLowerCase() === AI_FEE_EVENT_TOPIC
+    );
+    if (!hasEvent) return false;
+
+    VERIFIED_TX_CACHE.set(txHash, Date.now());
+    // Clean old entries (older than 24h)
+    const cutoff = Date.now() - 24 * 60 * 60_000;
+    for (const [hash, ts] of VERIFIED_TX_CACHE) {
+      if (ts < cutoff) VERIFIED_TX_CACHE.delete(hash);
+    }
+    return true;
+  } catch {
+    return true; // On RPC failure, allow (don't block users due to infra issues)
+  }
+}
 
 const client = new Anthropic(); // reads ANTHROPIC_API_KEY from env
 
@@ -475,16 +521,27 @@ app.post('/api/analyse', async (req, res) => {
 
   // ── Usage metering ──
   const walletAddress = (req.headers['x-wallet-address'] || '').toLowerCase().trim();
-  const paymentTxHash = req.headers['x-payment-tx'] || '';
-  const freeTier = checkFreeTier(walletAddress);
+  const paymentTxHash = (req.headers['x-payment-tx'] || '').trim();
+  const usageKey = walletAddress || req.ip || req.connection.remoteAddress;
+  const freeTier = checkFreeTier(usageKey);
 
-  if (!freeTier.allowed && !paymentTxHash) {
-    return res.status(402).json({
-      error: 'Free tier limit reached. Please ensure your agent escrow is funded.',
-      code: 'PAYMENT_REQUIRED',
-      dailyLimit: FREE_TIER_DAILY_LIMIT,
-      remaining: 0,
-    });
+  if (!freeTier.allowed) {
+    if (!paymentTxHash) {
+      return res.status(402).json({
+        error: 'Free tier limit reached. Please ensure your agent escrow is funded.',
+        code: 'PAYMENT_REQUIRED',
+        dailyLimit: FREE_TIER_DAILY_LIMIT,
+        remaining: 0,
+      });
+    }
+    // Verify the payment tx on-chain
+    const valid = await verifyPaymentTx(paymentTxHash, walletAddress);
+    if (!valid) {
+      return res.status(402).json({
+        error: 'Payment verification failed. Please submit a valid AI service fee transaction.',
+        code: 'PAYMENT_INVALID',
+      });
+    }
   }
 
   const files = await readSourceFiles(modeConfig.files);
@@ -523,7 +580,7 @@ app.post('/api/analyse', async (req, res) => {
       const final = await stream.finalMessage();
       const raw = final.content.find(b => b.type === 'text')?.text || '{}';
       res.write(`data: ${JSON.stringify({ done: true, raw })}\n\n`);
-      recordUsage(walletAddress);
+      recordUsage(usageKey);
       res.end();
     } else {
       const response = await client.messages.create({
@@ -542,7 +599,7 @@ app.post('/api/analyse', async (req, res) => {
         parsed = { raw };
       }
 
-      recordUsage(walletAddress);
+      recordUsage(usageKey);
       res.json({
         mode,
         label: modeConfig.label,
@@ -623,7 +680,8 @@ app.get('/api/modes', (_req, res) => {
 
 app.get('/api/usage', (req, res) => {
   const walletAddress = (req.headers['x-wallet-address'] || req.query.wallet || '').toLowerCase().trim();
-  const tier = checkFreeTier(walletAddress);
+  const usageKey = walletAddress || req.ip || req.connection.remoteAddress;
+  const tier = checkFreeTier(usageKey);
   res.json({
     freeTierRemaining: tier.remaining,
     dailyLimit: FREE_TIER_DAILY_LIMIT,

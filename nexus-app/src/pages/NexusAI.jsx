@@ -275,11 +275,13 @@ export default function NexusAI() {
     trackEvent('nexus_ai_analyse', { mode });
 
     // Deduct AI service fee if free tier is exhausted
+    let paymentTxHash;
     if (usageInfo?.requiresPayment && walletConnected) {
       try {
         const contract = await getDaoWriteContract();
         const tx = await contract.deductAIServiceFee(mode);
-        await tx.wait();
+        const receipt = await tx.wait();
+        paymentTxHash = receipt.hash;
       } catch {
         setResult({ error: 'AI service fee payment failed. Please ensure your agent escrow is funded.' });
         setLoading(false);
@@ -291,7 +293,7 @@ export default function NexusAI() {
     const raw = await nexusAI.analyseStream(mode, (chunk) => {
       streamRef.current += chunk;
       setStreamText(streamRef.current);
-    });
+    }, { paymentTxHash });
 
     setLoading(false);
 
