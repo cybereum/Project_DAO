@@ -152,8 +152,8 @@ export const PROJECT_DAO_ABI = [
   'function refreshReputation(address _agent) external',
   'function agentReputation(address) external view returns (uint256)',
   'function agentTransactionCount(address) external view returns (uint256)',
-  'event ReputationUpdated(address indexed agent, uint256 newScore, uint256 tier)',
-  'event ReputationDecayApplied(address indexed agent, uint256 decayAmount, uint256 newScore)',
+  'event ReputationUpdated(address indexed agent, uint256 oldScore, uint256 newScore, uint256 tier)',
+  'event ReputationDecayApplied(address indexed agent, uint256 pointsDecayed, uint256 newScore)',
 ];
 
 export function hasContractConfig() {

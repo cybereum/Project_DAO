@@ -617,8 +617,8 @@ export class AgentClient {
 
   /** Listen for reputation updates. */
   onReputationUpdated(callback) {
-    this.contract.on('ReputationUpdated', (agent, newScore, tier) => {
-      callback({ agent, score: Number(newScore), tier: Number(tier) });
+    this.contract.on('ReputationUpdated', (agent, oldScore, newScore, tier) => {
+      callback({ agent, oldScore: Number(oldScore), score: Number(newScore), tier: Number(tier) });
     });
   }
 
