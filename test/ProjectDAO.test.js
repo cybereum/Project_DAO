@@ -2771,3 +2771,182 @@ describe("Pause affects all state-changing functions", () => {
     ).to.be.revertedWith("Contract is paused.");
   });
 });
+
+// ─── Token Escrow Edge Cases ─────────────────────────────────────────────────
+
+describe("Token escrow edge cases", () => {
+  it("cannot transfer tokens to unregistered agent", async () => {
+    const { dao, alice, bob, carol } = await deploy();
+    await memberAgent(dao, alice);
+    // bob is not registered as an agent
+    await expect(
+      dao.connect(alice).transferTokenBetweenAgents(carol.address, bob.address, 1000n, "test")
+    ).to.be.revertedWith("Recipient must be a registered agent.");
+  });
+
+  it("cannot transfer tokens with invalid token address", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await expect(
+      dao.connect(alice).transferTokenBetweenAgents(ethers.ZeroAddress, alice.address, 1000n, "test")
+    ).to.be.revertedWith("Invalid token address.");
+  });
+
+  it("cannot withdraw zero native from escrow", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await expect(
+      dao.connect(alice).withdrawNativeFromEscrow(0)
+    ).to.be.revertedWith("Amount must be greater than zero.");
+  });
+
+  it("cannot deposit zero native to escrow", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await expect(
+      dao.connect(alice).depositNativeToEscrow({ value: 0 })
+    ).to.be.revertedWith("Deposit amount must be greater than zero.");
+  });
+});
+
+// ─── Direct Messaging Edge Cases ─────────────────────────────────────────────
+
+describe("Direct messaging edge cases", () => {
+  const sampleHash = ethers.keccak256(ethers.toUtf8Bytes("test message"));
+
+  it("cannot send message to unregistered agent", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("0.01") });
+    await expect(
+      dao.connect(alice).sendDirectMessage(bob.address, "enc", sampleHash)
+    ).to.be.revertedWith("Recipient must be a registered agent.");
+  });
+
+  it("cannot send message to self", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("0.01") });
+    await expect(
+      dao.connect(alice).sendDirectMessage(alice.address, "enc", sampleHash)
+    ).to.be.revertedWith("Cannot message self.");
+  });
+
+  it("non-recipient cannot mark message as read", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("0.01") });
+    await dao.connect(alice).sendDirectMessage(bob.address, "enc", sampleHash);
+    // alice (sender) tries to mark as read — should fail
+    await expect(
+      dao.connect(alice).markMessageRead(1n)
+    ).to.be.revertedWith("Only recipient can mark as read.");
+  });
+
+  it("getConversation returns messages between two agents", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("0.1") });
+    await dao.connect(bob).depositNativeToEscrow({ value: ethers.parseEther("0.1") });
+
+    await dao.connect(alice).sendDirectMessage(bob.address, "msg1", sampleHash);
+    await dao.connect(bob).sendDirectMessage(alice.address, "msg2", sampleHash);
+
+    const [ids, total] = await dao.connect(alice).getConversation(bob.address, 0, 50);
+    expect(total).to.equal(2n);
+    expect(ids.length).to.equal(2);
+  });
+
+  it("getInbox returns received messages", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("0.1") });
+
+    await dao.connect(alice).sendDirectMessage(bob.address, "enc1", sampleHash);
+    await dao.connect(alice).sendDirectMessage(bob.address, "enc2", sampleHash);
+
+    const [ids, total] = await dao.connect(bob).getInbox(0, 50);
+    expect(total).to.equal(2n);
+  });
+});
+
+// ─── Payment Request Edge Cases ──────────────────────────────────────────────
+
+describe("Payment request edge cases", () => {
+  it("cannot create payment request from self", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await expect(
+      dao.connect(alice).createAgentPaymentRequest(alice.address, ethers.ZeroAddress, ethers.parseEther("0.01"), true, "self-pay")
+    ).to.be.revertedWith("Cannot request payment from self.");
+  });
+
+  it("cannot settle already-settled payment request", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    const amount = ethers.parseEther("0.01");
+    await dao.connect(alice).createAgentPaymentRequest(bob.address, ethers.ZeroAddress, amount, true, "invoice");
+    await dao.connect(bob).settleAgentPaymentRequest(1, { value: amount });
+    await expect(
+      dao.connect(bob).settleAgentPaymentRequest(1, { value: amount })
+    ).to.be.revertedWith("Payment request is not open.");
+  });
+
+  it("cannot cancel a settled payment request", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    const amount = ethers.parseEther("0.01");
+    await dao.connect(alice).createAgentPaymentRequest(bob.address, ethers.ZeroAddress, amount, true, "invoice");
+    await dao.connect(bob).settleAgentPaymentRequest(1, { value: amount });
+    await expect(
+      dao.connect(alice).cancelAgentPaymentRequest(1)
+    ).to.be.revertedWith("Payment request is not open.");
+  });
+
+  it("only requester can cancel payment request", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    await dao.connect(alice).createAgentPaymentRequest(bob.address, ethers.ZeroAddress, ethers.parseEther("0.01"), true, "test");
+    await expect(
+      dao.connect(bob).cancelAgentPaymentRequest(1)
+    ).to.be.revertedWith("Only requester can cancel this payment request.");
+  });
+});
+
+// ─── Feature Kit Edge Cases ──────────────────────────────────────────────────
+
+describe("Feature kit edge cases", () => {
+  it("upvote increments vote count", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await dao.addMember(bob.address, 10);
+    await dao.connect(alice).submitFeatureKit("ipfs://kit", 1);
+    await expect(dao.connect(bob).upvoteFeatureKit(1))
+      .to.emit(dao, "FeatureKitUpvoted")
+      .withArgs(1n, bob.address, 1n);
+  });
+
+  it("cannot upvote same kit twice", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await dao.addMember(bob.address, 10);
+    await dao.connect(alice).submitFeatureKit("ipfs://kit", 1);
+    await dao.connect(bob).upvoteFeatureKit(1);
+    await expect(
+      dao.connect(bob).upvoteFeatureKit(1)
+    ).to.be.revertedWith("Already voted.");
+  });
+
+  it("non-registered-agent cannot submit feature kit", async () => {
+    const { dao, alice } = await deploy();
+    await expect(
+      dao.connect(alice).submitFeatureKit("ipfs://kit", 1)
+    ).to.be.revertedWith("Only registered agents can call this function.");
+  });
+});
