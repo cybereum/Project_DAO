@@ -154,6 +154,7 @@ contract Project_DAO {
     Role[] roles;
     mapping(address => uint256) public memberRoles;
     address[] public memberAddresses;
+    uint256 public memberCount;
 
     bool private _paused;
 
@@ -286,6 +287,7 @@ contract Project_DAO {
         members[owner].isMember = true;
         members[owner].votingPower = 100;
         memberAddresses.push(owner);
+        memberCount = 1;
         cybereumTreasury = owner;
 
         // Create an "Owner" role and add it to the roles array
@@ -923,6 +925,7 @@ contract Project_DAO {
             milestones[i].membersWhoCanVoteCount++;
         }
         memberAddresses.push(_newMember);
+        memberCount++;
         emit MemberAdded(_newMember, _votingPower);
     }
 
@@ -944,6 +947,7 @@ contract Project_DAO {
                 break;
             }
         }
+        memberCount--;
         emit MemberRemoved(_member);
     }
 
@@ -956,9 +960,12 @@ contract Project_DAO {
     function changeOwner(address _newOwner) public onlyOwner {
         require(_newOwner != address(0), "Invalid new owner address.");
         address previousOwner = owner;
+        bool newOwnerWasMember = members[_newOwner].isMember;
         members[_newOwner].isMember = true;
         members[_newOwner].votingPower = members[owner].votingPower;
         members[previousOwner].isMember = false;
+        // Previous owner no longer a member: decrement counter
+        memberCount--;
         // Add new owner to memberAddresses if not already present
         bool found = false;
         for (uint256 i = 0; i < memberAddresses.length; i++) {
@@ -970,18 +977,15 @@ contract Project_DAO {
         if (!found) {
             memberAddresses.push(_newOwner);
         }
+        if (!newOwnerWasMember) {
+            memberCount++;
+        }
         owner = _newOwner;
         emit OwnerChanged(previousOwner, _newOwner);
     }
 
     function getMemberCount() public view returns (uint256) {
-        uint256 count = 0;
-        for (uint256 i = 0; i < memberAddresses.length; i++) {
-            if (members[memberAddresses[i]].isMember) {
-                count++;
-            }
-        }
-        return count;
+        return memberCount;
     }
 
     function getMember(address _member) public view returns (Member memory) {
@@ -1703,6 +1707,7 @@ contract Project_DAO {
             isMember: true
         });
         memberAddresses.push(msg.sender);
+        memberCount++;
 
         agents[msg.sender] = AgentProfile({
             registered: true,
@@ -1741,6 +1746,7 @@ contract Project_DAO {
             memberAddresses[uint256(idx)] = memberAddresses[last];
             memberAddresses.pop();
         }
+        memberCount--;
 
         if (stake > 0) {
             // Commerce Blackhole: exit fee on stake leaving the protocol
@@ -2121,18 +2127,19 @@ contract Project_DAO {
             agents[msg.sender].nativeEscrowBalance -= amounts[i];
             agents[recipients[i]].nativeEscrowBalance += netAmount;
 
-            if (fee > 0) {
-                (bool feeOk,) = payable(cybereumTreasury).call{value: fee}("");
-                require(feeOk, "Native fee transfer failed.");
-                emit CybereumFeePaid(msg.sender, address(0), fee, "batch_native_transfer");
-            }
-
             _recordVolume(msg.sender, amounts[i], fee, "batch_native_transfer");
 
             totalVolume += amounts[i];
             totalFees += fee;
 
             emit AgentToAgentNativeTransfer(msg.sender, recipients[i], netAmount, memos[i]);
+        }
+
+        // Single treasury transfer for accumulated fees (saves ~21k gas per extra transfer)
+        if (totalFees > 0) {
+            (bool feeOk,) = payable(cybereumTreasury).call{value: totalFees}("");
+            require(feeOk, "Native fee transfer failed.");
+            emit CybereumFeePaid(msg.sender, address(0), totalFees, "batch_native_transfer");
         }
 
         emit BlackholeBatchTransfer(msg.sender, recipients.length, totalVolume, totalFees);
