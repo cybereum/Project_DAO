@@ -9,7 +9,7 @@ import { AgentClient, PROJECT_DAO_ABI } from '../index.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-// A valid secp256k1 private key for testing (NOT a real key — deterministic test key)
+// Hardhat's deterministic Account #0 key. Publicly known — DO NOT use in production.
 const TEST_PRIVATE_KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
 
 /** Minimal mock provider/contract for unit testing (no live chain). */
@@ -101,7 +101,7 @@ describe('depositNative input validation', () => {
   const client = makeMockClient();
 
   it('rejects zero amount', () => {
-    assert.rejects(() => client.depositNative('0'), /Deposit amount too small/);
+    assert.rejects(() => client.depositNative('0'), /Deposit amount must be greater than zero/);
   });
 });
 
@@ -141,6 +141,31 @@ describe('getConversation input validation', () => {
     assert.rejects(
       () => client.getConversation('0x' + 'ab'.repeat(20), 0, 0),
       /limit must be between 1 and 1000/
+    );
+  });
+});
+
+describe('approveContributor input validation', () => {
+  const client = makeMockClient();
+
+  it('rejects invalid contributor address', () => {
+    assert.rejects(
+      () => client.approveContributor(1, '0xbad', 5000),
+      /Invalid contributor address/
+    );
+  });
+
+  it('rejects sharesBps > 10000', () => {
+    assert.rejects(
+      () => client.approveContributor(1, '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266', 10001),
+      /sharesBps must be between 0 and 10000/
+    );
+  });
+
+  it('rejects negative sharesBps', () => {
+    assert.rejects(
+      () => client.approveContributor(1, '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266', -1),
+      /sharesBps must be between 0 and 10000/
     );
   });
 });

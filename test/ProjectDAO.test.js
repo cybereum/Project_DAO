@@ -2669,6 +2669,22 @@ describe("Input validation hardening", () => {
     ).to.be.revertedWith("Metadata URI cannot be empty.");
   });
 
+  it("updateAgentMetadata rejects metadataURI over 512 bytes", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    const longURI = "x".repeat(513);
+    await expect(
+      dao.connect(alice).updateAgentMetadata(longURI)
+    ).to.be.revertedWith("Metadata URI too long.");
+  });
+
+  it("stakeAndJoin rejects empty metadataURI", async () => {
+    const { dao, alice } = await deploy();
+    await expect(
+      dao.connect(alice).stakeAndJoin("", { value: ethers.parseEther("0.01") })
+    ).to.be.revertedWith("metadataURI required.");
+  });
+
   it("stakeAndJoin rejects metadataURI over 512 bytes", async () => {
     const { dao, alice } = await deploy();
     const longURI = "x".repeat(513);

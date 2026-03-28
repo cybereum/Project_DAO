@@ -90,7 +90,7 @@ async function main() {
   }
 
   // Verify final state
-  console.log("\n=== Deployment Summary ===");
+  console.log("\n=== Verifying Deployment ===");
   const finalTreasury = await dao.cybereumTreasury();
   const finalFeeBps = await dao.cybereumFeeBps();
   const finalAssetFee = await dao.assetTransferFlatFeeWei();
@@ -123,7 +123,7 @@ async function main() {
       });
       console.log("Contract verified on block explorer.");
     } catch (verifyErr) {
-      if (verifyErr.message?.includes("Already Verified") || verifyErr.message?.includes("already verified")) {
+      if (verifyErr.message?.includes("Already Verified") || verifyErr.message?.includes("already verified") || verifyErr.message?.includes("Contract source code already verified")) {
         console.log("Contract already verified.");
       } else {
         console.warn("Verification failed (non-fatal):", verifyErr.message);

@@ -230,15 +230,22 @@ export class AgentClient {
 
   /**
    * @private
-   * Wrap a promise with a timeout.
+   * Wrap a promise with a timeout. Uses a settled flag to prevent
+   * race conditions between the timeout and the promise resolution.
    */
   _withTimeout(promise, ms) {
     if (!ms || ms <= 0) return promise;
+    let settled = false;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`Transaction timed out after ${ms}ms`)), ms);
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          reject(new Error(`Transaction timed out after ${ms}ms`));
+        }
+      }, ms);
       promise.then(
-        val => { clearTimeout(timer); resolve(val); },
-        err => { clearTimeout(timer); reject(err); }
+        val => { if (!settled) { settled = true; clearTimeout(timer); resolve(val); } },
+        err => { if (!settled) { settled = true; clearTimeout(timer); reject(err); } }
       );
     });
   }
@@ -332,8 +339,7 @@ export class AgentClient {
   /** Deposit ETH into escrow. Amount in ETH string (e.g. '0.1'). */
   async depositNative(amountEth) {
     const value = ethers.parseEther(amountEth);
-    if (value === 0n) throw new Error('Deposit amount too small');
-    if (value <= 0n) throw new Error('Amount must be greater than zero');
+    if (value <= 0n) throw new Error('Deposit amount must be greater than zero');
     const tx = await this._write(() => this.contract.depositNativeToEscrow({ value }));
     return tx.wait();
   }
@@ -431,8 +437,7 @@ export class AgentClient {
   /** Stake ETH to join the DAO and register as an agent in one transaction. */
   async stakeAndJoin(metadataURI, stakeEth) {
     const value = ethers.parseEther(stakeEth);
-    if (value === 0n) throw new Error('Stake amount too small');
-    if (value <= 0n) throw new Error('Amount must be greater than zero');
+    if (value <= 0n) throw new Error('Stake amount must be greater than zero');
     const tx = await this._write(() => this.contract.stakeAndJoin(metadataURI, { value }));
     return tx.wait();
   }
@@ -471,9 +476,10 @@ export class AgentClient {
     return tx.wait();
   }
 
-  /** Approve a contributor for a project with a revenue share (in bps). */
+  /** Approve a contributor for a project with a revenue share (in bps, 0-10000). */
   async approveContributor(projectId, contributorAddress, sharesBps) {
     this._validateAddress(contributorAddress, 'contributor');
+    if (sharesBps < 0 || sharesBps > 10000) throw new Error('sharesBps must be between 0 and 10000');
     const tx = await this._write(() => this.contract.approveContributor(projectId, contributorAddress, sharesBps));
     return tx.wait();
   }
