@@ -35,7 +35,7 @@ jobs:
 
       # Dependency audit — fail on high/critical vulnerabilities
       - name: Audit dependencies
-        run: npm audit --audit-level=high --production || true
+        run: npm audit --audit-level=high --production
 
   frontend:
     name: Frontend Build & Lint
