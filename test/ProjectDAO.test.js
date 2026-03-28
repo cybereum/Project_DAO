@@ -3079,6 +3079,31 @@ describe("whenNotPaused on task management functions", () => {
     ).to.be.revertedWith("Contract is paused.");
   });
 
+  it("addTaskProgress reverts when paused", async () => {
+    const { dao, alice } = await deploy();
+    await dao.addMember(alice.address, 10);
+    await dao.createMilestone("M1", 9999999999);
+    await dao.createTask("task", 9999999999, 0, ethers.ZeroAddress, "open");
+    // Create role with "reporter" permission and assign to alice
+    await dao.createRole(ethers.encodeBytes32String("Reporter"));
+    await dao.addPermission(2, "reporter"); // role 2 (after Owner at 1)
+    await dao.assignRole(alice.address, 2);
+    await dao.pauseContract();
+    await expect(
+      dao.connect(alice).addTaskProgress(1, "progress", false, 50)
+    ).to.be.revertedWith("Contract is paused.");
+  });
+
+  it("updateTask reverts when paused", async () => {
+    const { dao } = await deploy();
+    await dao.createMilestone("M1", 9999999999);
+    await dao.createTask("task", 9999999999, 0, ethers.ZeroAddress, "open");
+    await dao.pauseContract();
+    await expect(
+      dao.updateTask(1, "updated", 9999999999, ethers.ZeroAddress, "closed")
+    ).to.be.revertedWith("Contract is paused.");
+  });
+
   it("deleteTask reverts when paused", async () => {
     const { dao } = await deploy();
     await dao.createMilestone("M1", 9999999999);
