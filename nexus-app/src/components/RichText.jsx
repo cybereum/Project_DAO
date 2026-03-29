@@ -100,7 +100,7 @@ export const RICH_TEXT_STYLES = {
 
 /**
  * Parse simple inline markup into specs array.
- * Supports: `code`, **bold**, [link], {chip:tone:label}
+ * Supports: `code`, **bold**, {chip:tone:label}
  *
  * Example:
  *   parseRichSpecs("Ship `pre-wrap` for {chip:status:blocked} by **vertical text**")
