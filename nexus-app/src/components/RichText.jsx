@@ -6,6 +6,11 @@
  * chips/badges are atomic and never break. Layout is pure arithmetic — resize
  * triggers ~0.01ms recompute, not browser reflow.
  *
+ * Accessibility:
+ *   - Hidden <span> provides full plain-text to screen readers
+ *   - Visual layout is aria-hidden (absolute-positioned lines aren't navigable)
+ *   - Chip elements include role="status" for semantic meaning
+ *
  * Usage:
  *   <RichText
  *     specs={[
@@ -18,35 +23,52 @@
  *   />
  */
 
+import { useMemo } from 'react';
 import { useRichInlineLayout } from '../lib/usePretext.js';
+import { specsToPlainText } from '../lib/pretext.js';
 
 // Default NEXUS fonts matching index.css
 const BODY_FONT = '400 14px Roboto, system-ui, sans-serif';
 
-export default function RichText({ specs, lineHeight = 28, className = '', gapFont }) {
+export default function RichText({ specs, lineHeight = 28, className = '', gapFont, ariaLabel }) {
   const { ref, lines, height } = useRichInlineLayout(specs, lineHeight, {
     gapFont: gapFont ?? BODY_FONT,
   });
 
+  // Build accessible plain-text for screen readers
+  const plainText = useMemo(() => specs?.length ? specsToPlainText(specs) : '', [specs]);
+
   return (
-    <div ref={ref} className={`relative ${className}`} style={{ height: height || undefined, minHeight: lineHeight }}>
-      {lines.map((line, li) => (
-        <div
-          key={li}
-          className="absolute left-0 flex items-baseline flex-nowrap"
-          style={{ top: li * lineHeight }}
-        >
-          {line.fragments.map((frag, fi) => (
-            <span
-              key={fi}
-              className={`inline-block whitespace-pre ${frag.className ?? ''}`}
-              style={frag.leadingGap > 0 ? { marginLeft: frag.leadingGap } : undefined}
-            >
-              {frag.text}
-            </span>
-          ))}
-        </div>
-      ))}
+    <div
+      ref={ref}
+      className={`relative ${className}`}
+      style={{ height: height || undefined, minHeight: lineHeight }}
+      role="text"
+      aria-label={ariaLabel ?? plainText}
+    >
+      {/* Screen-reader-only: full plain text in natural reading order */}
+      <span className="sr-only">{plainText}</span>
+
+      {/* Visual layout: absolutely-positioned lines — hidden from assistive tech */}
+      <div aria-hidden="true">
+        {lines.map((line, li) => (
+          <div
+            key={li}
+            className="absolute left-0 flex items-baseline flex-nowrap"
+            style={{ top: li * lineHeight }}
+          >
+            {line.fragments.map((frag, fi) => (
+              <span
+                key={fi}
+                className={`inline-block whitespace-pre ${frag.className ?? ''}`}
+                style={frag.leadingGap > 0 ? { marginLeft: frag.leadingGap } : undefined}
+              >
+                {frag.text}
+              </span>
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

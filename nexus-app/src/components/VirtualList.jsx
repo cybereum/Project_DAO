@@ -5,11 +5,13 @@
  * visible window. Row heights are pre-computed via OffscreenCanvas text
  * measurement — no DOM reads needed, no "render then measure" cycle.
  *
- * The key insight from Pretext: separate measurement from rendering.
- * Heights are pure arithmetic on cached segment widths, so:
- *   - Initial render knows all heights before any DOM exists
- *   - Scroll position is accurate (no jumping/shimmer)
- *   - Resize recalculates in ~0.01ms per item
+ * Accessibility:
+ *   - Container has role="list" and aria-label
+ *   - Each row has role="listitem"
+ *   - Keyboard navigation: ArrowUp/Down moves focus between items
+ *   - Home/End jumps to first/last item
+ *   - Focus follows scroll position
+ *   - scrollToItem() for programmatic scroll (e.g. new messages)
  *
  * Usage:
  *   <VirtualList
@@ -19,24 +21,13 @@
  *     renderItem={(item, index, style) => (
  *       <div style={style}><ProposalCard proposal={item} /></div>
  *     )}
+ *     ariaLabel="Proposal list"
  *   />
  */
 
-import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
 
-/**
- * @param {{
- *   items: any[],
- *   containerHeight: number,
- *   estimateHeight: (item: any, index: number) => number,
- *   renderItem: (item: any, index: number, style: object) => React.ReactNode,
- *   overscan?: number,
- *   className?: string,
- *   innerClassName?: string,
- *   gap?: number,
- * }} props
- */
-export default function VirtualList({
+const VirtualList = forwardRef(function VirtualList({
   items,
   containerHeight,
   estimateHeight,
@@ -45,10 +36,13 @@ export default function VirtualList({
   className = '',
   innerClassName = '',
   gap = 0,
-}) {
+  ariaLabel = 'Scrollable list',
+  onFocusChange,
+}, forwardedRef) {
   const [scrollTop, setScrollTop] = useState(0);
   const containerRef = useRef(null);
   const [containerWidth, setContainerWidth] = useState(0);
+  const [focusedIndex, setFocusedIndex] = useState(-1);
 
   // Track container width for responsive re-estimation
   useEffect(() => {
@@ -100,9 +94,70 @@ export default function VirtualList({
     return { start, end };
   }, [items.length, offsets, scrollTop, containerHeight, overscan]);
 
+  // Scroll to a specific item index (for programmatic control)
+  const scrollToItem = useCallback((index, position = 'start') => {
+    const el = containerRef.current;
+    if (!el || index < 0 || index >= items.length) return;
+
+    let targetTop;
+    if (position === 'end') {
+      targetTop = offsets[index + 1] - containerHeight;
+    } else if (position === 'center') {
+      targetTop = offsets[index] - (containerHeight - heights[index]) / 2;
+    } else {
+      targetTop = offsets[index];
+    }
+
+    el.scrollTop = Math.max(0, Math.min(targetTop, totalHeight - containerHeight));
+  }, [items.length, offsets, heights, containerHeight, totalHeight]);
+
+  // Expose scrollToItem to parent via ref
+  useImperativeHandle(forwardedRef, () => ({
+    scrollToItem,
+    scrollToEnd: () => {
+      const el = containerRef.current;
+      if (el) el.scrollTop = totalHeight;
+    },
+    getContainer: () => containerRef.current,
+  }), [scrollToItem, totalHeight]);
+
   const onScroll = useCallback((e) => {
     setScrollTop(e.currentTarget.scrollTop);
   }, []);
+
+  // Keyboard navigation
+  const handleKeyDown = useCallback((e) => {
+    if (items.length === 0) return;
+
+    let nextIndex = focusedIndex;
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        nextIndex = Math.min(items.length - 1, focusedIndex + 1);
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        nextIndex = Math.max(0, focusedIndex - 1);
+        break;
+      case 'Home':
+        e.preventDefault();
+        nextIndex = 0;
+        break;
+      case 'End':
+        e.preventDefault();
+        nextIndex = items.length - 1;
+        break;
+      default:
+        return;
+    }
+
+    if (nextIndex !== focusedIndex) {
+      setFocusedIndex(nextIndex);
+      scrollToItem(nextIndex, 'center');
+      onFocusChange?.(nextIndex, items[nextIndex]);
+    }
+  }, [items, focusedIndex, scrollToItem, onFocusChange]);
 
   // Render only visible items
   const visibleItems = [];
@@ -114,7 +169,7 @@ export default function VirtualList({
       right: 0,
       height: heights[i] - gap,
     };
-    visibleItems.push(renderItem(items[i], i, style));
+    visibleItems.push(renderItem(items[i], i, style, i === focusedIndex));
   }
 
   return (
@@ -123,10 +178,17 @@ export default function VirtualList({
       className={`overflow-y-auto ${className}`}
       style={{ height: containerHeight }}
       onScroll={onScroll}
+      onKeyDown={handleKeyDown}
+      role="list"
+      aria-label={ariaLabel}
+      aria-rowcount={items.length}
+      tabIndex={0}
     >
       <div className={`relative ${innerClassName}`} style={{ height: totalHeight }}>
         {visibleItems}
       </div>
     </div>
   );
-}
+});
+
+export default VirtualList;

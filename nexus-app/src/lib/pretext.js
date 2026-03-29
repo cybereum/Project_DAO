@@ -64,18 +64,33 @@ export function getSpaceWidth(font) {
 }
 
 // ---------------------------------------------------------------------------
-// Text segmentation via Intl.Segmenter
+// Text segmentation via Intl.Segmenter — with locale support
 // ---------------------------------------------------------------------------
 let _wordSegmenter = null;
 let _graphemeSegmenter = null;
+let _locale = undefined; // undefined = browser default
+
+/**
+ * Set the locale for text segmentation. Affects word-boundary rules
+ * for CJK, Thai, Khmer, and other scripts with locale-specific breaking.
+ * Call with no argument to reset to browser default.
+ *
+ * @param {string} [locale] — BCP 47 locale tag (e.g. 'ja', 'th', 'zh-Hans')
+ */
+export function setLocale(locale) {
+  if (_locale === locale) return;
+  _locale = locale;
+  _wordSegmenter = null;
+  _graphemeSegmenter = null;
+}
 
 function wordSegmenter() {
-  if (!_wordSegmenter) _wordSegmenter = new Intl.Segmenter(undefined, { granularity: 'word' });
+  if (!_wordSegmenter) _wordSegmenter = new Intl.Segmenter(_locale, { granularity: 'word' });
   return _wordSegmenter;
 }
 
 function graphemeSegmenter() {
-  if (!_graphemeSegmenter) _graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+  if (!_graphemeSegmenter) _graphemeSegmenter = new Intl.Segmenter(_locale, { granularity: 'grapheme' });
   return _graphemeSegmenter;
 }
 
@@ -520,10 +535,92 @@ export function measureAccordionHeight(text, font, containerWidth, lineHeight, o
 }
 
 // ---------------------------------------------------------------------------
+// Smart truncation — word-boundary-aware "Show more"
+// ---------------------------------------------------------------------------
+
+/**
+ * Truncate text to fit within `maxLines` lines at `maxWidth`, breaking
+ * at a word boundary. Returns the truncated text and whether it was clipped.
+ *
+ * Unlike CSS `line-clamp`, this computes the exact cut point via arithmetic
+ * — no DOM measurement, no hidden element, no reflow.
+ *
+ * @param {string} text
+ * @param {string} font
+ * @param {number} maxWidth
+ * @param {number} maxLines
+ * @param {{ ellipsis?: string }} [options]
+ * @returns {{ text: string, truncated: boolean, lineCount: number }}
+ */
+export function truncateToLines(text, font, maxWidth, maxLines, options) {
+  if (!text) return { text: '', truncated: false, lineCount: 0 };
+  const prepared = prepare(text, font);
+  const full = layout(prepared, maxWidth, 1); // lineHeight=1 just for counting
+  if (full.lineCount <= maxLines) {
+    return { text, truncated: false, lineCount: full.lineCount };
+  }
+
+  const ellipsis = options?.ellipsis ?? '…';
+  const ellipsisWidth = measureSegment(ellipsis, font);
+
+  // Walk lines until we reach maxLines, then truncate the last
+  let lineCount = 1;
+  let lineWidth = 0;
+  let lastGoodIdx = 0;
+
+  for (let i = 0; i < prepared.segments.length; i++) {
+    const seg = prepared.segments[i];
+    const w = prepared.widths[i];
+    const ws = prepared.isWhitespace[i];
+
+    if (seg === '\n') {
+      lineCount++;
+      if (lineCount > maxLines) break;
+      lineWidth = 0;
+      lastGoodIdx = i + 1;
+      continue;
+    }
+
+    if (ws) { lineWidth += w; continue; }
+
+    if (lineWidth + w > maxWidth && lineWidth > 0) {
+      lineCount++;
+      if (lineCount > maxLines) break;
+      lineWidth = w;
+      lastGoodIdx = i;
+    } else {
+      lineWidth += w;
+      // On the last allowed line, check if ellipsis still fits
+      if (lineCount === maxLines && lineWidth + ellipsisWidth > maxWidth) {
+        break;
+      }
+      lastGoodIdx = i + 1;
+    }
+  }
+
+  const truncated = prepared.segments.slice(0, lastGoodIdx).join('').replace(/\s+$/, '') + ellipsis;
+  return { text: truncated, truncated: true, lineCount: maxLines };
+}
+
+/**
+ * Extract plain text from an array of inline specs.
+ * Useful for screen readers — builds the accessible text content
+ * from the same specs used for visual rendering.
+ *
+ * @param {Array<InlineSpec|ChipSpec>} specs
+ * @returns {string}
+ */
+export function specsToPlainText(specs) {
+  return specs.map(s => s.kind === 'chip' ? s.label : s.text).join('');
+}
+
+// ---------------------------------------------------------------------------
 // Cache management
 // ---------------------------------------------------------------------------
 
 export function clearCaches() {
   _caches.clear();
   _spaceWidths.clear();
+  _wordSegmenter = null;
+  _graphemeSegmenter = null;
 }

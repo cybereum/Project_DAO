@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../store/appStore';
 import { nexusAI } from '../services/nexusAI';
+import MeasuredAccordion from '../components/MeasuredAccordion';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -105,29 +106,32 @@ function KitCard({ kit, onUpvote, loading }) {
           {/* Expand toggle */}
           <button
             onClick={() => setExpanded(e => !e)}
+            aria-expanded={expanded}
+            aria-label={expanded ? 'Collapse details' : 'Expand details'}
             className="text-nexus-text-dim hover:text-nexus-text transition-colors flex-shrink-0"
           >
             {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
           </button>
         </div>
 
-        <AnimatePresence>
-          {expanded && kit.rationale && (
-            <Motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="mt-3 pt-3 border-t border-nexus-border overflow-hidden"
-            >
-              <p className="text-xs text-nexus-text-dim">{kit.rationale}</p>
-              {kit.submittedAt > 0 && (
-                <p className="text-xs text-nexus-text-dim/50 mt-1">
-                  Submitted {new Date(kit.submittedAt * 1000).toLocaleDateString()}
-                </p>
-              )}
-            </Motion.div>
-          )}
-        </AnimatePresence>
+        {/* MeasuredAccordion: height pre-computed via Pretext — no reflow on expand */}
+        {kit.rationale && (
+          <MeasuredAccordion
+            isOpen={expanded}
+            text={kit.rationale}
+            font="400 12px Roboto, system-ui, sans-serif"
+            lineHeight={18}
+            paddingY={28}
+            className="mt-3 pt-3 border-t border-nexus-border"
+          >
+            <p className="text-xs text-nexus-text-dim">{kit.rationale}</p>
+            {kit.submittedAt > 0 && (
+              <p className="text-xs text-nexus-text-dim/50 mt-1">
+                Submitted {new Date(kit.submittedAt * 1000).toLocaleDateString()}
+              </p>
+            )}
+          </MeasuredAccordion>
+        )}
       </div>
     </Motion.div>
   );

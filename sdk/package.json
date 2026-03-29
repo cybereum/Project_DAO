@@ -10,7 +10,8 @@
   "exports": {
     ".": "./index.js",
     "./abi": "./abi.js",
-    "./deployments": "./deployments.json"
+    "./deployments": "./deployments.json",
+    "./pretext": "./pretext.js"
   },
   "engines": {
     "node": ">=20.0.0"
@@ -21,5 +22,5 @@
     "ethers": "^6.16.0"
   },
   "peerDependencies": {},
-  "files": ["index.js", "abi.js", "deployments.js", "deployments.json"]
+  "files": ["index.js", "abi.js", "deployments.js", "deployments.json", "pretext.js"]
 }
