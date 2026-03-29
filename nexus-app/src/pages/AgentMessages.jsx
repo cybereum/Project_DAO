@@ -9,6 +9,8 @@ import {
 import { useApp } from '../store/appStore';
 import { markFunnelStep } from '../lib/utm.js';
 import { trackEvent } from '../lib/analytics.js';
+import VirtualList from '../components/VirtualList';
+import { estimateTextHeight } from '../lib/pretext.js';
 
 function Btn({ children, loading, variant = 'primary', disabled, className = '', ...props }) {
   const base = 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-opacity disabled:opacity-50';
@@ -351,7 +353,7 @@ export default function AgentMessages() {
                 </Btn>
               </div>
 
-              {/* Messages */}
+              {/* Messages — uses VirtualList with Pretext height estimation for 50+ messages */}
               <div className="flex-1 overflow-y-auto px-4 py-4">
                 {conversationLoading && !conversationMessages?.messages?.length ? (
                   <div className="flex items-center justify-center py-12">
@@ -364,14 +366,42 @@ export default function AgentMessages() {
                         Showing {conversationMessages.messages.length} of {conversationMessages.total} messages
                       </p>
                     )}
-                    {conversationMessages.messages.map(msg => (
-                      <MessageBubble
-                        key={msg.id}
-                        msg={msg}
-                        isOwn={msg.sender.toLowerCase() === walletAddress?.toLowerCase()}
-                        onMarkRead={handleMarkRead}
+                    {conversationMessages.messages.length > 50 ? (
+                      <VirtualList
+                        items={conversationMessages.messages}
+                        containerHeight={400}
+                        estimateHeight={(msg) => {
+                          // Pretext measures message text height without DOM reflow
+                          const textHeight = estimateTextHeight(
+                            msg.encryptedContent || '',
+                            '400 14px Roboto, system-ui, sans-serif',
+                            300, // ~75% of conversation width
+                            22,
+                            { paddingY: 40 } // bubble padding + timestamp
+                          );
+                          return Math.max(64, textHeight);
+                        }}
+                        gap={12}
+                        renderItem={(msg, i, style) => (
+                          <div key={msg.id} style={style}>
+                            <MessageBubble
+                              msg={msg}
+                              isOwn={msg.sender.toLowerCase() === walletAddress?.toLowerCase()}
+                              onMarkRead={handleMarkRead}
+                            />
+                          </div>
+                        )}
                       />
-                    ))}
+                    ) : (
+                      conversationMessages.messages.map(msg => (
+                        <MessageBubble
+                          key={msg.id}
+                          msg={msg}
+                          isOwn={msg.sender.toLowerCase() === walletAddress?.toLowerCase()}
+                          onMarkRead={handleMarkRead}
+                        />
+                      ))
+                    )}
                     <div ref={messagesEndRef} />
                   </>
                 ) : (

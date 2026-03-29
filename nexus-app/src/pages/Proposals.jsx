@@ -1,8 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import { useApp } from '../store/appStore';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { Vote, ThumbsUp, ThumbsDown, Clock, User, AlertTriangle, CheckCircle2, XCircle, Plus, RefreshCcw } from 'lucide-react';
 import ShareProposal from '../components/ShareProposal';
+import MeasuredAccordion from '../components/MeasuredAccordion';
+import VirtualList from '../components/VirtualList';
+import { estimateTextHeight } from '../lib/pretext.js';
 
 const anim = (i) => ({ initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, transition: { delay: i * 0.05 } });
 
@@ -12,6 +15,94 @@ const STATUS_CONFIG = {
   'Disputed': { bg: 'bg-nexus-amber/10', text: 'text-nexus-amber', border: 'border-nexus-amber/20', icon: AlertTriangle },
   'Rejected': { bg: 'bg-nexus-red/10', text: 'text-nexus-red', border: 'border-nexus-red/20', icon: XCircle },
 };
+
+/** Single proposal card — uses MeasuredAccordion for reflow-free expand/collapse. */
+function ProposalCard({ proposal, index, expanded, setExpanded, projects, castVote, walletConnected, txPending, setTxFeedback }) {
+  const total = proposal.yesVotes + proposal.noVotes;
+  const yesPct = total > 0 ? Math.round((proposal.yesVotes / total) * 100) : 0;
+  const noPct = total > 0 ? 100 - yesPct : 0;
+  const config = STATUS_CONFIG[proposal.status];
+  const StatusIcon = config?.icon || Clock;
+  const project = projects.find(p => p.id === proposal.projectId);
+  const isExpanded = expanded === proposal.id;
+
+  return (
+    <Motion.div {...anim(index)}
+      className="rounded-xl border border-nexus-border bg-nexus-card overflow-hidden hover:border-nexus-cyan/20 transition-colors">
+      <div className="p-5 cursor-pointer" onClick={() => setExpanded(isExpanded ? null : proposal.id)}>
+        <div className="flex items-start justify-between gap-4 mb-3">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-1">
+              <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${config.bg} ${config.text} ${config.border}`}>
+                <StatusIcon size={10} />{proposal.status}
+              </span>
+              {project && <span className="text-xs text-nexus-text-dim">{project.name}</span>}
+            </div>
+            <h3 className="text-lg font-semibold">{proposal.title}</h3>
+          </div>
+          <div className="text-right shrink-0">
+            <div className="text-2xl font-bold text-nexus-cyan">{yesPct}%</div>
+            <div className="text-xs text-nexus-text-dim">approval</div>
+          </div>
+        </div>
+
+        <div className="flex gap-1 h-3 rounded-full overflow-hidden mb-3">
+          <div className="bg-nexus-green rounded-l-full transition-all" style={{ width: `${yesPct}%` }} />
+          <div className="bg-nexus-red rounded-r-full transition-all" style={{ width: `${noPct}%` }} />
+          {total === 0 && <div className="bg-nexus-border w-full rounded-full" />}
+        </div>
+
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-6 text-xs text-nexus-text-dim">
+            <span className="flex items-center gap-1"><ThumbsUp size={12} className="text-nexus-green" /> {proposal.yesVotes} Yes</span>
+            <span className="flex items-center gap-1"><ThumbsDown size={12} className="text-nexus-red" /> {proposal.noVotes} No</span>
+            <span className="flex items-center gap-1"><Clock size={12} /> Ends {proposal.deadline}</span>
+            <span className="flex items-center gap-1"><User size={12} /> {proposal.author}</span>
+          </div>
+          <div onClick={e => e.stopPropagation()}>
+            <ShareProposal proposal={proposal} />
+          </div>
+        </div>
+      </div>
+
+      {/* MeasuredAccordion: height pre-computed via Pretext — no reflow on expand */}
+      <MeasuredAccordion
+        isOpen={isExpanded}
+        text={proposal.description || ''}
+        font="400 14px Roboto, system-ui, sans-serif"
+        lineHeight={22}
+        paddingY={56}
+        className="border-t border-nexus-border"
+      >
+        <div className="p-5">
+          <p className="text-sm text-nexus-text-dim mb-4">{proposal.description}</p>
+          {proposal.status === 'Active' && (
+            <div className="flex gap-3">
+              <button onClick={async (e) => { e.stopPropagation(); const result = await castVote(proposal.id, true); if (result?.ok) { setTxFeedback({ type: 'success', message: result.onChain ? 'Vote recorded on-chain.' : 'Vote recorded locally (demo mode).', txHash: result.txHash || null }); } else { setTxFeedback({ type: 'error', message: 'Vote failed. See error above.', txHash: null }); } }}
+                disabled={!walletConnected || txPending}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-nexus-green/10 border border-nexus-green/20 text-nexus-green text-sm font-medium hover:bg-nexus-green/20 transition-colors disabled:opacity-50">
+                <ThumbsUp size={16} /> Vote Yes
+              </button>
+              <button onClick={async (e) => { e.stopPropagation(); const result = await castVote(proposal.id, false); if (result?.ok) { setTxFeedback({ type: 'success', message: result.onChain ? 'Vote recorded on-chain.' : 'Vote recorded locally (demo mode).', txHash: result.txHash || null }); } else { setTxFeedback({ type: 'error', message: 'Vote failed. See error above.', txHash: null }); } }}
+                disabled={!walletConnected || txPending}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-nexus-red/10 border border-nexus-red/20 text-nexus-red text-sm font-medium hover:bg-nexus-red/20 transition-colors disabled:opacity-50">
+                <ThumbsDown size={16} /> Vote No
+              </button>
+              {proposal.status === 'Active' && (
+                <button className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-nexus-amber/10 border border-nexus-amber/20 text-nexus-amber text-sm font-medium hover:bg-nexus-amber/20 transition-colors">
+                  <AlertTriangle size={16} /> Dispute
+                </button>
+              )}
+            </div>
+          )}
+          {!walletConnected && proposal.status === 'Active' && (
+            <p className="text-xs text-nexus-amber mt-2">Connect your wallet to vote</p>
+          )}
+        </div>
+      </MeasuredAccordion>
+    </Motion.div>
+  );
+}
 
 export default function Proposals() {
   const {
@@ -128,91 +219,38 @@ export default function Proposals() {
         ))}
       </div>
 
-      <div className="space-y-4">
-        {filtered.map((proposal, i) => {
-          const total = proposal.yesVotes + proposal.noVotes;
-          const yesPct = total > 0 ? Math.round((proposal.yesVotes / total) * 100) : 0;
-          const noPct = total > 0 ? 100 - yesPct : 0;
-          const config = STATUS_CONFIG[proposal.status];
-          const StatusIcon = config?.icon || Clock;
-          const project = projects.find(p => p.id === proposal.projectId);
-          const isExpanded = expanded === proposal.id;
-
-          return (
-            <Motion.div key={proposal.id} {...anim(i)}
-              className="rounded-xl border border-nexus-border bg-nexus-card overflow-hidden hover:border-nexus-cyan/20 transition-colors">
-              <div className="p-5 cursor-pointer" onClick={() => setExpanded(isExpanded ? null : proposal.id)}>
-                <div className="flex items-start justify-between gap-4 mb-3">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${config.bg} ${config.text} ${config.border}`}>
-                        <StatusIcon size={10} />{proposal.status}
-                      </span>
-                      {project && <span className="text-xs text-nexus-text-dim">{project.name}</span>}
-                    </div>
-                    <h3 className="text-lg font-semibold">{proposal.title}</h3>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-2xl font-bold text-nexus-cyan">{yesPct}%</div>
-                    <div className="text-xs text-nexus-text-dim">approval</div>
-                  </div>
-                </div>
-
-                <div className="flex gap-1 h-3 rounded-full overflow-hidden mb-3">
-                  <div className="bg-nexus-green rounded-l-full transition-all" style={{ width: `${yesPct}%` }} />
-                  <div className="bg-nexus-red rounded-r-full transition-all" style={{ width: `${noPct}%` }} />
-                  {total === 0 && <div className="bg-nexus-border w-full rounded-full" />}
-                </div>
-
-                <div className="flex items-center justify-between gap-4 flex-wrap">
-                  <div className="flex items-center gap-6 text-xs text-nexus-text-dim">
-                    <span className="flex items-center gap-1"><ThumbsUp size={12} className="text-nexus-green" /> {proposal.yesVotes} Yes</span>
-                    <span className="flex items-center gap-1"><ThumbsDown size={12} className="text-nexus-red" /> {proposal.noVotes} No</span>
-                    <span className="flex items-center gap-1"><Clock size={12} /> Ends {proposal.deadline}</span>
-                    <span className="flex items-center gap-1"><User size={12} /> {proposal.author}</span>
-                  </div>
-                  <div onClick={e => e.stopPropagation()}>
-                    <ShareProposal proposal={proposal} />
-                  </div>
-                </div>
-              </div>
-
-              <AnimatePresence>
-                {isExpanded && (
-                  <Motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-                    className="border-t border-nexus-border">
-                    <div className="p-5">
-                      <p className="text-sm text-nexus-text-dim mb-4">{proposal.description}</p>
-                      {proposal.status === 'Active' && (
-                        <div className="flex gap-3">
-                          <button onClick={async (e) => { e.stopPropagation(); const result = await castVote(proposal.id, true); if (result?.ok) { setTxFeedback({ type: 'success', message: result.onChain ? 'Vote recorded on-chain.' : 'Vote recorded locally (demo mode).', txHash: result.txHash || null }); } else { setTxFeedback({ type: 'error', message: 'Vote failed. See error above.', txHash: null }); } }}
-                            disabled={!walletConnected || txPending}
-                            className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-nexus-green/10 border border-nexus-green/20 text-nexus-green text-sm font-medium hover:bg-nexus-green/20 transition-colors disabled:opacity-50">
-                            <ThumbsUp size={16} /> Vote Yes
-                          </button>
-                          <button onClick={async (e) => { e.stopPropagation(); const result = await castVote(proposal.id, false); if (result?.ok) { setTxFeedback({ type: 'success', message: result.onChain ? 'Vote recorded on-chain.' : 'Vote recorded locally (demo mode).', txHash: result.txHash || null }); } else { setTxFeedback({ type: 'error', message: 'Vote failed. See error above.', txHash: null }); } }}
-                            disabled={!walletConnected || txPending}
-                            className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-nexus-red/10 border border-nexus-red/20 text-nexus-red text-sm font-medium hover:bg-nexus-red/20 transition-colors disabled:opacity-50">
-                            <ThumbsDown size={16} /> Vote No
-                          </button>
-                          {proposal.status === 'Active' && (
-                            <button className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-nexus-amber/10 border border-nexus-amber/20 text-nexus-amber text-sm font-medium hover:bg-nexus-amber/20 transition-colors">
-                              <AlertTriangle size={16} /> Dispute
-                            </button>
-                          )}
-                        </div>
-                      )}
-                      {!walletConnected && proposal.status === 'Active' && (
-                        <p className="text-xs text-nexus-amber mt-2">Connect your wallet to vote</p>
-                      )}
-                    </div>
-                  </Motion.div>
-                )}
-              </AnimatePresence>
-            </Motion.div>
-          );
-        })}
-      </div>
+      {/* Proposal list — uses VirtualList for 20+ items, plain list otherwise.
+           VirtualList pre-computes row heights via Pretext (OffscreenCanvas arithmetic),
+           so scroll position is accurate without rendering off-screen cards. */}
+      {filtered.length > 20 ? (
+        <VirtualList
+          items={filtered}
+          containerHeight={Math.min(720, typeof window !== 'undefined' ? window.innerHeight - 320 : 600)}
+          estimateHeight={(proposal) => {
+            // Card chrome: header ~120px + expanded description if open
+            const base = 140;
+            if (expanded === proposal.id) {
+              return base + estimateTextHeight(proposal.description || '', '400 14px Roboto, system-ui, sans-serif', 500, 22, { paddingY: 56 });
+            }
+            return base;
+          }}
+          gap={16}
+          className="rounded-xl"
+          renderItem={(proposal, i, style) => (
+            <div key={proposal.id} style={style}>
+              <ProposalCard proposal={proposal} index={i} expanded={expanded} setExpanded={setExpanded}
+                projects={projects} castVote={castVote} walletConnected={walletConnected} txPending={txPending} setTxFeedback={setTxFeedback} />
+            </div>
+          )}
+        />
+      ) : (
+        <div className="space-y-4">
+          {filtered.map((proposal, i) => (
+            <ProposalCard key={proposal.id} proposal={proposal} index={i} expanded={expanded} setExpanded={setExpanded}
+              projects={projects} castVote={castVote} walletConnected={walletConnected} txPending={txPending} setTxFeedback={setTxFeedback} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
