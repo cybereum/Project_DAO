@@ -10,6 +10,8 @@ import {
   ArrowUpRight, Clock, Zap, Activity, Shield, Bot, Brain, Lightbulb,
   ChevronRight, Rocket, AlertTriangle, ClipboardCheck
 } from 'lucide-react';
+import RichText, { CHIP_STYLES } from '../components/RichText';
+import { FONTS } from '../config/designTokens.js';
 
 const anim = (i) => ({ initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, transition: { delay: i * 0.05 } });
 
@@ -34,6 +36,15 @@ function StatCard({ icon: Icon, label, value, change, color, index }) {
       <div className="text-2xl font-bold text-nexus-text">{value}</div>
       <div className="text-xs text-nexus-text-dim mt-1">{label}</div>
     </Motion.div>
+  );
+}
+
+/** Renders a single line of rich text with chips using Pretext layout engine. */
+function ProtocolPulseLine({ specs }) {
+  return (
+    <div className="rounded-lg bg-nexus-bg/50 border border-nexus-border/50 px-4 py-3">
+      <RichText specs={specs} lineHeight={26} className="text-sm text-nexus-text-dim" />
+    </div>
   );
 }
 
@@ -215,6 +226,50 @@ export default function Dashboard() {
               </div>
             </div>
           ))}
+        </div>
+      </Motion.div>
+
+      {/* ── Protocol Activity Feed — rendered via Pretext RichText engine ── */}
+      <Motion.div {...anim(10)} className="rounded-xl border border-nexus-border bg-nexus-card p-5">
+        <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
+          <Zap size={16} className="text-nexus-cyan" />
+          Protocol Pulse
+        </h3>
+        <div className="space-y-4">
+          {/* Rich text summaries with inline chips — layout computed via OffscreenCanvas, no reflow */}
+          <ProtocolPulseLine
+            specs={[
+              { kind: 'chip', label: `${activeProposals.length} active`, font: FONTS.chip, className: CHIP_STYLES.status, chromeWidth: 22 },
+              { kind: 'text', text: ` proposals awaiting votes. `, font: FONTS.body },
+              { kind: 'text', text: `${members.length} contributors`, font: FONTS.body, className: 'font-medium text-nexus-text' },
+              { kind: 'text', text: ' across ', font: FONTS.body },
+              { kind: 'chip', label: `${projects.filter(p => p.status === 'Active').length} projects`, font: FONTS.chip, className: CHIP_STYLES.success, chromeWidth: 22 },
+              { kind: 'text', text: '.', font: FONTS.body },
+            ]}
+          />
+          {agentProfile?.registered && (
+            <ProtocolPulseLine
+              specs={[
+                { kind: 'text', text: 'Agent ', font: FONTS.body },
+                { kind: 'chip', label: 'registered', font: FONTS.chip, className: CHIP_STYLES.success, chromeWidth: 22 },
+                { kind: 'text', text: ` with escrow balance `, font: FONTS.body },
+                { kind: 'text', text: `${agentProfile.nativeEscrowBalance} wei`, font: FONTS.mono, className: 'px-1.5 py-0.5 rounded-md bg-white/8 font-mono text-xs text-nexus-text', chromeWidth: 12 },
+                { kind: 'text', text: '. Settlement layer ', font: FONTS.body },
+                { kind: 'chip', label: 'operational', font: FONTS.chip, className: CHIP_STYLES.status, chromeWidth: 22 },
+                { kind: 'text', text: '.', font: FONTS.body },
+              ]}
+            />
+          )}
+          {featureKits.length > 0 && (
+            <ProtocolPulseLine
+              specs={[
+                { kind: 'chip', label: `${featureKits.filter(k => k.status === 0).length} pending`, font: FONTS.chip, className: CHIP_STYLES.warning, chromeWidth: 22 },
+                { kind: 'text', text: ' feature kits in pipeline. ', font: FONTS.body },
+                { kind: 'chip', label: `${featureKits.filter(k => k.status === 4).length} shipped`, font: FONTS.chip, className: CHIP_STYLES.success, chromeWidth: 22 },
+                { kind: 'text', text: ' to production.', font: FONTS.body },
+              ]}
+            />
+          )}
         </div>
       </Motion.div>
 

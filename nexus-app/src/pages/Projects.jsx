@@ -7,6 +7,8 @@ import {
   FolderKanban, Users, Milestone, CheckCircle2, ArrowRight, Plus,
   Search, Filter, Zap, Globe, RefreshCw, AlertCircle, ExternalLink,
 } from 'lucide-react';
+import PretextTruncate from '../components/PretextTruncate';
+import { FONTS, LINE_HEIGHTS } from '../config/designTokens.js';
 
 const anim = (i) => ({ initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, transition: { delay: i * 0.05 } });
 
@@ -342,7 +344,15 @@ export default function Projects() {
                         </Link>
                       </div>
                       {meta.description && (
-                        <p className="text-xs text-nexus-text-dim mb-3 line-clamp-2">{meta.description}</p>
+                        <div className="mb-3">
+                          <PretextTruncate
+                            text={meta.description}
+                            maxLines={2}
+                            font={FONTS.bodySmall}
+                            lineHeight={LINE_HEIGHTS.bodySmall}
+                            className="text-xs text-nexus-text-dim"
+                          />
+                        </div>
                       )}
                       <FundingBar funded={funded} target={target} />
                       <div className="grid grid-cols-3 gap-2 pt-3 border-t border-nexus-border/50 mb-3">

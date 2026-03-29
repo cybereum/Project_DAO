@@ -9,6 +9,9 @@ import {
 import { useApp } from '../store/appStore';
 import { markFunnelStep } from '../lib/utm.js';
 import { trackEvent } from '../lib/analytics.js';
+import VirtualList from '../components/VirtualList';
+import { estimateTextHeight } from '../lib/pretext.js';
+import { FONTS, LINE_HEIGHTS } from '../config/designTokens.js';
 
 function Btn({ children, loading, variant = 'primary', disabled, className = '', ...props }) {
   const base = 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-opacity disabled:opacity-50';
@@ -120,6 +123,7 @@ export default function AgentMessages() {
   const [showNewConvo, setShowNewConvo] = useState(false);
   const [contactFilter, setContactFilter] = useState('');
   const messagesEndRef = useRef(null);
+  const virtualListRef = useRef(null);
 
   const contacts = useMemo(() => {
     if (!inbox?.messages?.length || !walletAddress) return [];
@@ -162,7 +166,11 @@ export default function AgentMessages() {
   }, [activeAgent, walletConnected, loadConversation]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (virtualListRef.current) {
+      virtualListRef.current.scrollToEnd();
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [conversationMessages]);
 
   const handleSend = useCallback(async () => {
@@ -351,8 +359,9 @@ export default function AgentMessages() {
                 </Btn>
               </div>
 
-              {/* Messages */}
-              <div className="flex-1 overflow-y-auto px-4 py-4">
+              {/* Messages — VirtualList is its own scroll container when active;
+                   otherwise the outer div scrolls */}
+              <div className={`flex-1 px-4 py-4 ${conversationMessages?.messages?.length > 50 ? '' : 'overflow-y-auto'}`}>
                 {conversationLoading && !conversationMessages?.messages?.length ? (
                   <div className="flex items-center justify-center py-12">
                     <RefreshCw size={20} className="animate-spin text-nexus-text-dim" />
@@ -364,14 +373,43 @@ export default function AgentMessages() {
                         Showing {conversationMessages.messages.length} of {conversationMessages.total} messages
                       </p>
                     )}
-                    {conversationMessages.messages.map(msg => (
-                      <MessageBubble
-                        key={msg.id}
-                        msg={msg}
-                        isOwn={msg.sender.toLowerCase() === walletAddress?.toLowerCase()}
-                        onMarkRead={handleMarkRead}
+                    {conversationMessages.messages.length > 50 ? (
+                      <VirtualList
+                        ref={virtualListRef}
+                        items={conversationMessages.messages}
+                        containerHeight={400}
+                        estimateHeight={(msg) => {
+                          // Pretext measures message text height without DOM reflow
+                          const textHeight = estimateTextHeight(
+                            msg.encryptedContent || '',
+                            FONTS.body,
+                            300, // ~75% of conversation width
+                            LINE_HEIGHTS.body,
+                            { paddingY: 40 } // bubble padding + timestamp
+                          );
+                          return Math.max(64, textHeight);
+                        }}
+                        gap={12}
+                        renderItem={(msg, i, style) => (
+                          <div key={msg.id} style={style}>
+                            <MessageBubble
+                              msg={msg}
+                              isOwn={msg.sender.toLowerCase() === walletAddress?.toLowerCase()}
+                              onMarkRead={handleMarkRead}
+                            />
+                          </div>
+                        )}
                       />
-                    ))}
+                    ) : (
+                      conversationMessages.messages.map(msg => (
+                        <MessageBubble
+                          key={msg.id}
+                          msg={msg}
+                          isOwn={msg.sender.toLowerCase() === walletAddress?.toLowerCase()}
+                          onMarkRead={handleMarkRead}
+                        />
+                      ))
+                    )}
                     <div ref={messagesEndRef} />
                   </>
                 ) : (

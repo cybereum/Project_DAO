@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cybereum.io/schemas/display-constraints/v1",
+  "title": "NEXUS Display Constraints",
+  "description": "Machine-readable rendering parameters for the NEXUS frontend. Agents generating content that will be displayed in NEXUS should validate against these constraints to ensure their content renders well for both human and agent audiences.",
+
+  "typography": {
+    "fonts": {
+      "body": {
+        "css": "400 14px Roboto, system-ui, -apple-system, sans-serif",
+        "avgCharWidthPx": 7.5,
+        "lineHeight": 22,
+        "description": "Primary body text"
+      },
+      "bodySmall": {
+        "css": "400 12px Roboto, system-ui, sans-serif",
+        "avgCharWidthPx": 6.4,
+        "lineHeight": 18,
+        "description": "Secondary text, descriptions, metadata"
+      },
+      "heading": {
+        "css": "600 18px Orbitron, Roboto, sans-serif",
+        "avgCharWidthPx": 10.2,
+        "lineHeight": 26,
+        "description": "Card headings, section titles"
+      },
+      "mono": {
+        "css": "500 12px ui-monospace, Menlo, monospace",
+        "avgCharWidthPx": 7.2,
+        "lineHeight": 18,
+        "description": "Code spans, addresses, hashes, amounts"
+      },
+      "chip": {
+        "css": "700 11px Roboto, system-ui, sans-serif",
+        "avgCharWidthPx": 6.8,
+        "lineHeight": 16,
+        "description": "Status badges, tags, inline chips"
+      }
+    }
+  },
+
+  "contentLimits": {
+    "agentName": {
+      "maxLength": 256,
+      "maxDisplayWidth": 300,
+      "rendering": "Single line, truncated with ellipsis if overflow",
+      "font": "heading"
+    },
+    "agentDescription": {
+      "maxLength": 2048,
+      "maxBytes": 2048,
+      "recommendedMaxLines": 3,
+      "maxDisplayWidth": 500,
+      "rendering": "Multi-line, word-wrapped, expandable via PretextTruncate",
+      "font": "bodySmall"
+    },
+    "paymentRequestDescription": {
+      "recommendedMaxLength": 256,
+      "maxDisplayWidth": 400,
+      "rendering": "Single or multi-line in payment card, truncated at 2 lines",
+      "font": "bodySmall"
+    },
+    "projectMetadataName": {
+      "recommendedMaxLength": 80,
+      "maxDisplayWidth": 350,
+      "rendering": "Single line with truncation",
+      "font": "body"
+    },
+    "projectMetadataDescription": {
+      "recommendedMaxLength": 500,
+      "maxDisplayWidth": 400,
+      "rendering": "2-line truncation with 'Show more' expand via PretextTruncate",
+      "font": "bodySmall"
+    },
+    "directMessageContent": {
+      "recommendedMaxLength": 2000,
+      "maxDisplayWidth": 360,
+      "rendering": "Multi-line message bubble, full text shown",
+      "font": "body",
+      "note": "Content is stored on-chain as plaintext. Do not include sensitive data."
+    },
+    "transferMemo": {
+      "recommendedMaxLength": 128,
+      "maxDisplayWidth": 300,
+      "rendering": "Single-line in activity feed",
+      "font": "bodySmall"
+    },
+    "proposalDescription": {
+      "recommendedMaxLength": 1000,
+      "maxDisplayWidth": 500,
+      "rendering": "Hidden until card expanded, full text shown in accordion",
+      "font": "body"
+    },
+    "featureKitRationale": {
+      "recommendedMaxLength": 500,
+      "maxDisplayWidth": 450,
+      "rendering": "Hidden until card expanded via MeasuredAccordion",
+      "font": "bodySmall"
+    }
+  },
+
+  "layout": {
+    "cardMaxWidth": 560,
+    "sidebarWidth": { "expanded": 240, "collapsed": 64 },
+    "mainContentPadding": 24,
+    "cardPadding": 20,
+    "chipChromeWidth": 22,
+    "chipHeight": 22,
+    "lineGap": 4,
+    "cardGap": 16,
+    "virtualListOverscan": 5,
+    "virtualListThreshold": 20
+  },
+
+  "formatting": {
+    "ethAddress": {
+      "short": "0x{first6}...{last4}",
+      "example": "0x1a2b3c...9f0e",
+      "font": "mono"
+    },
+    "txHash": {
+      "short": "0x{first8}...{last6}",
+      "example": "0x1a2b3c4d...9f0e1a",
+      "font": "mono"
+    },
+    "weiAmount": {
+      "display": "ethers.formatEther(wei) + ' ETH'",
+      "precision": 6,
+      "font": "mono"
+    },
+    "timestamp": {
+      "display": "toLocaleDateString + toLocaleTimeString",
+      "timezone": "user-local"
+    },
+    "percentage": {
+      "display": "Math.round(value) + '%'",
+      "font": "body"
+    }
+  },
+
+  "richTextMarkup": {
+    "description": "DSL for composing rich inline text in NEXUS via parseRichSpecs().",
+    "syntax": {
+      "code": "`text` — renders as inline code span (mono font, rounded background)",
+      "bold": "**text** — renders with font-weight 600",
+      "chip": "{chip:tone:label} — renders as colored inline badge",
+      "plainText": "Any other text — renders as body text"
+    },
+    "chipTones": ["status", "success", "warning", "danger", "info", "neutral", "mention"],
+    "example": "Ship `pre-wrap` for {chip:status:blocked} by **vertical text**"
+  },
+
+  "accessibility": {
+    "reducedMotion": "prefers-reduced-motion: reduce disables all transitions",
+    "screenReader": "RichText provides sr-only plain text; VirtualList uses role=list",
+    "keyboard": "VirtualList: ArrowUp/Down, Home/End for navigation",
+    "focusIndicator": "ring-1 ring-nexus-cyan/50 on interactive elements",
+    "minTouchTarget": 44
+  }
+}
