@@ -116,7 +116,9 @@ export function parseRichSpecs(markup, fonts) {
 
   const specs = [];
   // Regex: `code`, **bold**, {chip:tone:label}, or plain text
-  const pattern = /`([^`]+)`|\*\*([^*]+)\*\*|\{chip:(\w+):([^}]+)\}|([^`*{]+)/g;
+  // The final alternative matches any single special char that didn't form
+  // a complete token, so lone { * ` are preserved as plain text.
+  const pattern = /`([^`]+)`|\*\*([^*]+)\*\*|\{chip:(\w+):([^}]+)\}|([^`*{]+)|(.)/g;
   let match;
 
   while ((match = pattern.exec(markup)) !== null) {
@@ -134,6 +136,9 @@ export function parseRichSpecs(markup, fonts) {
     } else if (match[5] !== undefined) {
       // plain text
       specs.push({ kind: 'text', text: match[5], font: bodyFont });
+    } else if (match[6] !== undefined) {
+      // single unmatched special char — preserve as plain text
+      specs.push({ kind: 'text', text: match[6], font: bodyFont });
     }
   }
 

@@ -123,6 +123,7 @@ export default function AgentMessages() {
   const [showNewConvo, setShowNewConvo] = useState(false);
   const [contactFilter, setContactFilter] = useState('');
   const messagesEndRef = useRef(null);
+  const virtualListRef = useRef(null);
 
   const contacts = useMemo(() => {
     if (!inbox?.messages?.length || !walletAddress) return [];
@@ -165,7 +166,11 @@ export default function AgentMessages() {
   }, [activeAgent, walletConnected, loadConversation]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (virtualListRef.current) {
+      virtualListRef.current.scrollToEnd();
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [conversationMessages]);
 
   const handleSend = useCallback(async () => {
@@ -354,8 +359,9 @@ export default function AgentMessages() {
                 </Btn>
               </div>
 
-              {/* Messages — uses VirtualList with Pretext height estimation for 50+ messages */}
-              <div className="flex-1 overflow-y-auto px-4 py-4">
+              {/* Messages — VirtualList is its own scroll container when active;
+                   otherwise the outer div scrolls */}
+              <div className={`flex-1 px-4 py-4 ${conversationMessages?.messages?.length > 50 ? '' : 'overflow-y-auto'}`}>
                 {conversationLoading && !conversationMessages?.messages?.length ? (
                   <div className="flex items-center justify-center py-12">
                     <RefreshCw size={20} className="animate-spin text-nexus-text-dim" />
@@ -369,6 +375,7 @@ export default function AgentMessages() {
                     )}
                     {conversationMessages.messages.length > 50 ? (
                       <VirtualList
+                        ref={virtualListRef}
                         items={conversationMessages.messages}
                         containerHeight={400}
                         estimateHeight={(msg) => {
