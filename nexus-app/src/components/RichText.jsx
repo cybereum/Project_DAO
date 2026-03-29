@@ -26,13 +26,11 @@
 import { useMemo } from 'react';
 import { useRichInlineLayout } from '../lib/usePretext.js';
 import { specsToPlainText } from '../lib/pretext.js';
-
-// Default NEXUS fonts matching index.css
-const BODY_FONT = '400 14px Roboto, system-ui, sans-serif';
+import { FONTS } from '../config/designTokens.js';
 
 export default function RichText({ specs, lineHeight = 28, className = '', gapFont, ariaLabel }) {
   const { ref, lines, height } = useRichInlineLayout(specs, lineHeight, {
-    gapFont: gapFont ?? BODY_FONT,
+    gapFont: gapFont ?? FONTS.body,
   });
 
   // Build accessible plain-text for screen readers
@@ -112,9 +110,9 @@ export const RICH_TEXT_STYLES = {
  * @returns {Array<import('../lib/pretext.js').InlineSpec|import('../lib/pretext.js').ChipSpec>}
  */
 export function parseRichSpecs(markup, fonts) {
-  const bodyFont = fonts?.bodyFont ?? '400 14px Roboto, system-ui, sans-serif';
-  const codeFont = fonts?.codeFont ?? '500 12px ui-monospace, monospace';
-  const chipFont = fonts?.chipFont ?? '700 11px Roboto, system-ui, sans-serif';
+  const bodyFont = fonts?.bodyFont ?? FONTS.body;
+  const codeFont = fonts?.codeFont ?? FONTS.mono;
+  const chipFont = fonts?.chipFont ?? FONTS.chip;
 
   const specs = [];
   // Regex: `code`, **bold**, {chip:tone:label}, or plain text

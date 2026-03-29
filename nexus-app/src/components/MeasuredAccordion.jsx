@@ -32,7 +32,8 @@
 
 import { useId } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
-import { useAccordionHeight } from '../lib/usePretext.js';
+import { useAccordionHeight, useReducedMotion } from '../lib/usePretext.js';
+import { FONTS, LINE_HEIGHTS } from '../config/designTokens.js';
 
 /**
  * @param {{
@@ -53,8 +54,8 @@ import { useAccordionHeight } from '../lib/usePretext.js';
 export default function MeasuredAccordion({
   isOpen,
   text,
-  font = '400 14px Roboto, system-ui, sans-serif',
-  lineHeight = 22,
+  font = FONTS.body,
+  lineHeight = LINE_HEIGHTS.body,
   paddingY = 40,
   containerWidth,
   children,
@@ -72,8 +73,7 @@ export default function MeasuredAccordion({
     containerWidth,
   });
 
-  // Respect prefers-reduced-motion
-  const reducedMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+  const reducedMotion = useReducedMotion();
 
   return (
     <div

@@ -6,17 +6,56 @@
  * ResizeObserver, but the recompute is pure arithmetic (~0.01ms).
  */
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, useSyncExternalStore } from 'react';
 import {
   prepare,
   layout,
   layoutWithLines,
-  estimateTextHeight,
-  batchEstimateHeights,
   prepareInlineItems,
   layoutInlineItems,
-  measureAccordionHeight,
 } from './pretext.js';
+
+// ---------------------------------------------------------------------------
+// useReducedMotion — observe prefers-reduced-motion, react to changes
+// ---------------------------------------------------------------------------
+
+const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
+let _rmSubscribers = [];
+let _rmValue = false;
+let _rmMql = null;
+
+function initReducedMotion() {
+  if (_rmMql || typeof window === 'undefined') return;
+  _rmMql = window.matchMedia(REDUCED_MOTION_QUERY);
+  _rmValue = _rmMql.matches;
+  _rmMql.addEventListener('change', (e) => {
+    _rmValue = e.matches;
+    for (const cb of _rmSubscribers) cb();
+  });
+}
+
+function subscribeRM(cb) {
+  initReducedMotion();
+  _rmSubscribers.push(cb);
+  return () => { _rmSubscribers = _rmSubscribers.filter(s => s !== cb); };
+}
+
+function getSnapshotRM() {
+  initReducedMotion();
+  return _rmValue;
+}
+
+function getServerSnapshotRM() {
+  return false;
+}
+
+/**
+ * Returns true if the user prefers reduced motion.
+ * Observes the media query and re-renders on change.
+ */
+export function useReducedMotion() {
+  return useSyncExternalStore(subscribeRM, getSnapshotRM, getServerSnapshotRM);
+}
 
 // ---------------------------------------------------------------------------
 // useTextHeight — measure text height without DOM reflow
@@ -137,79 +176,6 @@ export function useRichInlineLayout(specs, lineHeight, options) {
   }, [measure]);
 
   return { ref, ...result };
-}
-
-// ---------------------------------------------------------------------------
-// useVirtualRows — virtual scrolling with pre-computed heights
-// ---------------------------------------------------------------------------
-
-/**
- * Virtual scroll engine powered by Pretext height estimation.
- * Only renders the visible window of items, using pre-measured heights
- * so scroll position is accurate without rendering off-screen items.
- *
- * @param {{ items: Array<{ text: string, font?: string }>, defaultFont: string, maxWidth: number, lineHeight: number, containerHeight: number, overscan?: number, paddingY?: number, minRowHeight?: number }}
- * @returns {{ visibleItems: Array<{ item: any, index: number, top: number }>, totalHeight: number, onScroll: (e) => void, scrollTop: number }}
- */
-export function useVirtualRows({
-  items,
-  defaultFont,
-  maxWidth,
-  lineHeight,
-  containerHeight,
-  overscan = 3,
-  paddingY = 0,
-  minRowHeight = 40,
-}) {
-  const [scrollTop, setScrollTop] = useState(0);
-
-  // Batch estimate all row heights (cached per font+segment, so cheap on re-render)
-  const heights = useMemo(
-    () => batchEstimateHeights(items, defaultFont, maxWidth, lineHeight, { paddingY, minHeight: minRowHeight }),
-    [items, defaultFont, maxWidth, lineHeight, paddingY, minRowHeight]
-  );
-
-  // Prefix sums for O(1) position lookup
-  const offsets = useMemo(() => {
-    const o = new Float64Array(heights.length + 1);
-    for (let i = 0; i < heights.length; i++) {
-      o[i + 1] = o[i] + heights[i];
-    }
-    return o;
-  }, [heights]);
-
-  const totalHeight = offsets[offsets.length - 1] ?? 0;
-
-  // Binary search for first visible item
-  const visibleItems = useMemo(() => {
-    if (items.length === 0) return [];
-
-    // Find first item whose bottom edge is past scrollTop
-    let lo = 0, hi = items.length - 1;
-    while (lo < hi) {
-      const mid = (lo + hi) >>> 1;
-      if (offsets[mid + 1] <= scrollTop) lo = mid + 1;
-      else hi = mid;
-    }
-
-    const startIdx = Math.max(0, lo - overscan);
-    const viewBottom = scrollTop + containerHeight;
-    const visible = [];
-
-    for (let i = startIdx; i < items.length; i++) {
-      const top = offsets[i];
-      if (top > viewBottom + overscan * minRowHeight) break;
-      visible.push({ item: items[i], index: i, top, height: heights[i] });
-    }
-
-    return visible;
-  }, [items, offsets, heights, scrollTop, containerHeight, overscan, minRowHeight]);
-
-  const onScroll = useCallback((e) => {
-    setScrollTop(e.currentTarget.scrollTop);
-  }, []);
-
-  return { visibleItems, totalHeight, onScroll, scrollTop };
 }
 
 // ---------------------------------------------------------------------------

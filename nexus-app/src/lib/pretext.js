@@ -27,8 +27,9 @@ function getMeasureCtx() {
 }
 
 // ---------------------------------------------------------------------------
-// Segment-level measurement cache: font → segment → width
+// Segment-level measurement cache: font → segment → width (LRU-bounded)
 // ---------------------------------------------------------------------------
+const MAX_CACHE_ENTRIES_PER_FONT = 2000;
 const _caches = new Map();
 
 function getCache(font) {
@@ -40,10 +41,25 @@ function getCache(font) {
 function measureSegment(segment, font) {
   const cache = getCache(font);
   let w = cache.get(segment);
-  if (w !== undefined) return w;
+  if (w !== undefined) {
+    // LRU touch: delete + re-insert moves to end of iteration order
+    cache.delete(segment);
+    cache.set(segment, w);
+    return w;
+  }
   const ctx = getMeasureCtx();
   ctx.font = font;
   w = ctx.measureText(segment).width;
+  // Evict oldest 25% when exceeding cap
+  if (cache.size >= MAX_CACHE_ENTRIES_PER_FONT) {
+    const evictCount = MAX_CACHE_ENTRIES_PER_FONT >>> 2;
+    let removed = 0;
+    for (const key of cache.keys()) {
+      if (removed >= evictCount) break;
+      cache.delete(key);
+      removed++;
+    }
+  }
   cache.set(segment, w);
   return w;
 }
@@ -511,27 +527,6 @@ export function batchEstimateHeights(items, defaultFont, maxWidth, lineHeight, o
     const h = estimateTextHeight(item.text, font, maxWidth, lineHeight, { paddingY: padY });
     return Math.max(minH, h);
   });
-}
-
-// ---------------------------------------------------------------------------
-// Accordion height pre-computation
-// ---------------------------------------------------------------------------
-
-/**
- * Pre-compute the expanded height of a content block so Framer Motion
- * can animate to an exact pixel value instead of `height: 'auto'`.
- *
- * Eliminates the layout-read that `height: 'auto'` triggers internally.
- *
- * @param {string} text
- * @param {string} font
- * @param {number} containerWidth
- * @param {number} lineHeight
- * @param {{ paddingY?: number }} [options]
- * @returns {number}
- */
-export function measureAccordionHeight(text, font, containerWidth, lineHeight, options) {
-  return estimateTextHeight(text, font, containerWidth, lineHeight, options);
 }
 
 // ---------------------------------------------------------------------------

@@ -12,6 +12,7 @@ import {
   ChevronRight, Rocket, AlertTriangle, ClipboardCheck
 } from 'lucide-react';
 import RichText, { parseRichSpecs, CHIP_STYLES } from '../components/RichText';
+import { FONTS, LAYOUT as DESIGN_LAYOUT } from '../config/designTokens.js';
 
 const anim = (i) => ({ initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, transition: { delay: i * 0.05 } });
 
@@ -239,34 +240,34 @@ export default function Dashboard() {
           {/* Rich text summaries with inline chips — layout computed via OffscreenCanvas, no reflow */}
           <ProtocolPulseLine
             specs={[
-              { kind: 'chip', label: `${activeProposals.length} active`, font: '700 11px Roboto, sans-serif', className: CHIP_STYLES.status, chromeWidth: 22 },
-              { kind: 'text', text: ` proposals awaiting votes. `, font: '400 14px Roboto, system-ui, sans-serif' },
-              { kind: 'text', text: `${members.length} contributors`, font: '500 14px Roboto, system-ui, sans-serif', className: 'font-medium text-nexus-text' },
-              { kind: 'text', text: ' across ', font: '400 14px Roboto, system-ui, sans-serif' },
-              { kind: 'chip', label: `${projects.filter(p => p.status === 'Active').length} projects`, font: '700 11px Roboto, sans-serif', className: CHIP_STYLES.success, chromeWidth: 22 },
-              { kind: 'text', text: '.', font: '400 14px Roboto, system-ui, sans-serif' },
+              { kind: 'chip', label: `${activeProposals.length} active`, font: FONTS.chip, className: CHIP_STYLES.status, chromeWidth: 22 },
+              { kind: 'text', text: ` proposals awaiting votes. `, font: FONTS.body },
+              { kind: 'text', text: `${members.length} contributors`, font: FONTS.body, className: 'font-medium text-nexus-text' },
+              { kind: 'text', text: ' across ', font: FONTS.body },
+              { kind: 'chip', label: `${projects.filter(p => p.status === 'Active').length} projects`, font: FONTS.chip, className: CHIP_STYLES.success, chromeWidth: 22 },
+              { kind: 'text', text: '.', font: FONTS.body },
             ]}
           />
           {agentProfile?.registered && (
             <ProtocolPulseLine
               specs={[
-                { kind: 'text', text: 'Agent ', font: '400 14px Roboto, system-ui, sans-serif' },
-                { kind: 'chip', label: 'registered', font: '700 11px Roboto, sans-serif', className: CHIP_STYLES.success, chromeWidth: 22 },
-                { kind: 'text', text: ` with escrow balance `, font: '400 14px Roboto, system-ui, sans-serif' },
-                { kind: 'text', text: `${agentProfile.nativeEscrowBalance} wei`, font: '500 12px ui-monospace, monospace', className: 'px-1.5 py-0.5 rounded-md bg-white/8 font-mono text-xs text-nexus-text', chromeWidth: 12 },
-                { kind: 'text', text: '. Settlement layer ', font: '400 14px Roboto, system-ui, sans-serif' },
-                { kind: 'chip', label: 'operational', font: '700 11px Roboto, sans-serif', className: CHIP_STYLES.status, chromeWidth: 22 },
-                { kind: 'text', text: '.', font: '400 14px Roboto, system-ui, sans-serif' },
+                { kind: 'text', text: 'Agent ', font: FONTS.body },
+                { kind: 'chip', label: 'registered', font: FONTS.chip, className: CHIP_STYLES.success, chromeWidth: 22 },
+                { kind: 'text', text: ` with escrow balance `, font: FONTS.body },
+                { kind: 'text', text: `${agentProfile.nativeEscrowBalance} wei`, font: FONTS.mono, className: 'px-1.5 py-0.5 rounded-md bg-white/8 font-mono text-xs text-nexus-text', chromeWidth: 12 },
+                { kind: 'text', text: '. Settlement layer ', font: FONTS.body },
+                { kind: 'chip', label: 'operational', font: FONTS.chip, className: CHIP_STYLES.status, chromeWidth: 22 },
+                { kind: 'text', text: '.', font: FONTS.body },
               ]}
             />
           )}
           {featureKits.length > 0 && (
             <ProtocolPulseLine
               specs={[
-                { kind: 'chip', label: `${featureKits.filter(k => k.status === 0).length} pending`, font: '700 11px Roboto, sans-serif', className: CHIP_STYLES.warning, chromeWidth: 22 },
-                { kind: 'text', text: ' feature kits in pipeline. ', font: '400 14px Roboto, system-ui, sans-serif' },
-                { kind: 'chip', label: `${featureKits.filter(k => k.status === 4).length} shipped`, font: '700 11px Roboto, sans-serif', className: CHIP_STYLES.success, chromeWidth: 22 },
-                { kind: 'text', text: ' to production.', font: '400 14px Roboto, system-ui, sans-serif' },
+                { kind: 'chip', label: `${featureKits.filter(k => k.status === 0).length} pending`, font: FONTS.chip, className: CHIP_STYLES.warning, chromeWidth: 22 },
+                { kind: 'text', text: ' feature kits in pipeline. ', font: FONTS.body },
+                { kind: 'chip', label: `${featureKits.filter(k => k.status === 4).length} shipped`, font: FONTS.chip, className: CHIP_STYLES.success, chromeWidth: 22 },
+                { kind: 'text', text: ' to production.', font: FONTS.body },
               ]}
             />
           )}

@@ -11,6 +11,7 @@ import { markFunnelStep } from '../lib/utm.js';
 import { trackEvent } from '../lib/analytics.js';
 import VirtualList from '../components/VirtualList';
 import { estimateTextHeight } from '../lib/pretext.js';
+import { FONTS, LINE_HEIGHTS } from '../config/designTokens.js';
 
 function Btn({ children, loading, variant = 'primary', disabled, className = '', ...props }) {
   const base = 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-opacity disabled:opacity-50';
@@ -374,9 +375,9 @@ export default function AgentMessages() {
                           // Pretext measures message text height without DOM reflow
                           const textHeight = estimateTextHeight(
                             msg.encryptedContent || '',
-                            '400 14px Roboto, system-ui, sans-serif',
+                            FONTS.body,
                             300, // ~75% of conversation width
-                            22,
+                            LINE_HEIGHTS.body,
                             { paddingY: 40 } // bubble padding + timestamp
                           );
                           return Math.max(64, textHeight);

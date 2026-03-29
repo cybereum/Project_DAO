@@ -6,6 +6,7 @@ import ShareProposal from '../components/ShareProposal';
 import MeasuredAccordion from '../components/MeasuredAccordion';
 import VirtualList from '../components/VirtualList';
 import { estimateTextHeight } from '../lib/pretext.js';
+import { FONTS, LINE_HEIGHTS } from '../config/designTokens.js';
 
 const anim = (i) => ({ initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, transition: { delay: i * 0.05 } });
 
@@ -69,8 +70,8 @@ function ProposalCard({ proposal, index, expanded, setExpanded, projects, castVo
       <MeasuredAccordion
         isOpen={isExpanded}
         text={proposal.description || ''}
-        font="400 14px Roboto, system-ui, sans-serif"
-        lineHeight={22}
+        font={FONTS.body}
+        lineHeight={LINE_HEIGHTS.body}
         paddingY={56}
         className="border-t border-nexus-border"
       >
@@ -230,7 +231,7 @@ export default function Proposals() {
             // Card chrome: header ~120px + expanded description if open
             const base = 140;
             if (expanded === proposal.id) {
-              return base + estimateTextHeight(proposal.description || '', '400 14px Roboto, system-ui, sans-serif', 500, 22, { paddingY: 56 });
+              return base + estimateTextHeight(proposal.description || '', FONTS.body, 500, LINE_HEIGHTS.body, { paddingY: 56 });
             }
             return base;
           }}

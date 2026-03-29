@@ -24,13 +24,14 @@
  */
 
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { truncateToLines, prepare, layout } from '../lib/pretext.js';
+import { truncateToLines } from '../lib/pretext.js';
+import { FONTS, LINE_HEIGHTS } from '../config/designTokens.js';
 
 export default function PretextTruncate({
   text,
   maxLines = 2,
-  font = '400 14px Roboto, system-ui, sans-serif',
-  lineHeight = 22,
+  font = FONTS.body,
+  lineHeight = LINE_HEIGHTS.body,
   className = '',
   expandLabel = 'Show more',
   collapseLabel = 'Show less',
@@ -53,14 +54,11 @@ export default function PretextTruncate({
 
   // Compute truncation via Pretext (pure arithmetic, no DOM)
   const result = useMemo(() => {
-    if (!text) return { display: '', truncated: false, fullHeight: 0, truncatedHeight: 0 };
+    if (!text) return { display: '', truncated: false, truncatedHeight: 0 };
     const trunc = truncateToLines(text, font, containerWidth, maxLines, { ellipsis });
-    const prepared = prepare(text, font);
-    const full = layout(prepared, containerWidth, lineHeight);
     return {
       display: trunc.text,
       truncated: trunc.truncated,
-      fullHeight: full.height,
       truncatedHeight: trunc.lineCount * lineHeight,
     };
   }, [text, font, containerWidth, maxLines, lineHeight, ellipsis]);
@@ -71,7 +69,6 @@ export default function PretextTruncate({
 
   const showToggle = result.truncated;
   const displayText = expanded ? text : result.display;
-  const height = expanded ? result.fullHeight : result.truncatedHeight;
 
   return (
     <div ref={containerRef}>

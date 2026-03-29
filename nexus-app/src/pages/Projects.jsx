@@ -8,6 +8,7 @@ import {
   Search, Filter, Zap, Globe, RefreshCw, AlertCircle, ExternalLink,
 } from 'lucide-react';
 import PretextTruncate from '../components/PretextTruncate';
+import { FONTS, LINE_HEIGHTS } from '../config/designTokens.js';
 
 const anim = (i) => ({ initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, transition: { delay: i * 0.05 } });
 
@@ -347,8 +348,8 @@ export default function Projects() {
                           <PretextTruncate
                             text={meta.description}
                             maxLines={2}
-                            font="400 12px Roboto, system-ui, sans-serif"
-                            lineHeight={18}
+                            font={FONTS.bodySmall}
+                            lineHeight={LINE_HEIGHTS.bodySmall}
                             className="text-xs text-nexus-text-dim"
                           />
                         </div>

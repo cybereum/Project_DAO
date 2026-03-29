@@ -17,6 +17,7 @@ import {
 import { useApp } from '../store/appStore';
 import { nexusAI } from '../services/nexusAI';
 import MeasuredAccordion from '../components/MeasuredAccordion';
+import { FONTS, LINE_HEIGHTS } from '../config/designTokens.js';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -119,8 +120,8 @@ function KitCard({ kit, onUpvote, loading }) {
           <MeasuredAccordion
             isOpen={expanded}
             text={kit.rationale}
-            font="400 12px Roboto, system-ui, sans-serif"
-            lineHeight={18}
+            font={FONTS.bodySmall}
+            lineHeight={LINE_HEIGHTS.bodySmall}
             paddingY={28}
             className="mt-3 pt-3 border-t border-nexus-border"
           >
