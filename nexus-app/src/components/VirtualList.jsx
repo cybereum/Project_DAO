@@ -58,8 +58,7 @@ const VirtualList = forwardRef(function VirtualList({
   // Pre-compute all heights (Pretext makes this cheap — cached arithmetic)
   const heights = useMemo(
     () => items.map((item, i) => estimateHeight(item, i) + gap),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, containerWidth, gap]
+    [items, containerWidth, gap, estimateHeight]
   );
 
   // Prefix sums for O(1) position lookup
