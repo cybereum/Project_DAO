@@ -186,12 +186,12 @@ export const ContractErrors = Object.freeze({
   InsufficientBalance: 'Insufficient escrow balance for this operation',
   InvalidAddress: 'Address is zero or invalid',
   TransferFailed: 'ETH or ERC-20 transfer reverted',
-  AlreadyRegistered: 'Agent is already registered at this address',
+  AlreadyExists: 'Agent is already registered at this address',
   NotFound: 'Requested resource does not exist',
   InvalidStatus: 'State transition not allowed from current status',
   InvalidFeeConfig: 'Fee BPS must be >= MIN_FEE_BPS (1)',
   TreasuryNotSet: 'Cybereum treasury address is not configured',
-  SelfTransfer: 'Cannot transfer to yourself',
+  SelfTransfer: 'Cannot transfer to self.',
 });
 
 // ---------------------------------------------------------------------------
