@@ -1,7 +1,7 @@
-import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import { useApp } from '../store/appStore';
-import { motion as Motion, AnimatePresence } from 'framer-motion';
-import { Vote, ThumbsUp, ThumbsDown, Clock, User, AlertTriangle, CheckCircle2, XCircle, Plus, RefreshCcw } from 'lucide-react';
+import { motion as Motion } from 'framer-motion';
+import { ThumbsUp, ThumbsDown, Clock, User, AlertTriangle, CheckCircle2, XCircle, Plus, RefreshCcw } from 'lucide-react';
 import ShareProposal from '../components/ShareProposal';
 import MeasuredAccordion from '../components/MeasuredAccordion';
 import VirtualList from '../components/VirtualList';
