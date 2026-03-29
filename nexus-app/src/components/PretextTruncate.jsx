@@ -75,13 +75,10 @@ export default function PretextTruncate({
       <p
         className={className}
         style={{ minHeight: result.truncatedHeight || undefined }}
+        aria-label={result.truncated && !expanded ? text : undefined}
       >
         {displayText}
       </p>
-      {/* Screen-reader: full text always available */}
-      {result.truncated && !expanded && (
-        <span className="sr-only">{text}</span>
-      )}
       {showToggle && (
         <button
           onClick={toggle}
