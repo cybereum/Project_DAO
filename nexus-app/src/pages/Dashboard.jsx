@@ -10,8 +10,8 @@ import {
   ArrowUpRight, Clock, Zap, Activity, Shield, Bot, Brain, Lightbulb,
   ChevronRight, Rocket, AlertTriangle, ClipboardCheck
 } from 'lucide-react';
-import RichText, { parseRichSpecs, CHIP_STYLES } from '../components/RichText';
-import { FONTS, LAYOUT as DESIGN_LAYOUT } from '../config/designTokens.js';
+import RichText, { CHIP_STYLES } from '../components/RichText';
+import { FONTS } from '../config/designTokens.js';
 
 const anim = (i) => ({ initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, transition: { delay: i * 0.05 } });
 
