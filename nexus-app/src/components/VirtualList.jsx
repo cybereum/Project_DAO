@@ -180,7 +180,6 @@ const VirtualList = forwardRef(function VirtualList({
       onKeyDown={handleKeyDown}
       role="list"
       aria-label={ariaLabel}
-      aria-rowcount={items.length}
       tabIndex={0}
     >
       <div className={`relative ${innerClassName}`} style={{ height: totalHeight }}>
