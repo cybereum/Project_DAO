@@ -116,8 +116,10 @@ export function estimateLines(text, options) {
 // ---------------------------------------------------------------------------
 
 /**
- * Truncate text at a word boundary to fit within maxChars or maxLines.
- * Never cuts mid-word. Appends ellipsis if truncated.
+ * Truncate text to fit within maxChars or maxLines, preferring word boundaries.
+ * Avoids cutting mid-word when possible; if no word boundary exists before the limit
+ * (e.g., a single long word), falls back to cutting at the limit. Appends ellipsis
+ * if truncated.
  *
  * @param {string} text
  * @param {{ maxChars?: number, maxLines?: number, maxWidth?: number, font?: string, ellipsis?: string }} [options]
