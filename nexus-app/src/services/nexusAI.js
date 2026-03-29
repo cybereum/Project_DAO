@@ -14,14 +14,15 @@
 
 const BASE_URL = (import.meta.env.VITE_NEXUS_AI_URL || 'http://localhost:3737').replace(/\/$/, '');
 
-// Warn in production if AI service is not HTTPS (credentials sent in headers)
-if (import.meta.env.PROD && BASE_URL.startsWith('http://') && !BASE_URL.includes('localhost') && !BASE_URL.includes('127.0.0.1')) {
-  console.error('[nexusAI] SECURITY WARNING: VITE_NEXUS_AI_URL uses HTTP in production. Wallet addresses and payment hashes will be sent unencrypted. Use HTTPS.');
-}
+// Block HTTP in production — wallet addresses and payment hashes must not be sent unencrypted
+const _isInsecureProduction = import.meta.env.PROD && BASE_URL.startsWith('http://') && !BASE_URL.includes('localhost') && !BASE_URL.includes('127.0.0.1');
 
 let _wallet = '';
 
 async function safeFetch(path, options = {}) {
+  if (_isInsecureProduction) {
+    return { error: 'NexusAI requires HTTPS in production. Set VITE_NEXUS_AI_URL to an https:// endpoint.', insecure: true };
+  }
   try {
     const res = await fetch(`${BASE_URL}${path}`, {
       ...options,
@@ -98,6 +99,9 @@ export const nexusAI = {
    * @returns {Promise<string>}
    */
   async analyseStream(mode = 'health', onChunk, { paymentTxHash } = {}) {
+    if (_isInsecureProduction) {
+      return JSON.stringify({ error: 'NexusAI requires HTTPS in production. Set VITE_NEXUS_AI_URL to an https:// endpoint.' });
+    }
     let raw = '';
     try {
       const headers = { 'Content-Type': 'application/json', 'x-wallet-address': _wallet };

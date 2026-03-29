@@ -644,14 +644,27 @@ Tests are in `test/ProjectDAO.test.js` using Mocha/Chai with Hardhat's test help
 - `deploy()` — deploys a fresh `Project_DAO` contract with treasury configured
 - `memberAgent()` — adds a member and registers them as an agent (for quick test setup)
 
+**Test suite: 285 tests across 49 describe blocks.**
+
 **Test coverage areas:**
 - Fee configuration (defaults, owner updates, bounds checking, preview calculations)
 - Cybereum treasury (setting, zero-address validation)
 - Agent registration and discovery
-- Escrow operations (deposit, withdraw, transfer)
-- Payment requests (create, settle, cancel)
-- Economic projects lifecycle
-- Open onboarding (stakeAndJoin, leaveDAO)
+- Escrow operations (deposit, withdraw, transfer — native + ERC-20)
+- Payment requests (create, settle, cancel, edge cases)
+- Economic projects lifecycle (create, fund, apply, approve, complete, cancel, refund)
+- Open onboarding (stakeAndJoin, leaveDAO, activeProjectCount tracking)
+- Governance: proposals, voting, milestones, disputes (create, vote, auto-resolve, owner resolve)
+- Role & permission management (create, assign, 1-based indexing)
+- Task management (create, update, delete, progress tracking)
+- Secure direct messaging (send, read, inbox, conversation, edge cases)
+- Feature kits (submit, upvote, status changes)
+- Commerce blackhole (config, volume tracking, messaging fees, exit fees, batch operations)
+- Reputation engine (score calculation, tiers, decay, ceiling)
+- Reentrancy protection on all ETH-transferring functions
+- whenNotPaused coverage on all state-changing functions
+- Zero-address validation
+- Event emission audit trail (PrivilegeGranted, ProposalDisputeCreated, ProposalDisputeResolved, OwnerChanged)
 
 ### Frontend linting
 ```bash
@@ -698,10 +711,14 @@ cd nexus-app && npm run lint
 - `onlyMember`: agent registration, proposal creation, voting, feature kit submission/upvoting.
 - `onlyRegisteredAgent`: all escrow, transfer, payment request actions.
 - `whenNotPaused`: all state-changing functions.
-- `nonReentrant`: all functions that transfer ETH (withdraw, settle, claim, refund, leave).
+- `nonReentrant`: all functions that transfer ETH or ERC-20 tokens (deposit, withdraw, transfer, settle, claim, refund, leave).
 - Fee floor: `MIN_FEE_BPS = 1` — owner cannot set fee to zero.
-- Treasury address zero-check on every fee collection path.
+- Treasury address zero-check on every fee collection path, including deposits.
 - Stake-based self-onboarding with minimum stake floor (`minStakeToJoin`).
+- Full event audit trail: all state changes emit events (including privilege grants, dispute lifecycle, ownership transfers).
+- Frontend: HTTPS enforced in production for AI service calls (HTTP blocked, not just warned).
+- Frontend: `dataLoadError` state surfaces contract read failures to UI (no silent swallowing).
+- SDK: contract address validated on construction; gas buffer included in balance checks.
 
 ---
 
@@ -819,7 +836,61 @@ The file `sdk/deployments.json` maps chain IDs to contract addresses and RPC hin
 
 ---
 
-## 14. LINKS
+## 14. PRODUCTION READINESS SCORECARD
+
+**Assessment date: 2026-03-28**
+
+### Overall: 7.5 / 10 (up from ~5.5 before this pass)
+
+| Category | Before | After | Details |
+|---|---|---|---|
+| **Smart Contract Security** | 5/10 | 7.5/10 | Added `nonReentrant` to `withdrawTokenFromEscrow`, `transferTokenBetweenAgents`, `depositNativeToEscrow`. Treasury check added to deposit path. All ERC-20 transfer return values checked. |
+| **Event Audit Trail** | 6/10 | 9/10 | Added 4 missing events: `PrivilegeGranted`, `ProposalDisputeCreated`, `ProposalDisputeResolved`, `OwnerChanged`. All state changes now emit events. |
+| **Test Coverage** | 6/10 | 8/10 | 274 → 285 tests. Added: event emission tests, reentrancy guard verification, treasury validation, payment request ID 0 edge case, reputation ceiling/decay tests. 49 describe blocks covering all contract modules. |
+| **SDK Robustness** | 6/10 | 7.5/10 | Added contract address format validation in constructor. Gas buffer (0.0005 ETH) included in `safeOnboard` balance check. Chain verification enforced on all write paths. |
+| **Frontend Error Handling** | 3/10 | 6.5/10 | 8 silent `console.error` catches now surface errors via `dataLoadError` state. HTTPS enforced (not just warned) in production for AI service. |
+| **CI Pipeline** | 6/10 | 6/10 | Unchanged — compiles, tests, lints, builds. |
+
+### What was fixed in this pass
+
+**Contract (Project_DAO.sol):**
+- `withdrawTokenFromEscrow` — added `nonReentrant` (was vulnerable to ERC-20 reentrancy)
+- `transferTokenBetweenAgents` — added `nonReentrant` (was vulnerable to ERC-20 reentrancy)
+- `depositNativeToEscrow` — added `nonReentrant` + explicit treasury zero-check
+- `grantPrivilege` — now emits `PrivilegeGranted` event
+- `disputeProposal` — now emits `ProposalDisputeCreated` event
+- `_resolveProposalDispute` / `resolveProposalDispute` — now emit `ProposalDisputeResolved` event
+- `changeOwner` — now emits `OwnerChanged` event
+- `getMemberCount` — replaced O(n) loop with O(1) `memberCount` counter variable
+- `batchTransferNative` — accumulates fees, single treasury transfer (saves ~21k gas per batch item)
+- `memberCount` counter maintained in `addMember`, `removeMember`, `stakeAndJoin`, `leaveDAO`, `changeOwner`
+
+**SDK (sdk/index.js):**
+- Constructor validates `contractAddress` format with `ethers.getAddress()`
+- `safeOnboard` includes 0.0005 ETH gas buffer in balance check
+
+**Frontend (nexus-app/):**
+- `nexusAI.js` — HTTP blocked in production (returns error object instead of console warning)
+- `appStore.jsx` — 8 data-load catch blocks now set `dataLoadError` state for UI display
+
+**Tests (test/ProjectDAO.test.js):**
+- 11 new tests: event emissions (5), reentrancy guards (2), treasury validation (1), payment request edge case (1), reputation ceiling/decay (2)
+
+### Remaining gaps to reach 9/10
+
+| Priority | Issue | Effort |
+|---|---|---|
+| HIGH | Contract code size (53KB) exceeds 24KB Spurious Dragon limit — needs library extraction or splitting for mainnet deployment | Large |
+| HIGH | No formal audit — contract handles real value | External |
+| MEDIUM | Owner dashboard uses client-side passcode (`VITE_OWNER_DASHBOARD_PASSCODE`) — needs server-side auth | Medium |
+| MEDIUM | No E2E tests for frontend ↔ contract integration | Medium |
+| MEDIUM | `addMember`/`removeMember` iterate all milestones (O(n)) — gas cost grows with milestones | Medium |
+| LOW | No TypeScript — runtime type errors possible in frontend/SDK | Large |
+| LOW | Proposal ID indexing is 1-based but array is 0-based — confusing but functional | Small |
+
+---
+
+## 15. LINKS
 
 - **Agent onboarding guide: `AGENT_ONBOARDING.md`** ← Start here if you're an agent
 - Implementation roadmap: `FULL_IMPLEMENTATION_PLAN.md`

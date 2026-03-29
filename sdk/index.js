@@ -36,6 +36,9 @@ export class AgentClient {
     if (!contractAddress) throw new Error('contractAddress is required');
     if (!privateKey) throw new Error('privateKey is required');
 
+    // Validate contract address format (reuses _validateAddress logic at construction time)
+    ethers.getAddress(contractAddress); // throws TypeError on invalid address
+
     this.provider = new ethers.JsonRpcProvider(rpcUrl);
     this.wallet = new ethers.Wallet(privateKey, this.provider);
     this.contract = new ethers.Contract(contractAddress, PROJECT_DAO_ABI, this.wallet);
@@ -143,13 +146,15 @@ export class AgentClient {
       stakeWei = minStake + (minStake * 10n / 100n);
     }
 
-    // Check wallet balance
+    // Check wallet balance (include gas buffer: ~200k gas at 1 gwei = 0.0002 ETH conservative estimate)
+    const gasBuffer = ethers.parseEther('0.0005');
+    const totalNeeded = stakeWei + gasBuffer;
     const balance = await this.provider.getBalance(this.address);
-    if (balance < stakeWei) {
-      const needed = ethers.formatEther(stakeWei);
+    if (balance < totalNeeded) {
+      const needed = ethers.formatEther(totalNeeded);
       const have = ethers.formatEther(balance);
       throw new Error(
-        `Insufficient balance to onboard. Need ${needed} ETH (stake + fee buffer), have ${have} ETH.`
+        `Insufficient balance to onboard. Need ~${needed} ETH (stake + fee buffer + gas), have ${have} ETH.`
       );
     }
 
@@ -173,7 +178,9 @@ export class AgentClient {
       this.provider.getBalance(this.address),
     ]);
 
+    const gasBuffer = ethers.parseEther('0.0005');
     const stakeNeeded = minStake === 0n ? ethers.parseEther('0.001') : minStake + (minStake * 10n / 100n);
+    const totalNeeded = stakeNeeded + gasBuffer;
     return {
       address: this.address,
       chainId: this._expectedChainId,
@@ -182,8 +189,8 @@ export class AgentClient {
       escrowBalance: profile.nativeEscrowBalance.toString(),
       walletBalance: ethers.formatEther(balance),
       minStakeRequired: ethers.formatEther(minStake),
-      recommendedStake: ethers.formatEther(stakeNeeded),
-      canAffordOnboarding: balance >= stakeNeeded,
+      recommendedStake: ethers.formatEther(totalNeeded),
+      canAffordOnboarding: balance >= totalNeeded,
       feeBps: Number(feeConfig.feeBps),
       totalAgentsOnNetwork: Number(agentCount),
       readyToTransact: profile.registered,
