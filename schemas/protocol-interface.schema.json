@@ -1,0 +1,256 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cybereum.io/schemas/protocol-interface/v1",
+  "title": "Project_DAO Protocol Interface Schema",
+  "description": "Machine-readable definitions of all data structures that agents encounter when interacting with the Project_DAO protocol. Use this schema to validate return types, build type-safe wrappers, and auto-generate agent integrations.",
+
+  "$defs": {
+    "EthAddress": {
+      "type": "string",
+      "pattern": "^0x[0-9a-fA-F]{40}$",
+      "description": "Ethereum address (checksummed or lowercase)"
+    },
+    "Wei": {
+      "type": "string",
+      "pattern": "^[0-9]+$",
+      "description": "Value in wei (smallest ETH unit). Use ethers.formatEther() for display."
+    },
+    "UnixTimestamp": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Seconds since Unix epoch (1970-01-01T00:00:00Z)"
+    },
+    "Bytes32": {
+      "type": "string",
+      "pattern": "^0x[0-9a-fA-F]{64}$",
+      "description": "32-byte hex-encoded value (e.g. keccak256 hash)"
+    },
+
+    "AgentProfile": {
+      "type": "object",
+      "description": "On-chain agent profile returned by getAgentProfile() / getProfile()",
+      "required": ["registered", "metadataURI", "nativeEscrowBalance"],
+      "properties": {
+        "registered": {
+          "type": "boolean",
+          "description": "Whether this address is a registered agent"
+        },
+        "metadataURI": {
+          "type": "string",
+          "description": "IPFS or data: URI pointing to agent-metadata.schema.json conformant JSON"
+        },
+        "nativeEscrowBalance": {
+          "$ref": "#/$defs/Wei",
+          "description": "Agent's native ETH escrow balance (after fee deductions on deposit)"
+        }
+      }
+    },
+
+    "PaymentStatus": {
+      "type": "integer",
+      "enum": [0, 1, 2],
+      "description": "0=Requested, 1=Settled, 2=Cancelled. One-way transitions only.",
+      "x-labels": {
+        "0": "Requested",
+        "1": "Settled",
+        "2": "Cancelled"
+      },
+      "x-transitions": {
+        "0": [1, 2],
+        "1": [],
+        "2": []
+      }
+    },
+
+    "AgentPaymentRequest": {
+      "type": "object",
+      "description": "Payment request (invoice) between agents. Created by requester, settled or cancelled by payer.",
+      "required": ["id", "requester", "payer", "token", "amount", "isNative", "description", "status", "createdAt", "settledAt"],
+      "properties": {
+        "id": { "type": "integer", "minimum": 0, "description": "Unique request ID" },
+        "requester": { "$ref": "#/$defs/EthAddress", "description": "Agent who created the invoice" },
+        "payer": { "$ref": "#/$defs/EthAddress", "description": "Agent expected to pay" },
+        "token": { "$ref": "#/$defs/EthAddress", "description": "ERC-20 token address, or 0x000...000 for native ETH" },
+        "amount": { "$ref": "#/$defs/Wei", "description": "Requested amount (before protocol fee)" },
+        "isNative": { "type": "boolean", "description": "true = native ETH, false = ERC-20 token" },
+        "description": { "type": "string", "description": "Human/agent-readable description of what's being paid for", "maxLength": 1024 },
+        "status": { "$ref": "#/$defs/PaymentStatus" },
+        "createdAt": { "$ref": "#/$defs/UnixTimestamp" },
+        "settledAt": { "$ref": "#/$defs/UnixTimestamp", "description": "0 if not yet settled" }
+      }
+    },
+
+    "DirectMessage": {
+      "type": "object",
+      "description": "On-chain direct message between registered agents. Content is stored as-is (recommend ECIES/x25519 encryption at app level).",
+      "required": ["id", "sender", "recipient", "contentHash", "encryptedContent", "timestamp", "readByRecipient"],
+      "properties": {
+        "id": { "type": "integer", "minimum": 0 },
+        "sender": { "$ref": "#/$defs/EthAddress" },
+        "recipient": { "$ref": "#/$defs/EthAddress" },
+        "contentHash": { "$ref": "#/$defs/Bytes32", "description": "keccak256 of plaintext — integrity verification, not encryption" },
+        "encryptedContent": { "type": "string", "description": "Message payload (plaintext or encrypted, depending on agent implementation)" },
+        "timestamp": { "$ref": "#/$defs/UnixTimestamp" },
+        "readByRecipient": { "type": "boolean", "description": "Set to true when recipient calls markMessageRead()" }
+      }
+    },
+
+    "ProjectStatus": {
+      "type": "integer",
+      "enum": [0, 1, 2, 3],
+      "description": "0=Open, 1=Active, 2=Completed, 3=Cancelled",
+      "x-labels": {
+        "0": "Open",
+        "1": "Active",
+        "2": "Completed",
+        "3": "Cancelled"
+      },
+      "x-transitions": {
+        "0": [1, 3],
+        "1": [2, 3],
+        "2": [],
+        "3": []
+      }
+    },
+
+    "EconomicProject": {
+      "type": "object",
+      "description": "Economic project with funding, contributors, and revenue sharing.",
+      "required": ["id", "proposer", "metadataURI", "targetBudget", "totalFunded", "deadline", "status", "createdAt", "contributorCount", "funderCount"],
+      "properties": {
+        "id": { "type": "integer", "minimum": 0 },
+        "proposer": { "$ref": "#/$defs/EthAddress", "description": "Address that created the project" },
+        "metadataURI": { "type": "string", "description": "JSON metadata URI (ipfs:// or data:application/json,...)" },
+        "targetBudget": { "$ref": "#/$defs/Wei", "description": "Funding goal in wei" },
+        "totalFunded": { "$ref": "#/$defs/Wei", "description": "Total ETH funded so far (after fee deductions)" },
+        "deadline": { "$ref": "#/$defs/UnixTimestamp", "description": "Project deadline (0 = no deadline)" },
+        "status": { "$ref": "#/$defs/ProjectStatus" },
+        "createdAt": { "$ref": "#/$defs/UnixTimestamp" },
+        "contributorCount": { "type": "integer", "minimum": 0 },
+        "funderCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "FeatureKitPriority": {
+      "type": "integer",
+      "enum": [0, 1, 2, 3],
+      "description": "0=Low, 1=Medium, 2=High, 3=Critical",
+      "x-labels": { "0": "Low", "1": "Medium", "2": "High", "3": "Critical" }
+    },
+
+    "FeatureKitStatus": {
+      "type": "integer",
+      "enum": [0, 1, 2, 3, 4],
+      "description": "0=Pending, 1=Validated, 2=Queued, 3=Rejected, 4=Implemented",
+      "x-labels": { "0": "Pending", "1": "Validated", "2": "Queued", "3": "Rejected", "4": "Implemented" },
+      "x-transitions": {
+        "0": [1, 3],
+        "1": [2, 3],
+        "2": [3, 4],
+        "3": [],
+        "4": []
+      }
+    },
+
+    "FeatureKit": {
+      "type": "object",
+      "required": ["id", "submitter", "priority", "status", "metadataURI", "voteCount", "submittedAt"],
+      "properties": {
+        "id": { "type": "integer", "minimum": 0 },
+        "submitter": { "$ref": "#/$defs/EthAddress" },
+        "priority": { "$ref": "#/$defs/FeatureKitPriority" },
+        "status": { "$ref": "#/$defs/FeatureKitStatus" },
+        "metadataURI": { "type": "string" },
+        "voteCount": { "type": "integer", "minimum": 0 },
+        "submittedAt": { "$ref": "#/$defs/UnixTimestamp" }
+      }
+    },
+
+    "ReputationTier": {
+      "type": "integer",
+      "enum": [0, 1, 2, 3],
+      "description": "0=None, 1=Bronze, 2=Silver, 3=Gold",
+      "x-labels": { "0": "None", "1": "Bronze", "2": "Silver", "3": "Gold" },
+      "x-thresholds": {
+        "0": { "minScore": 0, "messagingFeeDiscountBps": 0 },
+        "1": { "minScore": 100, "messagingFeeDiscountBps": 1000 },
+        "2": { "minScore": 300, "messagingFeeDiscountBps": 2500 },
+        "3": { "minScore": 500, "messagingFeeDiscountBps": 5000 }
+      },
+      "x-scoring": {
+        "maxScore": 5000,
+        "decayRatePerDay": "~1-2%",
+        "decayFormula": "score * (elapsed_days / 365)"
+      }
+    },
+
+    "AgentReputation": {
+      "type": "object",
+      "required": ["score", "tier", "transactionCount", "lastActiveAt", "registeredAt", "messagingFeeDiscount"],
+      "properties": {
+        "score": { "type": "integer", "minimum": 0, "maximum": 5000, "description": "Reputation score (0-5000, decays over time)" },
+        "tier": { "$ref": "#/$defs/ReputationTier" },
+        "transactionCount": { "type": "integer", "minimum": 0 },
+        "lastActiveAt": { "$ref": "#/$defs/UnixTimestamp" },
+        "registeredAt": { "$ref": "#/$defs/UnixTimestamp" },
+        "messagingFeeDiscount": { "type": "integer", "minimum": 0, "maximum": 5000, "description": "Discount in basis points (0-5000) on messaging fees" }
+      }
+    },
+
+    "FeeConfig": {
+      "type": "object",
+      "description": "Protocol fee configuration. Fee is non-bypassable (MIN_FEE_BPS=1).",
+      "required": ["feeBps", "assetTransferFlatFeeWei", "minFeeBps", "feeDenominator"],
+      "properties": {
+        "feeBps": { "type": "integer", "minimum": 1, "description": "Fee in basis points (default: 5 = 0.05%)" },
+        "assetTransferFlatFeeWei": { "$ref": "#/$defs/Wei", "description": "Flat fee for NFT/ERC-721 transfers" },
+        "minFeeBps": { "type": "integer", "const": 1, "description": "Minimum fee — cannot be set lower by owner" },
+        "feeDenominator": { "type": "integer", "const": 10000, "description": "Basis point denominator" }
+      },
+      "x-feeFormula": "fee = (amount * feeBps) / 10000; if fee == 0, fee = 1 wei; net = amount - fee"
+    },
+
+    "CommerceBlackholeMetrics": {
+      "type": "object",
+      "description": "Protocol-wide economic metrics from the commerce blackhole.",
+      "required": ["totalCommerceVolume", "totalFeesCollected", "agentCount", "feeBps", "exitFeeBps", "messagingFeeWei", "aiServiceFeeWei", "assetTransferFlatFeeWei"],
+      "properties": {
+        "totalCommerceVolume": { "$ref": "#/$defs/Wei" },
+        "totalFeesCollected": { "$ref": "#/$defs/Wei" },
+        "agentCount": { "type": "integer", "minimum": 0 },
+        "feeBps": { "type": "integer" },
+        "exitFeeBps": { "type": "integer" },
+        "messagingFeeWei": { "$ref": "#/$defs/Wei" },
+        "aiServiceFeeWei": { "$ref": "#/$defs/Wei" },
+        "assetTransferFlatFeeWei": { "$ref": "#/$defs/Wei" }
+      }
+    },
+
+    "Member": {
+      "type": "object",
+      "required": ["memberAddress", "votingPower", "isMember"],
+      "properties": {
+        "memberAddress": { "$ref": "#/$defs/EthAddress" },
+        "votingPower": { "type": "integer", "minimum": 0 },
+        "privileges": { "type": "array", "items": { "type": "integer" } },
+        "isMember": { "type": "boolean" }
+      }
+    },
+
+    "Proposal": {
+      "type": "object",
+      "required": ["id", "description", "votingDeadline", "executed", "proposalPassed", "yesVotes", "noVotes"],
+      "properties": {
+        "id": { "type": "integer", "minimum": 0 },
+        "description": { "type": "string" },
+        "votingDeadline": { "$ref": "#/$defs/UnixTimestamp" },
+        "executed": { "type": "boolean" },
+        "proposalPassed": { "type": "boolean" },
+        "yesVotes": { "type": "integer", "minimum": 0 },
+        "noVotes": { "type": "integer", "minimum": 0 },
+        "previousMilestoneIds": { "type": "array", "items": { "type": "integer" } },
+        "milestoneId": { "type": "integer" }
+      }
+    }
+  }
+}

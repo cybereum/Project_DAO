@@ -11,7 +11,8 @@
     ".": "./index.js",
     "./abi": "./abi.js",
     "./deployments": "./deployments.json",
-    "./pretext": "./pretext.js"
+    "./pretext": "./pretext.js",
+    "./constants": "./constants.js"
   },
   "engines": {
     "node": ">=20.0.0"
@@ -22,5 +23,5 @@
     "ethers": "^6.16.0"
   },
   "peerDependencies": {},
-  "files": ["index.js", "abi.js", "deployments.js", "deployments.json", "pretext.js"]
+  "files": ["index.js", "abi.js", "deployments.js", "deployments.json", "pretext.js", "constants.js"]
 }
