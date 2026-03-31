@@ -16,7 +16,7 @@ import {
   Brain, Zap, Shield, Eye, TrendingUp, RefreshCw,
   AlertTriangle, CheckCircle, XCircle, Clock, FileText,
   ChevronDown, ChevronUp, ExternalLink, Sparkles, Server,
-  Copy, Play, Lightbulb, SendHorizonal
+  Copy, Play, Lightbulb, SendHorizonal, Newspaper, Wrench
 } from 'lucide-react';
 import { nexusAI } from '../services/nexusAI';
 import { trackEvent } from '../lib/analytics';
@@ -242,6 +242,11 @@ export default function NexusAI() {
   });
   const [feedbackSubmitMsg, setFeedbackSubmitMsg] = useState('');
   const [feedbackInsights, setFeedbackInsights] = useState(null);
+  const [techSignals, setTechSignals] = useState([]);
+  const [recommendedUpdates, setRecommendedUpdates] = useState([]);
+  const [techSignalsAsOf, setTechSignalsAsOf] = useState(null);
+  const [loadingTechSignals, setLoadingTechSignals] = useState(false);
+  const [techSignalsError, setTechSignalsError] = useState('');
   const streamRef = useRef('');
 
   // Check server reachability on mount
@@ -256,6 +261,24 @@ export default function NexusAI() {
       nexusAI.getUsage(walletAddress).then(setUsageInfo).catch(() => {});
     }
   }, [walletAddress]);
+
+  const refreshTechSignals = useCallback(async () => {
+    setLoadingTechSignals(true);
+    setTechSignalsError('');
+    const data = await nexusAI.getTechSignals();
+    setLoadingTechSignals(false);
+    if (data?.error) {
+      setTechSignalsError(data.error);
+      return;
+    }
+    setTechSignals(data?.signals || []);
+    setRecommendedUpdates(data?.recommendedUpdates || []);
+    setTechSignalsAsOf(data?.asOf || null);
+  }, []);
+
+  useEffect(() => {
+    refreshTechSignals();
+  }, [refreshTechSignals]);
 
   const refreshFeedbackInsights = useCallback(async () => {
     const insight = await nexusAI.getFeedbackInsights();
@@ -566,6 +589,90 @@ export default function NexusAI() {
           )}
         </div>
       )}
+
+      {/* Live tech signals */}
+      <div className="p-5 rounded-2xl border border-nexus-border bg-nexus-surface/40 space-y-4">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+          <Newspaper size={14} className="text-nexus-cyan" />
+            <h2 className="text-sm font-semibold">Live tech signals to improve this app</h2>
+          </div>
+          <button
+            onClick={refreshTechSignals}
+            disabled={loadingTechSignals}
+            className="text-xs text-nexus-text-dim hover:text-nexus-text disabled:opacity-50 flex items-center gap-1"
+          >
+            <RefreshCw size={11} className={loadingTechSignals ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+        </div>
+        {techSignalsAsOf && (
+          <p className="text-[11px] text-nexus-text-dim">
+            Latest pull: {new Date(techSignalsAsOf).toLocaleString()}
+          </p>
+        )}
+        {techSignalsError && (
+          <p className="text-xs text-amber-400">
+            Could not load feeds right now: {techSignalsError}
+          </p>
+        )}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          {techSignals.map((signal, idx) => (
+            <div key={`${signal.channel}-${signal.title || idx}`} className="rounded-xl border border-nexus-border p-3 bg-black/10 space-y-2">
+              <div className="text-[11px] uppercase tracking-wider text-nexus-text-dim">{signal.channel}</div>
+              {signal.error ? (
+                <div className="text-xs text-amber-400">Feed unavailable: {signal.error}</div>
+              ) : (
+                <>
+                  <a href={signal.link} target="_blank" rel="noreferrer" className="text-sm font-medium hover:text-nexus-cyan inline-flex items-center gap-1">
+                    {signal.title}
+                    <ExternalLink size={12} />
+                  </a>
+                  {signal.publishedAt && (
+                    <p className="text-[11px] text-nexus-text-dim">Published: {signal.publishedAt}</p>
+                  )}
+                </>
+              )}
+              <p className="text-xs text-nexus-cyan/90 flex items-start gap-1.5">
+                <Wrench size={12} className="mt-0.5 flex-shrink-0" />
+                <span>{signal.action}</span>
+              </p>
+            </div>
+          ))}
+          {!loadingTechSignals && techSignals.length === 0 && (
+            <div className="text-xs text-nexus-text-dim">No tech signals available yet.</div>
+          )}
+        </div>
+        {recommendedUpdates.length > 0 && (
+          <div className="pt-2 border-t border-nexus-border space-y-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-nexus-text-dim">
+              What to update now
+            </h3>
+            <div className="space-y-2">
+              {recommendedUpdates.map((update) => (
+                <div key={`${update.area}-${update.recommendation}`} className="rounded-lg border border-nexus-border p-2 bg-black/10">
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className={`px-2 py-0.5 rounded-full border ${
+                      update.priority === 'high'
+                        ? 'text-red-300 border-red-500/30 bg-red-500/10'
+                        : 'text-amber-300 border-amber-500/30 bg-amber-500/10'
+                    }`}>
+                      {update.priority.toUpperCase()}
+                    </span>
+                    <span className="font-medium">{update.area}</span>
+                  </div>
+                  <p className="text-xs text-nexus-text-dim mt-1">{update.recommendation}</p>
+                  {update.basedOn?.length > 0 && (
+                    <p className="text-[11px] text-nexus-text-dim mt-1">
+                      Based on: {update.basedOn.join(', ')}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Mode selection grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

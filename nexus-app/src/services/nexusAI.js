@@ -79,6 +79,11 @@ export const nexusAI = {
     return safeFetch('/api/modes');
   },
 
+  /** Fetch live tech signals aggregated by the NexusAI server. */
+  async getTechSignals() {
+    return safeFetch('/api/tech-signals');
+  },
+
   /**
    * Run a full analysis in the given mode.
    * @param {'health'|'security'|'ux'|'growth'|'feedback'} mode

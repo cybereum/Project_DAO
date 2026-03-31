@@ -24,6 +24,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const FEEDBACK_STORE_PATH = path.join(__dirname, 'data', 'feedback-memory.json');
+const TECH_SIGNALS_CACHE_TTL_MS = 30 * 60_000;
 
 const app = express();
 app.use(cors());
@@ -33,6 +34,130 @@ app.use(express.json({ limit: '1mb' }));
 const rateLimitMap = new Map();
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 10;
+let techSignalsCache = { ts: 0, data: null };
+
+const TECH_FEEDS = [
+  {
+    channel: 'Node.js Security',
+    url: 'https://nodejs.org/en/feed/blog.xml',
+    action: 'Upgrade runtime to latest patched LTS and rerun API fuzz + regression tests.',
+  },
+  {
+    channel: 'GitHub Changelog',
+    url: 'https://github.blog/changelog/feed/',
+    action: 'Apply CI hardening updates (OIDC claims, secret scanning, agent audit policy).',
+  },
+  {
+    channel: 'WalletConnect Blog',
+    url: 'https://walletconnect.com/blog/rss.xml',
+    action: 'Prioritize wallet-native payment rails for escrow top-ups and settlement UX.',
+  },
+  {
+    channel: 'Vercel Changelog',
+    url: 'https://vercel.com/changelog/rss.xml',
+    action: 'Review deployment defaults for agent permissions, privacy, and config migrations.',
+  },
+];
+
+function stripTags(input = '') {
+  return String(input).replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/<[^>]+>/g, '').trim();
+}
+
+function decodeEntities(input = '') {
+  return String(input)
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, '\'')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+}
+
+function parseRssItems(xml = '', limit = 8) {
+  const itemMatches = [
+    ...(xml.match(/<item[\s\S]*?<\/item>/gi) || []),
+    ...(xml.match(/<entry[\s\S]*?<\/entry>/gi) || []),
+  ].slice(0, limit);
+
+  return itemMatches
+    .map((item) => {
+      const title = decodeEntities(stripTags((item.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || ''));
+      const linkFromTag = (item.match(/<link[^>]*>([\s\S]*?)<\/link>/i) || [])[1];
+      const atomHref = (item.match(/<link[^>]*href=['"]([^'"]+)['"][^>]*\/?>/i) || [])[1];
+      const link = decodeEntities(stripTags(linkFromTag || atomHref || ''));
+      const publishedAt = decodeEntities(stripTags(
+        (item.match(/<pubDate[^>]*>([\s\S]*?)<\/pubDate>/i) || [])[1]
+        || (item.match(/<published[^>]*>([\s\S]*?)<\/published>/i) || [])[1]
+        || (item.match(/<updated[^>]*>([\s\S]*?)<\/updated>/i) || [])[1]
+        || ''
+      ));
+      if (!title || !link) return null;
+      return { title, link, publishedAt };
+    })
+    .filter(Boolean);
+}
+
+function scoreSignalRelevance(channel = '', title = '') {
+  const text = `${channel} ${title}`.toLowerCase();
+  let score = 0;
+  if (/security|vulnerability|cve|exploit|incident/.test(text)) score += 5;
+  if (/actions|oidc|token|permissions|secret/.test(text)) score += 4;
+  if (/wallet|payments|settlement|connect/.test(text)) score += 3;
+  if (/deploy|ci|build|release|changelog|runtime/.test(text)) score += 2;
+  return score;
+}
+
+function toTimestamp(dateText = '') {
+  const ts = Date.parse(dateText);
+  return Number.isNaN(ts) ? 0 : ts;
+}
+
+function deriveUpdateRecommendations(signals = []) {
+  const updates = [];
+  for (const signal of signals) {
+    if (signal?.error || !signal?.title) continue;
+    const title = signal.title.toLowerCase();
+    if (/security|vulnerability|cve|exploit/.test(title) || signal.channel.includes('Security')) {
+      updates.push({
+        area: 'Security',
+        priority: 'high',
+        recommendation: 'Schedule immediate dependency/runtime patch window and rerun contract + API regression tests.',
+        source: signal.channel,
+      });
+    }
+    if (/secret|oidc|token|permissions|actions/.test(title) || signal.channel.includes('GitHub')) {
+      updates.push({
+        area: 'CI/CD',
+        priority: 'high',
+        recommendation: 'Harden pipeline trust with OIDC claim checks, tighter token scopes, and mandatory secret scanning.',
+        source: signal.channel,
+      });
+    }
+    if (/wallet|payment|pay|settlement/.test(title) || signal.channel.includes('WalletConnect')) {
+      updates.push({
+        area: 'Payments UX',
+        priority: 'medium',
+        recommendation: 'Prioritize wallet-native payment flows for escrow top-ups and payment request settlement.',
+        source: signal.channel,
+      });
+    }
+    if (/ai|agent|training|data/.test(title) || signal.channel.includes('Vercel')) {
+      updates.push({
+        area: 'AI Governance',
+        priority: 'medium',
+        recommendation: 'Review AI data handling defaults and expose explicit controls in deployment/config docs.',
+        source: signal.channel,
+      });
+    }
+  }
+
+  const dedup = new Map();
+  for (const u of updates) {
+    const key = `${u.area}:${u.recommendation}`;
+    if (!dedup.has(key)) dedup.set(key, { ...u, basedOn: [u.source] });
+    else dedup.get(key).basedOn.push(u.source);
+  }
+  return Array.from(dedup.values());
+}
 
 function rateLimit(req, res, next) {
   const ip = req.ip || req.connection.remoteAddress;
@@ -98,9 +223,9 @@ function checkFreeTier(key) {
 function recordUsage(key) {
   if (!key) return;
   const today = new Date().toISOString().slice(0, 10);
-  const entry = usageMap.get(walletAddress);
+  const entry = usageMap.get(key);
   if (!entry || entry.date !== today) {
-    usageMap.set(walletAddress, { date: today, count: 1 });
+    usageMap.set(key, { date: today, count: 1 });
   } else {
     entry.count++;
   }
@@ -661,6 +786,66 @@ ${currentContent}`,
   } catch (err) {
     console.error('Apply suggestion error:', err);
     res.status(500).json({ error: err.message || 'Failed to apply suggestion.' });
+  }
+});
+
+app.get('/api/tech-signals', async (_req, res) => {
+  try {
+    if (techSignalsCache.data && (Date.now() - techSignalsCache.ts) < TECH_SIGNALS_CACHE_TTL_MS) {
+      return res.json(techSignalsCache.data);
+    }
+
+    const signals = await Promise.all(TECH_FEEDS.map(async (feed) => {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        const response = await fetch(feed.url, {
+          signal: controller.signal,
+          headers: { 'User-Agent': 'Project_DAO NexusAI bot' },
+        });
+        clearTimeout(timeout);
+        if (!response.ok) return { channel: feed.channel, action: feed.action, error: `HTTP ${response.status}` };
+        const xml = await response.text();
+        const items = parseRssItems(xml, 10);
+        if (!items.length) return { channel: feed.channel, action: feed.action, error: 'No feed items parsed' };
+        const ranked = items
+          .map((item) => ({
+            ...item,
+            relevance: scoreSignalRelevance(feed.channel, item.title),
+            publishedTs: toTimestamp(item.publishedAt),
+          }))
+          .sort((a, b) => {
+            if (b.relevance !== a.relevance) return b.relevance - a.relevance;
+            return b.publishedTs - a.publishedTs;
+          });
+        const parsed = ranked[0];
+        return {
+          channel: feed.channel,
+          title: parsed.title,
+          link: parsed.link,
+          publishedAt: parsed.publishedAt || null,
+          action: feed.action,
+          relevance: parsed.relevance,
+        };
+      } catch (err) {
+        return {
+          channel: feed.channel,
+          action: feed.action,
+          error: err?.name === 'AbortError' ? 'Request timeout' : (err?.message || 'Feed fetch failed'),
+        };
+      }
+    }));
+
+    const payload = {
+      asOf: new Date().toISOString(),
+      cacheTtlMinutes: Math.round(TECH_SIGNALS_CACHE_TTL_MS / 60_000),
+      signals,
+      recommendedUpdates: deriveUpdateRecommendations(signals),
+    };
+    techSignalsCache = { ts: Date.now(), data: payload };
+    return res.json(payload);
+  } catch (err) {
+    return res.status(500).json({ error: err?.message || 'Failed to fetch tech signals' });
   }
 });
 
