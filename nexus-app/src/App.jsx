@@ -1,7 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
 import { AppProvider } from './store/appStore';
-import ErrorBoundary from './components/ErrorBoundary';
+import ErrorBoundary, { RouteErrorBoundary } from './components/ErrorBoundary';
 import Layout from './components/Layout';
 import SEOHead from './components/SEOHead';
 import Landing from './pages/Landing';
@@ -61,22 +61,22 @@ export default function App() {
           <Route path="/enterprise" element={<EnterpriseLanding />} />
           <Route path="/cities" element={<CitiesLanding />} />
 
-          {/* App shell routes */}
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/projects" element={<Projects />} />
-          <Route path="/projects/:id" element={<ProjectDetail />} />
-          <Route path="/milestones" element={<Milestones />} />
-          <Route path="/proposals" element={<Proposals />} />
-          <Route path="/verification" element={<Verification />} />
-          <Route path="/reputation" element={<Reputation />} />
-          <Route path="/assets" element={<Assets />} />
-          <Route path="/agent-economy" element={<AgentEconomy />} />
-          <Route path="/nexus-ai" element={<NexusAI />} />
-          <Route path="/feature-kits" element={<FeatureKits />} />
-          <Route path="/agent-readiness" element={<AgentReadiness />} />
-          <Route path="/messages" element={<AgentMessages />} />
-          <Route path="/owner-dashboard" element={<OwnerDashboard />} />
-          <Route path="/commerce-blackhole" element={<CommerceBlackhole />} />
+          {/* App shell routes — each wrapped in RouteErrorBoundary so one page crash doesn't kill the app */}
+          <Route path="/dashboard" element={<RouteErrorBoundary><Dashboard /></RouteErrorBoundary>} />
+          <Route path="/projects" element={<RouteErrorBoundary><Projects /></RouteErrorBoundary>} />
+          <Route path="/projects/:id" element={<RouteErrorBoundary><ProjectDetail /></RouteErrorBoundary>} />
+          <Route path="/milestones" element={<RouteErrorBoundary><Milestones /></RouteErrorBoundary>} />
+          <Route path="/proposals" element={<RouteErrorBoundary><Proposals /></RouteErrorBoundary>} />
+          <Route path="/verification" element={<RouteErrorBoundary><Verification /></RouteErrorBoundary>} />
+          <Route path="/reputation" element={<RouteErrorBoundary><Reputation /></RouteErrorBoundary>} />
+          <Route path="/assets" element={<RouteErrorBoundary><Assets /></RouteErrorBoundary>} />
+          <Route path="/agent-economy" element={<RouteErrorBoundary><AgentEconomy /></RouteErrorBoundary>} />
+          <Route path="/nexus-ai" element={<RouteErrorBoundary><NexusAI /></RouteErrorBoundary>} />
+          <Route path="/feature-kits" element={<RouteErrorBoundary><FeatureKits /></RouteErrorBoundary>} />
+          <Route path="/agent-readiness" element={<RouteErrorBoundary><AgentReadiness /></RouteErrorBoundary>} />
+          <Route path="/messages" element={<RouteErrorBoundary><AgentMessages /></RouteErrorBoundary>} />
+          <Route path="/owner-dashboard" element={<RouteErrorBoundary><OwnerDashboard /></RouteErrorBoundary>} />
+          <Route path="/commerce-blackhole" element={<RouteErrorBoundary><CommerceBlackhole /></RouteErrorBoundary>} />
         </Routes>
         </Suspense>
       </AppShell>

@@ -124,6 +124,7 @@ export class AgentClient {
    * @returns {Promise<{receipt: Object, stakeUsed: string}>}
    */
   async safeOnboard(metadataURI, overrideStakeEth) {
+    this._validateMetadataURI(metadataURI);
     await this.verifyChain();
 
     // Check if already registered
@@ -286,16 +287,32 @@ export class AgentClient {
     }
   }
 
+  /**
+   * @private
+   * Validate a metadata URI string (must be non-empty, <= 512 chars, matching contract limits).
+   * @param {string} uri The metadata URI to validate.
+   */
+  _validateMetadataURI(uri) {
+    if (!uri || typeof uri !== 'string' || uri.trim().length === 0) {
+      throw new Error('metadataURI must be a non-empty string');
+    }
+    if (uri.length > 512) {
+      throw new Error(`metadataURI too long (${uri.length} chars, max 512). Use an IPFS CID instead of inline data.`);
+    }
+  }
+
   // ─── Identity ──────────────────────────────────────────────────────────
 
   /** Register this agent on-chain with an IPFS metadata URI. */
   async register(metadataURI) {
+    this._validateMetadataURI(metadataURI);
     const tx = await this._write(() => this.contract.registerAgent(metadataURI));
     return this._waitForTx(tx);
   }
 
   /** Update this agent's metadata URI. */
   async updateMetadata(metadataURI) {
+    this._validateMetadataURI(metadataURI);
     const tx = await this._write(() => this.contract.updateAgentMetadata(metadataURI));
     return this._waitForTx(tx);
   }
@@ -452,6 +469,7 @@ export class AgentClient {
 
   /** Stake ETH to join the DAO and register as an agent in one transaction. */
   async stakeAndJoin(metadataURI, stakeEth) {
+    this._validateMetadataURI(metadataURI);
     const value = ethers.parseEther(stakeEth);
     if (value <= 0n) throw new Error('Stake amount must be greater than zero');
     const tx = await this._write(() => this.contract.stakeAndJoin(metadataURI, { value }));
@@ -606,6 +624,26 @@ export class AgentClient {
   }
 
   // ─── Commerce Blackhole ─────────────────────────────────────────────────
+
+  /**
+   * Get commerce blackhole configuration (fees only, no volume data).
+   * Lighter alternative to getBlackholeMetrics for agents that only need fee info.
+   * @returns {Promise<Object>} { feeBps, exitFeeBps, messagingFeeWei, assetTransferFlatFeeWei }
+   */
+  async getBlackholeConfig() {
+    const [feeBps, exitFee, msgFee, assetFee] = await Promise.all([
+      this.contract.cybereumFeeBps(),
+      this.contract.exitFeeBps(),
+      this.contract.messagingFeeWei(),
+      this.contract.assetTransferFlatFeeWei(),
+    ]);
+    return {
+      feeBps: Number(feeBps),
+      exitFeeBps: Number(exitFee),
+      messagingFeeWei: msgFee,
+      assetTransferFlatFeeWei: assetFee,
+    };
+  }
 
   /**
    * Get protocol-wide commerce blackhole metrics.

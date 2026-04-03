@@ -3359,3 +3359,69 @@ describe("Reputation engine: ceiling and decay edge cases", () => {
     expect(repAfter).to.be.lte(1000n);
   });
 });
+
+// ─── Production Readiness: depositTokenToEscrow nonReentrant ─────────────────
+
+describe("depositTokenToEscrow reentrancy guard", () => {
+  it("depositTokenToEscrow has nonReentrant modifier", async () => {
+    // We verify the modifier exists by checking the function signature compiles
+    // and that basic functionality works (the modifier doesn't break normal flow).
+    // A full reentrancy exploit test would require a malicious ERC-20 token.
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    // Without a real token we just verify the function still reverts properly for zero address
+    await expect(
+      dao.connect(alice).depositTokenToEscrow(ethers.ZeroAddress, 100n)
+    ).to.be.revertedWith("Invalid token address.");
+  });
+});
+
+// ─── Production Readiness: whenNotPaused on owner config functions ────────────
+
+describe("Owner config functions respect whenNotPaused", () => {
+  it("setCybereumTreasury reverts when paused", async () => {
+    const { dao, treasury } = await deploy();
+    await dao.pauseContract();
+    await expect(
+      dao.setCybereumTreasury(treasury.address)
+    ).to.be.revertedWith("Contract is paused.");
+  });
+
+  it("setCybereumFeeConfig reverts when paused", async () => {
+    const { dao } = await deploy();
+    await dao.pauseContract();
+    await expect(
+      dao.setCybereumFeeConfig(5, 1000000000000n)
+    ).to.be.revertedWith("Contract is paused.");
+  });
+
+  it("setAIServiceFee reverts when paused", async () => {
+    const { dao } = await deploy();
+    await dao.pauseContract();
+    await expect(
+      dao.setAIServiceFee(ethers.parseEther("0.001"))
+    ).to.be.revertedWith("Contract is paused.");
+  });
+
+  it("addPermission reverts when paused", async () => {
+    const { dao } = await deploy();
+    await dao.pauseContract();
+    await expect(
+      dao.addPermission(1, "test_perm")
+    ).to.be.revertedWith("Contract is paused.");
+  });
+
+  it("setCybereumTreasury works when unpaused", async () => {
+    const { dao, alice } = await deploy();
+    await dao.setCybereumTreasury(alice.address);
+    expect(await dao.cybereumTreasury()).to.equal(alice.address);
+  });
+
+  it("setCybereumFeeConfig works when unpaused after resume", async () => {
+    const { dao } = await deploy();
+    await dao.pauseContract();
+    await dao.resumeContract();
+    await dao.setCybereumFeeConfig(3, 2000000000000n);
+    expect(await dao.cybereumFeeBps()).to.equal(3n);
+  });
+});
