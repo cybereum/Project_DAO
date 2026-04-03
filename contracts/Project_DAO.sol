@@ -366,7 +366,7 @@ contract Project_DAO {
         _createRole(_name);
     }
 
-    function addPermission(uint256 _roleId, string memory _permission) public onlyOwner {
+    function addPermission(uint256 _roleId, string memory _permission) public onlyOwner whenNotPaused {
         require(_roleId > 0 && _roleId <= roles.length, "Invalid role ID.");
         Role storage role = roles[_roleId - 1];
         role.permissions.permissions[_permission] = true;
@@ -435,13 +435,13 @@ contract Project_DAO {
     // --- Agent, Payments, and Asset Value Transfer ---
 
 
-    function setCybereumTreasury(address _treasury) public onlyOwner {
+    function setCybereumTreasury(address _treasury) public onlyOwner whenNotPaused {
         require(_treasury != address(0), "Invalid treasury address.");
         cybereumTreasury = _treasury;
         emit CybereumTreasuryUpdated(_treasury);
     }
 
-    function setCybereumFeeConfig(uint256 _feeBps, uint256 _assetTransferFlatFeeWei) public onlyOwner {
+    function setCybereumFeeConfig(uint256 _feeBps, uint256 _assetTransferFlatFeeWei) public onlyOwner whenNotPaused {
         require(_feeBps >= MIN_FEE_BPS, "Fee cannot be zero: mandatory Cybereum fee floor enforced.");
         require(_feeBps <= 100, "Fee cannot exceed 1%.");
         require(_assetTransferFlatFeeWei > 0, "Asset transfer fee must be non-zero.");
@@ -451,7 +451,7 @@ contract Project_DAO {
     }
 
     /// @notice Update AI analysis service fee. Only callable by owner.
-    function setAIServiceFee(uint256 _feeWei) public onlyOwner {
+    function setAIServiceFee(uint256 _feeWei) public onlyOwner whenNotPaused {
         aiServiceFeeWei = _feeWei;
         emit AIServiceFeeUpdated(_feeWei);
     }
@@ -758,7 +758,7 @@ contract Project_DAO {
         emit AgentToAgentNativeTransfer(msg.sender, _to, netAmount, _memo);
     }
 
-    function depositTokenToEscrow(address _token, uint256 _amount) public onlyRegisteredAgent whenNotPaused {
+    function depositTokenToEscrow(address _token, uint256 _amount) public onlyRegisteredAgent whenNotPaused nonReentrant {
         require(_token != address(0), "Invalid token address.");
         require(_amount > 0, "Amount must be greater than zero.");
         bool success = IERC20(_token).transferFrom(msg.sender, address(this), _amount);

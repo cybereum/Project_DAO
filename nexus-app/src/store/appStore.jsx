@@ -185,6 +185,7 @@ export function useAppState() {
     setAgentProfile(null);
     setWalletError('');
     setDataLoadError('');
+    setTxPending(false);
   }, []);
 
   // ─── Wallet event listeners (accountsChanged, chainChanged) ───────────────

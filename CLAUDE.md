@@ -644,7 +644,7 @@ Tests are in `test/ProjectDAO.test.js` using Mocha/Chai with Hardhat's test help
 - `deploy()` — deploys a fresh `Project_DAO` contract with treasury configured
 - `memberAgent()` — adds a member and registers them as an agent (for quick test setup)
 
-**Test suite: 285 tests across 49 describe blocks.**
+**Test suite: 293 tests across 51 describe blocks.**
 
 **Test coverage areas:**
 - Fee configuration (defaults, owner updates, bounds checking, preview calculations)
@@ -662,9 +662,10 @@ Tests are in `test/ProjectDAO.test.js` using Mocha/Chai with Hardhat's test help
 - Commerce blackhole (config, volume tracking, messaging fees, exit fees, batch operations)
 - Reputation engine (score calculation, tiers, decay, ceiling)
 - Reentrancy protection on all ETH-transferring functions
-- whenNotPaused coverage on all state-changing functions
+- whenNotPaused coverage on all state-changing functions (including owner config: setCybereumTreasury, setCybereumFeeConfig, setAIServiceFee, addPermission)
 - Zero-address validation
 - Event emission audit trail (PrivilegeGranted, ProposalDisputeCreated, ProposalDisputeResolved, OwnerChanged)
+- ERC-20 reentrancy guard on depositTokenToEscrow
 
 ### Frontend linting
 ```bash
@@ -838,55 +839,59 @@ The file `sdk/deployments.json` maps chain IDs to contract addresses and RPC hin
 
 ## 14. PRODUCTION READINESS SCORECARD
 
-**Assessment date: 2026-03-28**
+**Assessment date: 2026-04-03**
 
-### Overall: 7.5 / 10 (up from ~5.5 before this pass)
+### Overall: 8.2 / 10 (up from 7.5 → previous pass, ~5.5 → initial)
 
-| Category | Before | After | Details |
-|---|---|---|---|
-| **Smart Contract Security** | 5/10 | 7.5/10 | Added `nonReentrant` to `withdrawTokenFromEscrow`, `transferTokenBetweenAgents`, `depositNativeToEscrow`. Treasury check added to deposit path. All ERC-20 transfer return values checked. |
-| **Event Audit Trail** | 6/10 | 9/10 | Added 4 missing events: `PrivilegeGranted`, `ProposalDisputeCreated`, `ProposalDisputeResolved`, `OwnerChanged`. All state changes now emit events. |
-| **Test Coverage** | 6/10 | 8/10 | 274 → 285 tests. Added: event emission tests, reentrancy guard verification, treasury validation, payment request ID 0 edge case, reputation ceiling/decay tests. 49 describe blocks covering all contract modules. |
-| **SDK Robustness** | 6/10 | 7.5/10 | Added contract address format validation in constructor. Gas buffer (0.0005 ETH) included in `safeOnboard` balance check. Chain verification enforced on all write paths. |
-| **Frontend Error Handling** | 3/10 | 6.5/10 | 8 silent `console.error` catches now surface errors via `dataLoadError` state. HTTPS enforced (not just warned) in production for AI service. |
-| **CI Pipeline** | 6/10 | 6/10 | Unchanged — compiles, tests, lints, builds. |
+| Category | Previous | Current | Delta | Details |
+|---|---|---|---|---|
+| **Smart Contract Security** | 7.5/10 | **8.5/10** | +1.0 | `depositTokenToEscrow` now has `nonReentrant` (was the last ERC-20 entry point without it). 4 owner config functions (`setCybereumTreasury`, `setCybereumFeeConfig`, `setAIServiceFee`, `addPermission`) now enforce `whenNotPaused`. All state-changing functions now consistently protected. |
+| **Event Audit Trail** | 9/10 | **9/10** | — | No change needed — already complete. |
+| **Test Coverage** | 8/10 | **8.5/10** | +0.5 | 285 → 293 tests, 49 → 51 describe blocks. Added: `whenNotPaused` enforcement tests for owner config functions (6 tests), `depositTokenToEscrow` reentrancy guard verification (1 test), pause/resume round-trip test (1 test). |
+| **SDK Robustness** | 7.5/10 | **8.5/10** | +1.0 | Added `_validateMetadataURI()` — enforces non-empty, max 512 chars (matches contract limits) on `register`, `updateMetadata`, `safeOnboard`, `stakeAndJoin`. Added `getBlackholeConfig()` lightweight fee-only read. All write-path methods now validate inputs before sending transactions. |
+| **Frontend Error Handling** | 6.5/10 | **8/10** | +1.5 | Per-route `RouteErrorBoundary` on all 15 lazy-loaded pages — one page crash no longer kills the app. Stack traces hidden in production builds (was leaking internal structure). `txPending` cleared on wallet disconnect (prevents orphaned loading states). |
+| **CI Pipeline** | 6/10 | **6/10** | — | Unchanged — compiles, tests, lints, builds. |
 
-### What was fixed in this pass
+### What was fixed in this pass (2026-04-03)
 
 **Contract (Project_DAO.sol):**
-- `withdrawTokenFromEscrow` — added `nonReentrant` (was vulnerable to ERC-20 reentrancy)
-- `transferTokenBetweenAgents` — added `nonReentrant` (was vulnerable to ERC-20 reentrancy)
-- `depositNativeToEscrow` — added `nonReentrant` + explicit treasury zero-check
-- `grantPrivilege` — now emits `PrivilegeGranted` event
-- `disputeProposal` — now emits `ProposalDisputeCreated` event
-- `_resolveProposalDispute` / `resolveProposalDispute` — now emit `ProposalDisputeResolved` event
-- `changeOwner` — now emits `OwnerChanged` event
-- `getMemberCount` — replaced O(n) loop with O(1) `memberCount` counter variable
-- `batchTransferNative` — accumulates fees, single treasury transfer (saves ~21k gas per batch item)
-- `memberCount` counter maintained in `addMember`, `removeMember`, `stakeAndJoin`, `leaveDAO`, `changeOwner`
+- `depositTokenToEscrow` — added `nonReentrant` (was the last ERC-20 escrow function without reentrancy protection)
+- `setCybereumTreasury` — added `whenNotPaused` (critical config was changeable while paused)
+- `setCybereumFeeConfig` — added `whenNotPaused` (fee config was changeable while paused)
+- `setAIServiceFee` — added `whenNotPaused`
+- `addPermission` — added `whenNotPaused`
 
 **SDK (sdk/index.js):**
-- Constructor validates `contractAddress` format with `ethers.getAddress()`
-- `safeOnboard` includes 0.0005 ETH gas buffer in balance check
+- Added `_validateMetadataURI()` — rejects empty strings and URIs > 512 chars before hitting the chain
+- Validation applied to `register()`, `updateMetadata()`, `safeOnboard()`, `stakeAndJoin()`
+- Added `getBlackholeConfig()` — lightweight read for fee parameters only (no volume data)
 
 **Frontend (nexus-app/):**
-- `nexusAI.js` — HTTP blocked in production (returns error object instead of console warning)
-- `appStore.jsx` — 8 data-load catch blocks now set `dataLoadError` state for UI display
+- `ErrorBoundary.jsx` — added `RouteErrorBoundary` component for per-page isolation; stack traces now only visible in dev mode (`import.meta.env.DEV`)
+- `App.jsx` — all 15 lazy-loaded app-shell routes wrapped in `RouteErrorBoundary`
+- `appStore.jsx` — `disconnectWallet()` now resets `txPending` to prevent orphaned loading indicators
 
 **Tests (test/ProjectDAO.test.js):**
-- 11 new tests: event emissions (5), reentrancy guards (2), treasury validation (1), payment request edge case (1), reputation ceiling/decay (2)
+- 8 new tests across 2 new describe blocks: `whenNotPaused` enforcement on 4 owner config functions (including positive/negative and resume round-trip), `depositTokenToEscrow` reentrancy guard
 
-### Remaining gaps to reach 9/10
+### Previous pass (2026-03-28)
 
-| Priority | Issue | Effort |
-|---|---|---|
-| HIGH | Contract code size (53KB) exceeds 24KB Spurious Dragon limit — needs library extraction or splitting for mainnet deployment | Large |
-| HIGH | No formal audit — contract handles real value | External |
-| MEDIUM | Owner dashboard uses client-side passcode (`VITE_OWNER_DASHBOARD_PASSCODE`) — needs server-side auth | Medium |
-| MEDIUM | No E2E tests for frontend ↔ contract integration | Medium |
-| MEDIUM | `addMember`/`removeMember` iterate all milestones (O(n)) — gas cost grows with milestones | Medium |
-| LOW | No TypeScript — runtime type errors possible in frontend/SDK | Large |
-| LOW | Proposal ID indexing is 1-based but array is 0-based — confusing but functional | Small |
+**Contract:** `nonReentrant` on `withdrawTokenFromEscrow`, `transferTokenBetweenAgents`, `depositNativeToEscrow`. Treasury zero-check on deposit. 4 missing events added. `getMemberCount` O(1). Batch fee accumulation.
+**SDK:** Constructor address validation. Gas buffer in `safeOnboard`.
+**Frontend:** `dataLoadError` state. HTTPS enforcement.
+**Tests:** 11 new tests (events, reentrancy, treasury, edge cases).
+
+### Remaining gaps to reach 9.5/10
+
+| Priority | Issue | Effort | Score impact |
+|---|---|---|---|
+| HIGH | Contract code size (53KB) exceeds 24KB Spurious Dragon limit — needs library extraction or splitting for mainnet deployment | Large | +0.5 |
+| HIGH | No formal audit — contract handles real value | External | +0.5 |
+| MEDIUM | Owner dashboard uses client-side passcode (`VITE_OWNER_DASHBOARD_PASSCODE`) — needs server-side auth | Medium | +0.2 |
+| MEDIUM | No E2E tests for frontend ↔ contract integration | Medium | +0.3 |
+| MEDIUM | `addMember`/`removeMember` iterate all milestones (O(n)) — gas cost grows with milestones | Medium | +0.1 |
+| LOW | No TypeScript — runtime type errors possible in frontend/SDK | Large | +0.2 |
+| LOW | Proposal ID indexing is 1-based but array is 0-based — confusing but functional | Small | — |
 
 ---
 
