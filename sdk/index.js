@@ -289,15 +289,16 @@ export class AgentClient {
 
   /**
    * @private
-   * Validate a metadata URI string (must be non-empty, <= 512 chars, matching contract limits).
+   * Validate a metadata URI string (must be non-empty, <= 512 UTF-8 bytes, matching contract limits).
    * @param {string} uri The metadata URI to validate.
    */
   _validateMetadataURI(uri) {
     if (!uri || typeof uri !== 'string' || uri.trim().length === 0) {
       throw new Error('metadataURI must be a non-empty string');
     }
-    if (uri.length > 512) {
-      throw new Error(`metadataURI too long (${uri.length} chars, max 512). Use an IPFS CID instead of inline data.`);
+    const uriByteLength = ethers.toUtf8Bytes(uri).length;
+    if (uriByteLength > 512) {
+      throw new Error(`metadataURI too long (${uriByteLength} bytes, max 512). Use an IPFS CID instead of inline data.`);
     }
   }
 
