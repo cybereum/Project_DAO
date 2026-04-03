@@ -124,14 +124,16 @@ export class AgentClient {
    * @returns {Promise<{receipt: Object, stakeUsed: string}>}
    */
   async safeOnboard(metadataURI, overrideStakeEth) {
-    this._validateMetadataURI(metadataURI);
     await this.verifyChain();
 
-    // Check if already registered
+    // Check if already registered — do this before validation so
+    // idempotent retry calls don't throw on placeholder URIs.
     const profile = await this.getProfile();
     if (profile.registered) {
       return { receipt: null, stakeUsed: '0', alreadyRegistered: true };
     }
+
+    this._validateMetadataURI(metadataURI);
 
     // Query minimum stake
     const minStake = await this.getMinStake();
