@@ -3360,16 +3360,14 @@ describe("Reputation engine: ceiling and decay edge cases", () => {
   });
 });
 
-// ─── Production Readiness: depositTokenToEscrow nonReentrant ─────────────────
+// ─── Production Readiness: depositTokenToEscrow input validation ─────────────
 
-describe("depositTokenToEscrow reentrancy guard", () => {
-  it("depositTokenToEscrow has nonReentrant modifier", async () => {
-    // We verify the modifier exists by checking the function signature compiles
-    // and that basic functionality works (the modifier doesn't break normal flow).
-    // A full reentrancy exploit test would require a malicious ERC-20 token.
+describe("depositTokenToEscrow input validation", () => {
+  it("reverts when the token address is the zero address", async () => {
+    // This test covers invalid token-address validation only.
+    // Reentrancy protection requires a malicious ERC-20 that re-enters during transferFrom.
     const { dao, alice } = await deploy();
     await memberAgent(dao, alice);
-    // Without a real token we just verify the function still reverts properly for zero address
     await expect(
       dao.connect(alice).depositTokenToEscrow(ethers.ZeroAddress, 100n)
     ).to.be.revertedWith("Invalid token address.");
