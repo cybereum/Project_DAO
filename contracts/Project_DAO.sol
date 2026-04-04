@@ -2540,9 +2540,10 @@ contract Project_DAO {
         ServiceAgreement storage a = serviceAgreements[_agreementId];
         require(a.id > 0, "Agreement not found.");
         require(a.status == AgreementStatus.Active, "Can only cancel active agreements.");
+        require(msg.sender == a.client || msg.sender == a.provider, "Not a party to this agreement.");
         require(
-            msg.sender == a.client || (block.timestamp > a.deadline && a.deliveryHash == bytes32(0)),
-            "Only client can cancel before deadline."
+            msg.sender == a.client || block.timestamp > a.deadline,
+            "Provider can only cancel after deadline."
         );
 
         a.status = AgreementStatus.Cancelled;
@@ -2687,11 +2688,11 @@ contract Project_DAO {
         require(s.status == StreamStatus.Active, "Stream is not active.");
         require(msg.sender == s.payer || msg.sender == s.recipient, "Not a party to this stream.");
 
-        s.status = StreamStatus.Cancelled;
-
-        // Calculate what recipient earned so far
+        // Calculate accrued amount BEFORE changing status (streamBalanceOf returns 0 if Cancelled)
         uint256 recipientAmount = streamBalanceOf(_streamId);
         uint256 payerRefund = s.totalDeposited - s.totalWithdrawn - recipientAmount;
+
+        s.status = StreamStatus.Cancelled;
 
         // Pay recipient their earned portion (with fee)
         if (recipientAmount > 0) {

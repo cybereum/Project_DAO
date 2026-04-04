@@ -3726,6 +3726,40 @@ describe("Service agreements", () => {
       bob.address, ethers.ZeroAddress, ethers.parseEther("0.1"), 1, "test"
     )).to.be.revertedWith("Deadline must be in the future.");
   });
+
+  it("non-party cannot cancel agreement", async () => {
+    const { dao, alice, bob, carol } = await setupAgreement();
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(alice).createServiceAgreement(
+      bob.address, ethers.ZeroAddress, ethers.parseEther("0.1"), deadline, "test"
+    );
+    await expect(dao.connect(carol).cancelServiceAgreement(1))
+      .to.be.revertedWith("Not a party to this agreement.");
+  });
+
+  it("provider can cancel after deadline", async () => {
+    const { dao, alice, bob } = await setupAgreement();
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 100;
+    await dao.connect(alice).createServiceAgreement(
+      bob.address, ethers.ZeroAddress, ethers.parseEther("0.1"), deadline, "test"
+    );
+    // Advance past deadline
+    await ethers.provider.send("evm_increaseTime", [200]);
+    await ethers.provider.send("evm_mine", []);
+    await dao.connect(bob).cancelServiceAgreement(1);
+    const a = await dao.getServiceAgreement(1);
+    expect(a.status).to.equal(4n); // Cancelled
+  });
+
+  it("provider cannot cancel before deadline", async () => {
+    const { dao, alice, bob } = await setupAgreement();
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(alice).createServiceAgreement(
+      bob.address, ethers.ZeroAddress, ethers.parseEther("0.1"), deadline, "test"
+    );
+    await expect(dao.connect(bob).cancelServiceAgreement(1))
+      .to.be.revertedWith("Provider can only cancel after deadline.");
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -3826,6 +3860,7 @@ describe("Payment streams", () => {
     await ethers.provider.send("evm_mine", []);
 
     const aliceBalBefore = (await dao.getAgentProfile(alice.address)).nativeEscrowBalance;
+    const bobBalBefore = (await dao.getAgentProfile(bob.address)).nativeEscrowBalance;
     await expect(dao.connect(bob).cancelPaymentStream(1))
       .to.emit(dao, "PaymentStreamCancelled");
 
@@ -3835,6 +3870,10 @@ describe("Payment streams", () => {
     // Alice should get a refund of unearned portion
     const aliceBalAfter = (await dao.getAgentProfile(alice.address)).nativeEscrowBalance;
     expect(aliceBalAfter).to.be.gt(aliceBalBefore);
+
+    // Bob should receive accrued portion (minus fee)
+    const bobBalAfter = (await dao.getAgentProfile(bob.address)).nativeEscrowBalance;
+    expect(bobBalAfter).to.be.gt(bobBalBefore);
   });
 
   it("cannot stream to yourself", async () => {
