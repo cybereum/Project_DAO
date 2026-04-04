@@ -966,14 +966,35 @@ export class AgentClient {
    * Create a payment stream from this agent's escrow to a recipient.
    * @param {Object} opts
    * @param {string} opts.recipient  Recipient agent address.
-   * @param {bigint|string} opts.totalDeposit  Total ETH to stream.
+   * @param {string} [opts.totalDepositEth]  Total deposit as an ETH-denominated decimal string (for example, '0.5').
+   * @param {bigint} [opts.totalDepositWei]  Total deposit in wei.
+   * @param {bigint|string} [opts.totalDeposit]  Deprecated legacy alias. If a string is provided it is interpreted as ETH, not wei; if a bigint is provided it is treated as wei.
    * @param {number} opts.startTime  Unix timestamp when streaming begins.
    * @param {number} opts.stopTime   Unix timestamp when streaming ends.
    * @returns {Promise<{receipt, streamId: number}>}
    */
-  async createPaymentStream({ recipient, totalDeposit, startTime, stopTime }) {
+  async createPaymentStream({ recipient, totalDeposit, totalDepositEth, totalDepositWei, startTime, stopTime }) {
     this._validateAddress(recipient, 'recipient');
-    const depositWei = typeof totalDeposit === 'string' ? ethers.parseEther(totalDeposit) : totalDeposit;
+
+    const hasLegacyDeposit = totalDeposit !== undefined;
+    const hasExplicitEthDeposit = totalDepositEth !== undefined;
+    const hasExplicitWeiDeposit = totalDepositWei !== undefined;
+
+    if ((hasExplicitEthDeposit && hasExplicitWeiDeposit) ||
+        (hasLegacyDeposit && (hasExplicitEthDeposit || hasExplicitWeiDeposit))) {
+      throw new Error('Specify exactly one of totalDepositEth, totalDepositWei, or the deprecated totalDeposit.');
+    }
+
+    let depositWei;
+    if (hasExplicitEthDeposit) {
+      depositWei = ethers.parseEther(totalDepositEth);
+    } else if (hasExplicitWeiDeposit) {
+      depositWei = totalDepositWei;
+    } else if (hasLegacyDeposit) {
+      depositWei = typeof totalDeposit === 'string' ? ethers.parseEther(totalDeposit) : totalDeposit;
+    } else {
+      throw new Error('One of totalDepositEth, totalDepositWei, or totalDeposit is required.');
+    }
     const tx = await this._write(() => this.contract.createPaymentStream(
       recipient, depositWei, startTime, stopTime
     ));
