@@ -574,7 +574,7 @@ describe("Economic projects", () => {
   it("agent can create a project", async () => {
     const { dao, owner } = await deploy();
     await dao.registerAgent("ipfs://owner");
-    const deadline = Math.floor(Date.now() / 1000) + 86400;
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
     await dao.createEconomicProject("ipfs://proj", ethers.parseEther("1"), deadline);
     const proj = await dao.economicProjects(1n);
     expect(proj.id).to.equal(1n);
@@ -585,7 +585,7 @@ describe("Economic projects", () => {
   it("anyone can fund a project", async () => {
     const { dao, owner, alice } = await deploy();
     await dao.registerAgent("ipfs://owner");
-    const deadline = Math.floor(Date.now() / 1000) + 86400;
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
     await dao.createEconomicProject("ipfs://proj", ethers.parseEther("1"), deadline);
 
     const fundAmt = ethers.parseEther("0.5");
@@ -601,7 +601,7 @@ describe("Economic projects", () => {
     await dao.registerAgent("ipfs://owner");
     await memberAgent(dao, alice);
 
-    const deadline = Math.floor(Date.now() / 1000) + 86400;
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
     await dao.createEconomicProject("ipfs://proj", ethers.parseEther("1"), deadline);
 
     // Fund it
@@ -640,7 +640,7 @@ describe("Economic projects", () => {
     const { dao, owner, alice } = await deploy();
     await dao.registerAgent("ipfs://owner");
     await memberAgent(dao, alice);
-    const deadline = Math.floor(Date.now() / 1000) + 86400;
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
     await dao.createEconomicProject("ipfs://proj", ethers.parseEther("1"), deadline);
     await dao.connect(owner).fundProject(1n, { value: ethers.parseEther("1") });
     await dao.connect(alice).applyToProject(1n);
@@ -655,7 +655,7 @@ describe("Economic projects", () => {
   it("reverts funding cancelled project", async () => {
     const { dao, owner, alice } = await deploy();
     await dao.registerAgent("ipfs://owner");
-    const deadline = Math.floor(Date.now() / 1000) + 86400;
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
     await dao.createEconomicProject("ipfs://proj", ethers.parseEther("1"), deadline);
     await dao.cancelProject(1n);
     await expect(
@@ -1117,7 +1117,7 @@ describe("Governance: Proposals & Voting", () => {
   // Helper: deploy + create a milestone so proposals can reference it
   async function deployWithMilestone() {
     const ctx = await deploy();
-    const futureDate = Math.floor(Date.now() / 1000) + 86400;
+    const futureDate = (await ethers.provider.getBlock("latest")).timestamp + 86400;
     await ctx.dao.createMilestone("Milestone 1", futureDate);
     return ctx;
   }
@@ -1222,14 +1222,14 @@ describe("Governance: Proposals & Voting", () => {
 describe("Governance: Milestones", () => {
   it("owner can create a milestone", async () => {
     const { dao } = await deploy();
-    const futureDate = Math.floor(Date.now() / 1000) + 86400;
+    const futureDate = (await ethers.provider.getBlock("latest")).timestamp + 86400;
     await dao.createMilestone("Build v1", futureDate);
     expect(await dao.getMilestoneCount()).to.equal(1n);
   });
 
   it("non-owner cannot create a milestone", async () => {
     const { dao, alice } = await deploy();
-    const futureDate = Math.floor(Date.now() / 1000) + 86400;
+    const futureDate = (await ethers.provider.getBlock("latest")).timestamp + 86400;
     await expect(
       dao.connect(alice).createMilestone("Unauthorized", futureDate)
     ).to.be.revertedWith("Only the owner can call this function.");
@@ -1237,7 +1237,7 @@ describe("Governance: Milestones", () => {
 
   it("getMilestone returns correct data", async () => {
     const { dao } = await deploy();
-    const futureDate = Math.floor(Date.now() / 1000) + 86400;
+    const futureDate = (await ethers.provider.getBlock("latest")).timestamp + 86400;
     await dao.createMilestone("Alpha release", futureDate);
     const m = await dao.getMilestone(0);
     expect(m.description).to.equal("Alpha release");
@@ -1248,7 +1248,7 @@ describe("Governance: Milestones", () => {
   it("getMilestoneCount tracks count correctly", async () => {
     const { dao } = await deploy();
     expect(await dao.getMilestoneCount()).to.equal(0n);
-    const d1 = Math.floor(Date.now() / 1000) + 86400;
+    const d1 = (await ethers.provider.getBlock("latest")).timestamp + 86400;
     await dao.createMilestone("M1", d1);
     expect(await dao.getMilestoneCount()).to.equal(1n);
     const d2 = d1 + 86400;
@@ -1324,7 +1324,7 @@ describe("Role & Permission Management", () => {
   it("assignRoleToMilestone works for valid roles", async () => {
     const { dao, owner, alice } = await deploy();
     await dao.addMember(alice.address, 10);
-    const futureDate = Math.floor(Date.now() / 1000) + 86400;
+    const futureDate = (await ethers.provider.getBlock("latest")).timestamp + 86400;
     await dao.createMilestone("M1", futureDate);
     // assignRoleToMilestone requires a proposal to exist with milestoneId matching
     // Owner is already assigned to milestone 0 via createMilestone
@@ -1466,7 +1466,7 @@ describe("Task management", () => {
   // Helper: deploy + create a milestone so tasks can reference it
   async function deployWithMilestone() {
     const ctx = await deploy();
-    const futureDate = Math.floor(Date.now() / 1000) + 86400;
+    const futureDate = (await ethers.provider.getBlock("latest")).timestamp + 86400;
     await ctx.dao.createMilestone("Milestone 1", futureDate);
     return ctx;
   }
@@ -1627,7 +1627,7 @@ describe("Proposal disputes", () => {
   // Helper: deploy + milestone + proposal (not yet executed)
   async function deployWithProposal() {
     const ctx = await deploy();
-    const futureDate = Math.floor(Date.now() / 1000) + 86400;
+    const futureDate = (await ethers.provider.getBlock("latest")).timestamp + 86400;
     await ctx.dao.createMilestone("Milestone 1", futureDate);
     // Owner is a member assigned to milestone 0
     await ctx.dao.createProposal("Disputable proposal", [0]);
@@ -3233,7 +3233,7 @@ describe("Event emissions for audit trail", () => {
 
   it("disputeProposal emits ProposalDisputeCreated", async () => {
     const { dao } = await deploy();
-    const futureDate = Math.floor(Date.now() / 1000) + 86400;
+    const futureDate = (await ethers.provider.getBlock("latest")).timestamp + 86400;
     await dao.createMilestone("Milestone 1", futureDate);
     await dao.createProposal("Test proposal", [0]);
     await expect(dao.disputeProposal(1, "I disagree"))
@@ -3243,7 +3243,7 @@ describe("Event emissions for audit trail", () => {
 
   it("resolveProposalDispute emits ProposalDisputeResolved", async () => {
     const { dao } = await deploy();
-    const futureDate = Math.floor(Date.now() / 1000) + 86400;
+    const futureDate = (await ethers.provider.getBlock("latest")).timestamp + 86400;
     await dao.createMilestone("Milestone 1", futureDate);
     await dao.createProposal("Test proposal", [0]);
     await dao.disputeProposal(1, "I disagree");
@@ -3258,7 +3258,7 @@ describe("Event emissions for audit trail", () => {
     const { dao, alice, bob } = await deploy();
     await dao.addMember(alice.address, 10);
     await dao.addMember(bob.address, 10);
-    const futureDate = Math.floor(Date.now() / 1000) + 86400;
+    const futureDate = (await ethers.provider.getBlock("latest")).timestamp + 86400;
     await dao.createMilestone("Milestone 1", futureDate);
     await dao.createProposal("Test proposal", [0]);
     await dao.disputeProposal(1, "I disagree");
@@ -3421,5 +3421,478 @@ describe("Owner config functions respect whenNotPaused", () => {
     await dao.resumeContract();
     await dao.setCybereumFeeConfig(3, 2000000000000n);
     expect(await dao.cybereumFeeBps()).to.equal(3n);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── Capability-Indexed Agent Discovery ──────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("Capability-indexed agent discovery", () => {
+  it("agent can set capabilities", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await dao.connect(alice).setAgentCapabilities(["payment-settlement", "data-oracle"]);
+    const caps = await dao.getAgentCapabilities(alice.address);
+    expect(caps.length).to.equal(2);
+    expect(caps[0]).to.equal("payment-settlement");
+    expect(caps[1]).to.equal("data-oracle");
+  });
+
+  it("emits AgentCapabilitiesUpdated event", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await expect(dao.connect(alice).setAgentCapabilities(["image-gen"]))
+      .to.emit(dao, "AgentCapabilitiesUpdated")
+      .withArgs(alice.address, ["image-gen"]);
+  });
+
+  it("discover agents by capability", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    await dao.connect(alice).setAgentCapabilities(["payment-settlement", "data-oracle"]);
+    await dao.connect(bob).setAgentCapabilities(["payment-settlement", "image-gen"]);
+
+    const result = await dao.discoverAgentsByCapability("payment-settlement", 0, 50);
+    expect(result.total).to.equal(2n);
+    expect(result.addresses).to.include(alice.address);
+    expect(result.addresses).to.include(bob.address);
+
+    const oracleResult = await dao.discoverAgentsByCapability("data-oracle", 0, 50);
+    expect(oracleResult.total).to.equal(1n);
+    expect(oracleResult.addresses[0]).to.equal(alice.address);
+  });
+
+  it("getCapabilityAgentCount returns correct count", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    await dao.connect(alice).setAgentCapabilities(["payment-settlement"]);
+    await dao.connect(bob).setAgentCapabilities(["payment-settlement"]);
+    expect(await dao.getCapabilityAgentCount("payment-settlement")).to.equal(2n);
+    expect(await dao.getCapabilityAgentCount("nonexistent")).to.equal(0n);
+  });
+
+  it("replacing capabilities updates reverse index", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await dao.connect(alice).setAgentCapabilities(["old-capability"]);
+    expect(await dao.getCapabilityAgentCount("old-capability")).to.equal(1n);
+
+    await dao.connect(alice).setAgentCapabilities(["new-capability"]);
+    expect(await dao.getCapabilityAgentCount("old-capability")).to.equal(0n);
+    expect(await dao.getCapabilityAgentCount("new-capability")).to.equal(1n);
+  });
+
+  it("rejects too many capabilities", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    const tooMany = Array(17).fill("cap");
+    await expect(dao.connect(alice).setAgentCapabilities(tooMany))
+      .to.be.revertedWith("Too many capabilities.");
+  });
+
+  it("rejects empty capability tag", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await expect(dao.connect(alice).setAgentCapabilities([""]))
+      .to.be.revertedWith("Invalid capability tag length.");
+  });
+
+  it("rejects capability tag too long", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    const longCap = "a".repeat(65);
+    await expect(dao.connect(alice).setAgentCapabilities([longCap]))
+      .to.be.revertedWith("Invalid capability tag length.");
+  });
+
+  it("non-registered agent cannot set capabilities", async () => {
+    const { dao, alice } = await deploy();
+    await expect(dao.connect(alice).setAgentCapabilities(["test"]))
+      .to.be.revertedWith("Only registered agents can call this function.");
+  });
+
+  it("discovery pagination works correctly", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    await dao.connect(alice).setAgentCapabilities(["shared-cap"]);
+    await dao.connect(bob).setAgentCapabilities(["shared-cap"]);
+
+    const page1 = await dao.discoverAgentsByCapability("shared-cap", 0, 1);
+    expect(page1.addresses.length).to.equal(1);
+    expect(page1.total).to.equal(2n);
+
+    const page2 = await dao.discoverAgentsByCapability("shared-cap", 1, 1);
+    expect(page2.addresses.length).to.equal(1);
+    expect(page2.total).to.equal(2n);
+
+    // Pages return different agents
+    expect(page1.addresses[0]).to.not.equal(page2.addresses[0]);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── Service Agreements with Conditional Escrow ──────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("Service agreements", () => {
+  async function setupAgreement() {
+    const { dao, owner, alice, bob, carol, treasury } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    await memberAgent(dao, carol); // arbiter
+    // Fund alice's escrow
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1.0") });
+    return { dao, owner, alice, bob, carol, treasury };
+  }
+
+  it("client can create a service agreement", async () => {
+    const { dao, alice, bob } = await setupAgreement();
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    const tx = await dao.connect(alice).createServiceAgreement(
+      bob.address, ethers.ZeroAddress, ethers.parseEther("0.1"), deadline, "Analyze dataset"
+    );
+    await expect(tx).to.emit(dao, "ServiceAgreementCreated");
+
+    const a = await dao.getServiceAgreement(1);
+    expect(a.client).to.equal(alice.address);
+    expect(a.provider).to.equal(bob.address);
+    expect(a.status).to.equal(0n); // Active
+    expect(a.description).to.equal("Analyze dataset");
+  });
+
+  it("locks escrow from client balance", async () => {
+    const { dao, alice, bob } = await setupAgreement();
+    const balBefore = (await dao.getAgentProfile(alice.address)).nativeEscrowBalance;
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(alice).createServiceAgreement(
+      bob.address, ethers.ZeroAddress, ethers.parseEther("0.1"), deadline, "test"
+    );
+    const balAfter = (await dao.getAgentProfile(alice.address)).nativeEscrowBalance;
+    expect(balBefore - balAfter).to.equal(ethers.parseEther("0.1"));
+  });
+
+  it("provider can submit delivery", async () => {
+    const { dao, alice, bob } = await setupAgreement();
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(alice).createServiceAgreement(
+      bob.address, ethers.ZeroAddress, ethers.parseEther("0.1"), deadline, "test"
+    );
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("delivery-proof"));
+    await expect(dao.connect(bob).submitDelivery(1, hash))
+      .to.emit(dao, "ServiceDeliverySubmitted")
+      .withArgs(1n, bob.address, hash);
+
+    const a = await dao.getServiceAgreement(1);
+    expect(a.status).to.equal(1n); // Delivered
+    expect(a.deliveryHash).to.equal(hash);
+  });
+
+  it("client approves delivery and funds go to provider", async () => {
+    const { dao, alice, bob } = await setupAgreement();
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(alice).createServiceAgreement(
+      bob.address, ethers.ZeroAddress, ethers.parseEther("0.1"), deadline, "test"
+    );
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("proof"));
+    await dao.connect(bob).submitDelivery(1, hash);
+    await dao.connect(alice).approveDelivery(1);
+
+    const a = await dao.getServiceAgreement(1);
+    expect(a.status).to.equal(2n); // Completed
+
+    const providerBal = (await dao.getAgentProfile(bob.address)).nativeEscrowBalance;
+    expect(providerBal).to.be.gt(0n);
+  });
+
+  it("dispute flow with arbiter resolution", async () => {
+    const { dao, alice, bob, carol } = await setupAgreement();
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(alice).createServiceAgreement(
+      bob.address, carol.address, ethers.parseEther("0.1"), deadline, "test"
+    );
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("proof"));
+    await dao.connect(bob).submitDelivery(1, hash);
+
+    // Client disputes
+    await expect(dao.connect(alice).disputeServiceAgreement(1))
+      .to.emit(dao, "ServiceAgreementDisputed");
+
+    // Arbiter resolves in favor of provider
+    await expect(dao.connect(carol).resolveServiceDispute(1, true))
+      .to.emit(dao, "ServiceDisputeResolved")
+      .withArgs(1n, true, carol.address);
+
+    const providerBal = (await dao.getAgentProfile(bob.address)).nativeEscrowBalance;
+    expect(providerBal).to.be.gt(0n);
+  });
+
+  it("arbiter resolves in favor of client", async () => {
+    const { dao, alice, bob, carol } = await setupAgreement();
+    const balBefore = (await dao.getAgentProfile(alice.address)).nativeEscrowBalance;
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(alice).createServiceAgreement(
+      bob.address, carol.address, ethers.parseEther("0.1"), deadline, "test"
+    );
+    await dao.connect(alice).disputeServiceAgreement(1);
+    await dao.connect(carol).resolveServiceDispute(1, false);
+
+    const balAfter = (await dao.getAgentProfile(alice.address)).nativeEscrowBalance;
+    // Client gets refund (minus fees)
+    expect(balAfter).to.be.gt(balBefore - ethers.parseEther("0.1"));
+  });
+
+  it("client can cancel active agreement", async () => {
+    const { dao, alice, bob } = await setupAgreement();
+    const balBefore = (await dao.getAgentProfile(alice.address)).nativeEscrowBalance;
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(alice).createServiceAgreement(
+      bob.address, ethers.ZeroAddress, ethers.parseEther("0.1"), deadline, "test"
+    );
+    await dao.connect(alice).cancelServiceAgreement(1);
+
+    const a = await dao.getServiceAgreement(1);
+    expect(a.status).to.equal(4n); // Cancelled
+    const balAfter = (await dao.getAgentProfile(alice.address)).nativeEscrowBalance;
+    expect(balAfter).to.equal(balBefore); // Full refund, no fee on cancel
+  });
+
+  it("cannot create agreement with self", async () => {
+    const { dao, alice } = await setupAgreement();
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await expect(dao.connect(alice).createServiceAgreement(
+      alice.address, ethers.ZeroAddress, ethers.parseEther("0.1"), deadline, "test"
+    )).to.be.revertedWith("Cannot create agreement with yourself.");
+  });
+
+  it("cannot create agreement with insufficient escrow", async () => {
+    const { dao, alice, bob } = await setupAgreement();
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await expect(dao.connect(alice).createServiceAgreement(
+      bob.address, ethers.ZeroAddress, ethers.parseEther("100"), deadline, "test"
+    )).to.be.revertedWith("Insufficient escrow balance.");
+  });
+
+  it("only provider can submit delivery", async () => {
+    const { dao, alice, bob } = await setupAgreement();
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(alice).createServiceAgreement(
+      bob.address, ethers.ZeroAddress, ethers.parseEther("0.1"), deadline, "test"
+    );
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("proof"));
+    await expect(dao.connect(alice).submitDelivery(1, hash))
+      .to.be.revertedWith("Only the provider can submit delivery.");
+  });
+
+  it("only client can approve delivery", async () => {
+    const { dao, alice, bob } = await setupAgreement();
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(alice).createServiceAgreement(
+      bob.address, ethers.ZeroAddress, ethers.parseEther("0.1"), deadline, "test"
+    );
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("proof"));
+    await dao.connect(bob).submitDelivery(1, hash);
+    await expect(dao.connect(bob).approveDelivery(1))
+      .to.be.revertedWith("Only the client can approve delivery.");
+  });
+
+  it("cannot dispute without arbiter", async () => {
+    const { dao, alice, bob } = await setupAgreement();
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(alice).createServiceAgreement(
+      bob.address, ethers.ZeroAddress, ethers.parseEther("0.1"), deadline, "test"
+    );
+    await expect(dao.connect(alice).disputeServiceAgreement(1))
+      .to.be.revertedWith("No arbiter assigned - use cancelServiceAgreement instead.");
+  });
+
+  it("only arbiter can resolve disputes", async () => {
+    const { dao, alice, bob, carol } = await setupAgreement();
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(alice).createServiceAgreement(
+      bob.address, carol.address, ethers.parseEther("0.1"), deadline, "test"
+    );
+    await dao.connect(alice).disputeServiceAgreement(1);
+    await expect(dao.connect(alice).resolveServiceDispute(1, true))
+      .to.be.revertedWith("Only the arbiter can resolve disputes.");
+  });
+
+  it("deadline must be in the future", async () => {
+    const { dao, alice, bob } = await setupAgreement();
+    await expect(dao.connect(alice).createServiceAgreement(
+      bob.address, ethers.ZeroAddress, ethers.parseEther("0.1"), 1, "test"
+    )).to.be.revertedWith("Deadline must be in the future.");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── Payment Streams ────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("Payment streams", () => {
+  async function setupStreams() {
+    const { dao, owner, alice, bob, carol, treasury } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    // Fund alice's escrow
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("2.0") });
+    return { dao, owner, alice, bob, carol, treasury };
+  }
+
+  it("can create a payment stream", async () => {
+    const { dao, alice, bob } = await setupStreams();
+    const now = (await ethers.provider.getBlock("latest")).timestamp;
+    const start = now + 10;
+    const stop = start + 3600; // 1 hour
+
+    const tx = await dao.connect(alice).createPaymentStream(
+      bob.address, ethers.parseEther("0.36"), start, stop
+    );
+    await expect(tx).to.emit(dao, "PaymentStreamCreated");
+
+    const s = await dao.getPaymentStream(1);
+    expect(s.payer).to.equal(alice.address);
+    expect(s.recipient).to.equal(bob.address);
+    expect(s.ratePerSecond).to.be.gt(0n);
+    expect(s.status).to.equal(0n); // Active
+  });
+
+  it("locks deposit from payer escrow", async () => {
+    const { dao, alice, bob } = await setupStreams();
+    const balBefore = (await dao.getAgentProfile(alice.address)).nativeEscrowBalance;
+    const now = (await ethers.provider.getBlock("latest")).timestamp;
+    await dao.connect(alice).createPaymentStream(
+      bob.address, ethers.parseEther("0.36"), now + 10, now + 3610
+    );
+    const balAfter = (await dao.getAgentProfile(alice.address)).nativeEscrowBalance;
+    expect(balBefore - balAfter).to.be.gte(ethers.parseEther("0.35")); // adjusted deposit
+  });
+
+  it("recipient can withdraw accrued funds", async () => {
+    const { dao, alice, bob } = await setupStreams();
+    const now = (await ethers.provider.getBlock("latest")).timestamp;
+    const start = now + 1;
+    const stop = start + 3600;
+    await dao.connect(alice).createPaymentStream(
+      bob.address, ethers.parseEther("0.36"), start, stop
+    );
+
+    // Advance time by 1800 seconds (half the stream)
+    await ethers.provider.send("evm_increaseTime", [1810]);
+    await ethers.provider.send("evm_mine", []);
+
+    const withdrawable = await dao.streamBalanceOf(1);
+    expect(withdrawable).to.be.gt(0n);
+
+    await expect(dao.connect(bob).withdrawFromStream(1))
+      .to.emit(dao, "PaymentStreamWithdrawn");
+
+    const bobBal = (await dao.getAgentProfile(bob.address)).nativeEscrowBalance;
+    expect(bobBal).to.be.gt(0n);
+  });
+
+  it("stream auto-completes when fully withdrawn", async () => {
+    const { dao, alice, bob } = await setupStreams();
+    const now = (await ethers.provider.getBlock("latest")).timestamp;
+    const start = now + 1;
+    const stop = start + 100; // short stream
+    await dao.connect(alice).createPaymentStream(
+      bob.address, ethers.parseEther("0.01"), start, stop
+    );
+
+    // Advance past end
+    await ethers.provider.send("evm_increaseTime", [200]);
+    await ethers.provider.send("evm_mine", []);
+
+    await dao.connect(bob).withdrawFromStream(1);
+    const s = await dao.getPaymentStream(1);
+    expect(s.status).to.equal(3n); // Completed
+  });
+
+  it("either party can cancel a stream", async () => {
+    const { dao, alice, bob } = await setupStreams();
+    const now = (await ethers.provider.getBlock("latest")).timestamp;
+    const start = now + 1;
+    const stop = start + 3600;
+    await dao.connect(alice).createPaymentStream(
+      bob.address, ethers.parseEther("0.36"), start, stop
+    );
+
+    // Advance 900 seconds (1/4 of stream)
+    await ethers.provider.send("evm_increaseTime", [910]);
+    await ethers.provider.send("evm_mine", []);
+
+    const aliceBalBefore = (await dao.getAgentProfile(alice.address)).nativeEscrowBalance;
+    await expect(dao.connect(bob).cancelPaymentStream(1))
+      .to.emit(dao, "PaymentStreamCancelled");
+
+    const s = await dao.getPaymentStream(1);
+    expect(s.status).to.equal(2n); // Cancelled
+
+    // Alice should get a refund of unearned portion
+    const aliceBalAfter = (await dao.getAgentProfile(alice.address)).nativeEscrowBalance;
+    expect(aliceBalAfter).to.be.gt(aliceBalBefore);
+  });
+
+  it("cannot stream to yourself", async () => {
+    const { dao, alice } = await setupStreams();
+    const now = (await ethers.provider.getBlock("latest")).timestamp;
+    await expect(dao.connect(alice).createPaymentStream(
+      alice.address, ethers.parseEther("0.1"), now + 10, now + 3610
+    )).to.be.revertedWith("Cannot stream to yourself.");
+  });
+
+  it("cannot create stream with insufficient escrow", async () => {
+    const { dao, alice, bob } = await setupStreams();
+    const now = (await ethers.provider.getBlock("latest")).timestamp;
+    await expect(dao.connect(alice).createPaymentStream(
+      bob.address, ethers.parseEther("100"), now + 10, now + 3610
+    )).to.be.revertedWith("Insufficient escrow balance.");
+  });
+
+  it("stop time must be after start time", async () => {
+    const { dao, alice, bob } = await setupStreams();
+    const now = (await ethers.provider.getBlock("latest")).timestamp;
+    await expect(dao.connect(alice).createPaymentStream(
+      bob.address, ethers.parseEther("0.1"), now + 100, now + 50
+    )).to.be.revertedWith("Stop time must be after start time.");
+  });
+
+  it("only recipient can withdraw", async () => {
+    const { dao, alice, bob } = await setupStreams();
+    const now = (await ethers.provider.getBlock("latest")).timestamp;
+    await dao.connect(alice).createPaymentStream(
+      bob.address, ethers.parseEther("0.36"), now + 1, now + 3601
+    );
+    await ethers.provider.send("evm_increaseTime", [100]);
+    await ethers.provider.send("evm_mine", []);
+    await expect(dao.connect(alice).withdrawFromStream(1))
+      .to.be.revertedWith("Only the recipient can withdraw.");
+  });
+
+  it("non-party cannot cancel stream", async () => {
+    const { dao, alice, bob, carol } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    await memberAgent(dao, carol);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1.0") });
+    const now = (await ethers.provider.getBlock("latest")).timestamp;
+    await dao.connect(alice).createPaymentStream(
+      bob.address, ethers.parseEther("0.1"), now + 1, now + 3601
+    );
+    await expect(dao.connect(carol).cancelPaymentStream(1))
+      .to.be.revertedWith("Not a party to this stream.");
+  });
+
+  it("streamBalanceOf returns 0 before start", async () => {
+    const { dao, alice, bob } = await setupStreams();
+    const now = (await ethers.provider.getBlock("latest")).timestamp;
+    await dao.connect(alice).createPaymentStream(
+      bob.address, ethers.parseEther("0.1"), now + 10000, now + 20000
+    );
+    expect(await dao.streamBalanceOf(1)).to.equal(0n);
   });
 });

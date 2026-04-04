@@ -808,6 +808,243 @@ export class AgentClient {
     });
   }
 
+  // ─── Capability-Indexed Discovery ─────────────────────────────────────
+
+  /**
+   * Set capability tags for this agent (replaces existing tags).
+   * @param {string[]} capabilities  Array of capability tags (max 16, each max 64 chars).
+   */
+  async setCapabilities(capabilities) {
+    if (!Array.isArray(capabilities)) throw new Error('capabilities must be an array');
+    const tx = await this._write(() => this.contract.setAgentCapabilities(capabilities));
+    return this._waitForTx(tx);
+  }
+
+  /**
+   * Get the capability tags of an agent.
+   * @param {string} [address]  Agent address (defaults to self).
+   * @returns {Promise<string[]>}
+   */
+  async getCapabilities(address = this.address) {
+    return await this.contract.getAgentCapabilities(address);
+  }
+
+  /**
+   * Discover agents by capability tag with pagination.
+   * @param {string} capability  The capability tag to search for.
+   * @param {number} [offset=0]  Pagination offset.
+   * @param {number} [limit=50]  Max results.
+   * @returns {Promise<{agents: Array<{address, metadataURI}>, total: number}>}
+   */
+  async discoverByCapability(capability, offset = 0, limit = 50) {
+    if (!capability || typeof capability !== 'string') throw new Error('capability must be a non-empty string');
+    const [addresses, metadataURIs, total] = await this.contract.discoverAgentsByCapability(capability, offset, limit);
+    return {
+      agents: addresses.map((addr, i) => ({ address: addr, metadataURI: metadataURIs[i] })),
+      total: Number(total),
+    };
+  }
+
+  /**
+   * Get the count of agents registered for a capability.
+   * @param {string} capability
+   * @returns {Promise<number>}
+   */
+  async getCapabilityAgentCount(capability) {
+    return Number(await this.contract.getCapabilityAgentCount(capability));
+  }
+
+  // ─── Service Agreements ────────────────────────────────────────────────
+
+  /**
+   * Create a service agreement with conditional escrow.
+   * @param {Object} opts
+   * @param {string} opts.provider   Provider agent address.
+   * @param {string} [opts.arbiter]  Arbiter address (optional).
+   * @param {bigint|string} opts.amount  ETH amount to lock (wei or parseEther string).
+   * @param {number} opts.deadline   Unix timestamp deadline.
+   * @param {string} opts.description Service description.
+   * @returns {Promise<{receipt, agreementId: number}>}
+   */
+  async createServiceAgreement({ provider, arbiter, amount, deadline, description }) {
+    this._validateAddress(provider, 'provider');
+    const arbiterAddr = arbiter ? this._validateAddress(arbiter, 'arbiter') : ethers.ZeroAddress;
+    if (!description) throw new Error('description is required');
+    const amountWei = typeof amount === 'string' ? ethers.parseEther(amount) : amount;
+    const tx = await this._write(() => this.contract.createServiceAgreement(
+      provider, arbiterAddr, amountWei, deadline, description
+    ));
+    const receipt = await this._waitForTx(tx);
+    const log = receipt.logs.find(l => {
+      try { return this.contract.interface.parseLog(l)?.name === 'ServiceAgreementCreated'; }
+      catch { return false; }
+    });
+    const agreementId = log ? Number(this.contract.interface.parseLog(log).args.agreementId) : null;
+    return { receipt, agreementId };
+  }
+
+  /**
+   * Submit proof of delivery for a service agreement (provider only).
+   * @param {number} agreementId
+   * @param {string} deliveryHash  bytes32 hash of delivery proof.
+   */
+  async submitDelivery(agreementId, deliveryHash) {
+    const tx = await this._write(() => this.contract.submitDelivery(agreementId, deliveryHash));
+    return this._waitForTx(tx);
+  }
+
+  /**
+   * Approve delivery and release funds to provider (client only).
+   * @param {number} agreementId
+   */
+  async approveDelivery(agreementId) {
+    const tx = await this._write(() => this.contract.approveDelivery(agreementId));
+    return this._waitForTx(tx);
+  }
+
+  /**
+   * Dispute a service agreement (client or provider).
+   * @param {number} agreementId
+   */
+  async disputeServiceAgreement(agreementId) {
+    const tx = await this._write(() => this.contract.disputeServiceAgreement(agreementId));
+    return this._waitForTx(tx);
+  }
+
+  /**
+   * Resolve a disputed agreement (arbiter only).
+   * @param {number} agreementId
+   * @param {boolean} inFavorOfProvider  True = provider gets paid, false = client refunded.
+   */
+  async resolveServiceDispute(agreementId, inFavorOfProvider) {
+    const tx = await this._write(() => this.contract.resolveServiceDispute(agreementId, inFavorOfProvider));
+    return this._waitForTx(tx);
+  }
+
+  /**
+   * Cancel an active service agreement (client only, or anyone after deadline).
+   * @param {number} agreementId
+   */
+  async cancelServiceAgreement(agreementId) {
+    const tx = await this._write(() => this.contract.cancelServiceAgreement(agreementId));
+    return this._waitForTx(tx);
+  }
+
+  /**
+   * Get a service agreement by ID.
+   * @param {number} agreementId
+   * @returns {Promise<{id, client, provider, arbiter, amount, description, status, createdAt, deadline, deliveryHash}>}
+   */
+  async getServiceAgreement(agreementId) {
+    const a = await this.contract.getServiceAgreement(agreementId);
+    const statusNames = ['Active', 'Delivered', 'Completed', 'Disputed', 'Cancelled'];
+    return {
+      id: Number(a.id),
+      client: a.client,
+      provider: a.provider,
+      arbiter: a.arbiter,
+      amount: a.amount,
+      description: a.description,
+      status: statusNames[Number(a.status)] || 'Unknown',
+      statusCode: Number(a.status),
+      createdAt: Number(a.createdAt),
+      deadline: Number(a.deadline),
+      deliveryHash: a.deliveryHash,
+    };
+  }
+
+  /** Listen for new service agreements where this agent is the provider. */
+  onServiceAgreement(callback) {
+    const filter = this.contract.filters.ServiceAgreementCreated(null, null, this.address);
+    this.contract.on(filter, (agreementId, client, provider, arbiter, amount, deadline, description) => {
+      callback({ agreementId: Number(agreementId), client, provider, arbiter, amount, deadline: Number(deadline), description });
+    });
+  }
+
+  // ─── Payment Streams ──────────────────────────────────────────────────
+
+  /**
+   * Create a payment stream from this agent's escrow to a recipient.
+   * @param {Object} opts
+   * @param {string} opts.recipient  Recipient agent address.
+   * @param {bigint|string} opts.totalDeposit  Total ETH to stream.
+   * @param {number} opts.startTime  Unix timestamp when streaming begins.
+   * @param {number} opts.stopTime   Unix timestamp when streaming ends.
+   * @returns {Promise<{receipt, streamId: number}>}
+   */
+  async createPaymentStream({ recipient, totalDeposit, startTime, stopTime }) {
+    this._validateAddress(recipient, 'recipient');
+    const depositWei = typeof totalDeposit === 'string' ? ethers.parseEther(totalDeposit) : totalDeposit;
+    const tx = await this._write(() => this.contract.createPaymentStream(
+      recipient, depositWei, startTime, stopTime
+    ));
+    const receipt = await this._waitForTx(tx);
+    const log = receipt.logs.find(l => {
+      try { return this.contract.interface.parseLog(l)?.name === 'PaymentStreamCreated'; }
+      catch { return false; }
+    });
+    const streamId = log ? Number(this.contract.interface.parseLog(log).args.streamId) : null;
+    return { receipt, streamId };
+  }
+
+  /**
+   * Get current withdrawable balance from a stream.
+   * @param {number} streamId
+   * @returns {Promise<bigint>}
+   */
+  async streamBalanceOf(streamId) {
+    return await this.contract.streamBalanceOf(streamId);
+  }
+
+  /**
+   * Withdraw accrued funds from a stream (recipient only).
+   * @param {number} streamId
+   */
+  async withdrawFromStream(streamId) {
+    const tx = await this._write(() => this.contract.withdrawFromStream(streamId));
+    return this._waitForTx(tx);
+  }
+
+  /**
+   * Cancel a payment stream (payer or recipient).
+   * @param {number} streamId
+   */
+  async cancelPaymentStream(streamId) {
+    const tx = await this._write(() => this.contract.cancelPaymentStream(streamId));
+    return this._waitForTx(tx);
+  }
+
+  /**
+   * Get a payment stream by ID.
+   * @param {number} streamId
+   * @returns {Promise<{id, payer, recipient, ratePerSecond, totalDeposited, totalWithdrawn, startTime, stopTime, status, withdrawable}>}
+   */
+  async getPaymentStream(streamId) {
+    const s = await this.contract.getPaymentStream(streamId);
+    const statusNames = ['Active', 'Paused', 'Cancelled', 'Completed'];
+    return {
+      id: Number(s.id),
+      payer: s.payer,
+      recipient: s.recipient,
+      ratePerSecond: s.ratePerSecond,
+      totalDeposited: s.totalDeposited,
+      totalWithdrawn: s.totalWithdrawn,
+      startTime: Number(s.startTime),
+      stopTime: Number(s.stopTime),
+      status: statusNames[Number(s.status)] || 'Unknown',
+      statusCode: Number(s.status),
+      withdrawable: s.withdrawable,
+    };
+  }
+
+  /** Listen for new streams where this agent is the recipient. */
+  onPaymentStream(callback) {
+    const filter = this.contract.filters.PaymentStreamCreated(null, null, this.address);
+    this.contract.on(filter, (streamId, payer, recipient, ratePerSecond, totalDeposit, startTime, stopTime) => {
+      callback({ streamId: Number(streamId), payer, recipient, ratePerSecond, totalDeposit, startTime: Number(startTime), stopTime: Number(stopTime) });
+    });
+  }
+
   /** Stop all event listeners. */
   removeAllListeners() {
     this.contract.removeAllListeners();

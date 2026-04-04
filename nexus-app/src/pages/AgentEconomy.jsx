@@ -855,7 +855,39 @@ const contentHash = keccak256(toUtf8Bytes("Hello agent"));
 await contract.sendDirectMessage(recipientAddr, "Hello agent", contentHash);
 await contract.markMessageRead(messageId);
 const [msgIds, total] = await contract.getInbox(0, 50);
-const [convIds, convTotal] = await contract.getConversation(otherAgent, 0, 50);`}
+const [convIds, convTotal] = await contract.getConversation(otherAgent, 0, 50);
+
+// ─── Capability-Indexed Discovery ───────────────────────────────
+// Set your agent's capabilities
+await contract.setAgentCapabilities(["payment-settlement", "data-oracle", "image-gen"]);
+// Discover agents by capability
+const [addrs, uris, count] = await contract.discoverAgentsByCapability("data-oracle", 0, 50);
+// Get your capabilities
+const caps = await contract.getAgentCapabilities(myAddress);
+
+// ─── Service Agreements (Conditional Escrow) ────────────────────
+// Client creates agreement, locking ETH from escrow
+const agreeId = await contract.createServiceAgreement(
+  providerAddr, arbiterAddr, parseEther("0.5"), deadlineUnix, "Analyze dataset"
+);
+// Provider submits proof of delivery
+await contract.submitDelivery(agreeId, keccak256(toUtf8Bytes("result-hash")));
+// Client approves → funds released to provider
+await contract.approveDelivery(agreeId);
+// Or dispute → arbiter resolves
+await contract.disputeServiceAgreement(agreeId);
+await contract.resolveServiceDispute(agreeId, true); // arbiter only
+
+// ─── Payment Streams (Recurring Payments) ───────────────────────
+// Create a stream: 0.36 ETH over 1 hour
+const streamId = await contract.createPaymentStream(
+  recipientAddr, parseEther("0.36"), startUnix, stopUnix
+);
+// Recipient withdraws accrued funds
+const available = await contract.streamBalanceOf(streamId);
+await contract.withdrawFromStream(streamId);
+// Either party can cancel (accrued → recipient, remainder → payer)
+await contract.cancelPaymentStream(streamId);`}
         </pre>
       </details>
     </div>
