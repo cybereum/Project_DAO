@@ -864,7 +864,7 @@ export class AgentClient {
    * @param {Object} opts
    * @param {string} opts.provider   Provider agent address.
    * @param {string} [opts.arbiter]  Arbiter address (optional).
-   * @param {bigint|string} opts.amount  ETH amount to lock (wei or parseEther string).
+   * @param {bigint|string} opts.amount  Amount to lock. bigint = wei, string = ETH (e.g. "0.5" = 0.5 ETH).
    * @param {number} opts.deadline   Unix timestamp deadline.
    * @param {string} opts.description Service description.
    * @returns {Promise<{receipt, agreementId: number}>}

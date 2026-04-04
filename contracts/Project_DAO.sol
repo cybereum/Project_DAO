@@ -1731,8 +1731,10 @@ contract Project_DAO {
         require(members[msg.sender].isMember, "Not a member.");
         require(memberStakes[msg.sender] > 0 || msg.sender != owner, "Owner cannot leave.");
 
-        // Prevent leaving while proposer on an active/open project (O(1) check)
+        // Prevent leaving while involved in active obligations (O(1) checks)
         require(activeProjectCount[msg.sender] == 0, "Cancel active projects before leaving.");
+        require(activeAgreementCount[msg.sender] == 0, "Resolve active service agreements before leaving.");
+        require(activeStreamCount[msg.sender] == 0, "Cancel active payment streams before leaving.");
 
         uint256 stake = memberStakes[msg.sender];
         memberStakes[msg.sender] = 0;
@@ -2317,6 +2319,8 @@ contract Project_DAO {
     mapping(bytes32 => address[]) private capabilityAgents;
     /// @notice Quick membership check for the reverse index.
     mapping(bytes32 => mapping(address => bool)) private capabilityAgentExists;
+    /// @notice Position index for O(1) removal: capability key => agent => index in capabilityAgents[key].
+    mapping(bytes32 => mapping(address => uint256)) private capabilityAgentIndex;
 
     event AgentCapabilitiesUpdated(address indexed agent, string[] capabilities);
 
@@ -2329,14 +2333,17 @@ contract Project_DAO {
         string[] storage old = agentCapabilities[msg.sender];
         for (uint256 i = 0; i < old.length; i++) {
             bytes32 key = keccak256(bytes(old[i]));
-            capabilityAgentExists[key][msg.sender] = false;
-            address[] storage arr = capabilityAgents[key];
-            for (uint256 j = 0; j < arr.length; j++) {
-                if (arr[j] == msg.sender) {
-                    arr[j] = arr[arr.length - 1];
-                    arr.pop();
-                    break;
+            if (capabilityAgentExists[key][msg.sender]) {
+                capabilityAgentExists[key][msg.sender] = false;
+                address[] storage arr = capabilityAgents[key];
+                uint256 idx = capabilityAgentIndex[key][msg.sender];
+                uint256 last = arr.length - 1;
+                if (idx != last) {
+                    address moved = arr[last];
+                    arr[idx] = moved;
+                    capabilityAgentIndex[key][moved] = idx;
                 }
+                arr.pop();
             }
         }
         delete agentCapabilities[msg.sender];
@@ -2348,6 +2355,7 @@ contract Project_DAO {
             bytes32 key = keccak256(cap);
             agentCapabilities[msg.sender].push(_capabilities[i]);
             if (!capabilityAgentExists[key][msg.sender]) {
+                capabilityAgentIndex[key][msg.sender] = capabilityAgents[key].length;
                 capabilityAgents[key].push(msg.sender);
                 capabilityAgentExists[key][msg.sender] = true;
             }
@@ -2412,6 +2420,8 @@ contract Project_DAO {
 
     mapping(uint256 => ServiceAgreement) public serviceAgreements;
     uint256 public currentServiceAgreementId = 1;
+    /// @notice Tracks active agreements per agent (client + provider). Blocks leaveDAO when > 0.
+    mapping(address => uint256) public activeAgreementCount;
 
     event ServiceAgreementCreated(uint256 indexed agreementId, address indexed client, address indexed provider, address arbiter, uint256 amount, uint256 deadline, string description);
     event ServiceDeliverySubmitted(uint256 indexed agreementId, address indexed provider, bytes32 deliveryHash);
@@ -2444,6 +2454,8 @@ contract Project_DAO {
         }
 
         agents[msg.sender].nativeEscrowBalance -= _amount;
+        activeAgreementCount[msg.sender]++;
+        activeAgreementCount[_provider]++;
 
         uint256 id = currentServiceAgreementId++;
         serviceAgreements[id] = ServiceAgreement({
@@ -2489,6 +2501,8 @@ contract Project_DAO {
         require(a.status == AgreementStatus.Delivered, "Delivery not yet submitted.");
 
         a.status = AgreementStatus.Completed;
+        activeAgreementCount[a.client]--;
+        activeAgreementCount[a.provider]--;
 
         uint256 fee = _collectNativeFee(a.amount, "service_agreement_complete");
         uint256 net = a.amount - fee;
@@ -2520,6 +2534,8 @@ contract Project_DAO {
         require(a.status == AgreementStatus.Disputed, "Agreement is not disputed.");
 
         a.status = AgreementStatus.Completed;
+        activeAgreementCount[a.client]--;
+        activeAgreementCount[a.provider]--;
 
         uint256 fee = _collectNativeFee(a.amount, "service_dispute_resolution");
         uint256 net = a.amount - fee;
@@ -2547,6 +2563,8 @@ contract Project_DAO {
         );
 
         a.status = AgreementStatus.Cancelled;
+        activeAgreementCount[a.client]--;
+        activeAgreementCount[a.provider]--;
         agents[a.client].nativeEscrowBalance += a.amount;
 
         emit ServiceAgreementCancelled(_agreementId, msg.sender);
@@ -2582,6 +2600,8 @@ contract Project_DAO {
 
     mapping(uint256 => PaymentStream) public paymentStreams;
     uint256 public currentPaymentStreamId = 1;
+    /// @notice Tracks active streams per agent (payer + recipient). Blocks leaveDAO when > 0.
+    mapping(address => uint256) public activeStreamCount;
 
     event PaymentStreamCreated(uint256 indexed streamId, address indexed payer, address indexed recipient, uint256 ratePerSecond, uint256 totalDeposit, uint256 startTime, uint256 stopTime);
     event PaymentStreamWithdrawn(uint256 indexed streamId, address indexed recipient, uint256 amount);
@@ -2612,6 +2632,8 @@ contract Project_DAO {
         // Adjust totalDeposit to exact multiple of rate to avoid dust
         uint256 adjustedDeposit = ratePerSecond * duration;
         agents[msg.sender].nativeEscrowBalance -= adjustedDeposit;
+        activeStreamCount[msg.sender]++;
+        activeStreamCount[_recipient]++;
 
         uint256 id = currentPaymentStreamId++;
         paymentStreams[id] = PaymentStream({
@@ -2675,6 +2697,8 @@ contract Project_DAO {
         // Auto-complete if fully withdrawn
         if (s.totalWithdrawn >= s.totalDeposited) {
             s.status = StreamStatus.Completed;
+            activeStreamCount[s.payer]--;
+            activeStreamCount[s.recipient]--;
         }
 
         emit PaymentStreamWithdrawn(_streamId, msg.sender, net);
@@ -2693,13 +2717,16 @@ contract Project_DAO {
         uint256 payerRefund = s.totalDeposited - s.totalWithdrawn - recipientAmount;
 
         s.status = StreamStatus.Cancelled;
+        activeStreamCount[s.payer]--;
+        activeStreamCount[s.recipient]--;
 
         // Pay recipient their earned portion (with fee)
+        uint256 recipientNet = 0;
         if (recipientAmount > 0) {
             s.totalWithdrawn += recipientAmount;
             uint256 fee = _collectNativeFee(recipientAmount, "stream_cancel_recipient");
-            uint256 net = recipientAmount - fee;
-            agents[s.recipient].nativeEscrowBalance += net;
+            recipientNet = recipientAmount - fee;
+            agents[s.recipient].nativeEscrowBalance += recipientNet;
         }
 
         // Refund payer the unearned portion (no fee on refund)
@@ -2707,7 +2734,7 @@ contract Project_DAO {
             agents[s.payer].nativeEscrowBalance += payerRefund;
         }
 
-        emit PaymentStreamCancelled(_streamId, msg.sender, recipientAmount, payerRefund);
+        emit PaymentStreamCancelled(_streamId, msg.sender, recipientNet, payerRefund);
     }
 
     /// @notice Get a payment stream by ID.

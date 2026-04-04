@@ -3935,3 +3935,58 @@ describe("Payment streams", () => {
     expect(await dao.streamBalanceOf(1)).to.equal(0n);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── leaveDAO blocks on active agreements/streams ────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("leaveDAO obligation checks", () => {
+  it("blocks leaveDAO with active service agreement", async () => {
+    const { dao, alice, bob, treasury } = await deploy();
+    // Stake-join so they can leave
+    await dao.connect(alice).stakeAndJoin("ipfs://a", { value: ethers.parseEther("0.1") });
+    await dao.connect(bob).stakeAndJoin("ipfs://b", { value: ethers.parseEther("0.1") });
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("0.5") });
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(alice).createServiceAgreement(
+      bob.address, ethers.ZeroAddress, ethers.parseEther("0.1"), deadline, "test"
+    );
+    await expect(dao.connect(alice).leaveDAO())
+      .to.be.revertedWith("Resolve active service agreements before leaving.");
+    await expect(dao.connect(bob).leaveDAO())
+      .to.be.revertedWith("Resolve active service agreements before leaving.");
+  });
+
+  it("blocks leaveDAO with active payment stream", async () => {
+    const { dao, alice, bob, treasury } = await deploy();
+    await dao.connect(alice).stakeAndJoin("ipfs://a", { value: ethers.parseEther("0.1") });
+    await dao.connect(bob).stakeAndJoin("ipfs://b", { value: ethers.parseEther("0.1") });
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("0.5") });
+    const now = (await ethers.provider.getBlock("latest")).timestamp;
+    await dao.connect(alice).createPaymentStream(
+      bob.address, ethers.parseEther("0.1"), now + 1, now + 3601
+    );
+    await expect(dao.connect(alice).leaveDAO())
+      .to.be.revertedWith("Cancel active payment streams before leaving.");
+    await expect(dao.connect(bob).leaveDAO())
+      .to.be.revertedWith("Cancel active payment streams before leaving.");
+  });
+
+  it("allows leaveDAO after agreement is completed", async () => {
+    const { dao, alice, bob, treasury } = await deploy();
+    await dao.connect(alice).stakeAndJoin("ipfs://a", { value: ethers.parseEther("0.1") });
+    await dao.connect(bob).stakeAndJoin("ipfs://b", { value: ethers.parseEther("0.1") });
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("0.5") });
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(alice).createServiceAgreement(
+      bob.address, ethers.ZeroAddress, ethers.parseEther("0.1"), deadline, "test"
+    );
+    // Complete the agreement
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("proof"));
+    await dao.connect(bob).submitDelivery(1, hash);
+    await dao.connect(alice).approveDelivery(1);
+    // Now both can leave
+    await dao.connect(bob).leaveDAO();
+    expect((await dao.members(bob.address)).isMember).to.equal(false);
+  });
+});

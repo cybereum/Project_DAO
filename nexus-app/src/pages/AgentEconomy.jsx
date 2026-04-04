@@ -867,22 +867,27 @@ const caps = await contract.getAgentCapabilities(myAddress);
 
 // ─── Service Agreements (Conditional Escrow) ────────────────────
 // Client creates agreement, locking ETH from escrow
-const agreeId = await contract.createServiceAgreement(
+const agreeTx = await contract.createServiceAgreement(
   providerAddr, arbiterAddr, parseEther("0.5"), deadlineUnix, "Analyze dataset"
 );
+const agreeReceipt = await agreeTx.wait();
+// Extract agreementId from ServiceAgreementCreated event logs
+
 // Provider submits proof of delivery
-await contract.submitDelivery(agreeId, keccak256(toUtf8Bytes("result-hash")));
+await (await contract.submitDelivery(agreeId, keccak256(toUtf8Bytes("result-hash")))).wait();
 // Client approves → funds released to provider
-await contract.approveDelivery(agreeId);
+await (await contract.approveDelivery(agreeId)).wait();
 // Or dispute → arbiter resolves
-await contract.disputeServiceAgreement(agreeId);
-await contract.resolveServiceDispute(agreeId, true); // arbiter only
+await (await contract.disputeServiceAgreement(agreeId)).wait();
+await (await contract.resolveServiceDispute(agreeId, true)).wait(); // arbiter only
 
 // ─── Payment Streams (Recurring Payments) ───────────────────────
 // Create a stream: 0.36 ETH over 1 hour
-const streamId = await contract.createPaymentStream(
+const streamTx = await contract.createPaymentStream(
   recipientAddr, parseEther("0.36"), startUnix, stopUnix
 );
+const streamReceipt = await streamTx.wait();
+// Extract streamId from PaymentStreamCreated event logs
 // Recipient withdraws accrued funds
 const available = await contract.streamBalanceOf(streamId);
 await contract.withdrawFromStream(streamId);
