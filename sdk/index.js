@@ -23,6 +23,9 @@ import { deployments } from './deployments.js';
 
 export { PROJECT_DAO_ABI };
 
+const AGREEMENT_STATUS = ['Active', 'Delivered', 'Completed', 'Disputed', 'Cancelled'];
+const STREAM_STATUS = ['Active', 'Paused', 'Cancelled', 'Completed'];
+
 export class AgentClient {
   /**
    * @param {Object} opts
@@ -875,11 +878,8 @@ export class AgentClient {
       provider, arbiterAddr, amountWei, deadline, description
     ));
     const receipt = await this._waitForTx(tx);
-    const log = receipt.logs.find(l => {
-      try { return this.contract.interface.parseLog(l)?.name === 'ServiceAgreementCreated'; }
-      catch { return false; }
-    });
-    const agreementId = log ? Number(this.contract.interface.parseLog(log).args.agreementId) : null;
+    const raw = this._extractEventArg(receipt, 'ServiceAgreementCreated', 'agreementId');
+    const agreementId = raw != null ? Number(raw) : null;
     return { receipt, agreementId };
   }
 
@@ -937,7 +937,6 @@ export class AgentClient {
    */
   async getServiceAgreement(agreementId) {
     const a = await this.contract.getServiceAgreement(agreementId);
-    const statusNames = ['Active', 'Delivered', 'Completed', 'Disputed', 'Cancelled'];
     return {
       id: Number(a.id),
       client: a.client,
@@ -945,7 +944,7 @@ export class AgentClient {
       arbiter: a.arbiter,
       amount: a.amount,
       description: a.description,
-      status: statusNames[Number(a.status)] || 'Unknown',
+      status: AGREEMENT_STATUS[Number(a.status)] || 'Unknown',
       statusCode: Number(a.status),
       createdAt: Number(a.createdAt),
       deadline: Number(a.deadline),
@@ -979,11 +978,8 @@ export class AgentClient {
       recipient, depositWei, startTime, stopTime
     ));
     const receipt = await this._waitForTx(tx);
-    const log = receipt.logs.find(l => {
-      try { return this.contract.interface.parseLog(l)?.name === 'PaymentStreamCreated'; }
-      catch { return false; }
-    });
-    const streamId = log ? Number(this.contract.interface.parseLog(log).args.streamId) : null;
+    const raw = this._extractEventArg(receipt, 'PaymentStreamCreated', 'streamId');
+    const streamId = raw != null ? Number(raw) : null;
     return { receipt, streamId };
   }
 
@@ -1021,7 +1017,6 @@ export class AgentClient {
    */
   async getPaymentStream(streamId) {
     const s = await this.contract.getPaymentStream(streamId);
-    const statusNames = ['Active', 'Paused', 'Cancelled', 'Completed'];
     return {
       id: Number(s.id),
       payer: s.payer,
@@ -1031,7 +1026,7 @@ export class AgentClient {
       totalWithdrawn: s.totalWithdrawn,
       startTime: Number(s.startTime),
       stopTime: Number(s.stopTime),
-      status: statusNames[Number(s.status)] || 'Unknown',
+      status: STREAM_STATUS[Number(s.status)] || 'Unknown',
       statusCode: Number(s.status),
       withdrawable: s.withdrawable,
     };

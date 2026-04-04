@@ -2326,12 +2326,10 @@ contract Project_DAO {
     function setAgentCapabilities(string[] calldata _capabilities) external onlyRegisteredAgent whenNotPaused {
         require(_capabilities.length <= MAX_CAPABILITIES, "Too many capabilities.");
 
-        // Remove old entries from reverse index
         string[] storage old = agentCapabilities[msg.sender];
         for (uint256 i = 0; i < old.length; i++) {
             bytes32 key = keccak256(bytes(old[i]));
             capabilityAgentExists[key][msg.sender] = false;
-            // Remove from array (swap-and-pop)
             address[] storage arr = capabilityAgents[key];
             for (uint256 j = 0; j < arr.length; j++) {
                 if (arr[j] == msg.sender) {
@@ -2656,7 +2654,15 @@ contract Project_DAO {
         require(s.recipient == msg.sender, "Only the recipient can withdraw.");
         require(s.status == StreamStatus.Active, "Stream is not active.");
 
-        uint256 available = streamBalanceOf(_streamId);
+        // Inline balance calc to avoid redundant SLOAD from streamBalanceOf
+        uint256 elapsed;
+        if (block.timestamp >= s.stopTime) {
+            elapsed = s.stopTime - s.startTime;
+        } else if (block.timestamp > s.startTime) {
+            elapsed = block.timestamp - s.startTime;
+        }
+        uint256 available = elapsed * s.ratePerSecond;
+        available = available > s.totalWithdrawn ? available - s.totalWithdrawn : 0;
         require(available > 0, "No funds available to withdraw.");
 
         s.totalWithdrawn += available;
