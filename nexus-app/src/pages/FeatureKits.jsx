@@ -7,12 +7,13 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import {
   Lightbulb, ArrowUp, Cpu, FlaskConical, Filter,
   Loader2, CheckCircle2, XCircle, Clock, Rocket,
   ChevronDown, ChevronUp, Bot, Sparkles, ListOrdered,
-  Plus, Send, RefreshCw
+  Plus, Send, RefreshCw, Brain
 } from 'lucide-react';
 import { useApp } from '../store/appStore';
 import { nexusAI } from '../services/nexusAI';
@@ -440,14 +441,19 @@ export default function FeatureKits() {
             Agents submit desired features · NexusAI triages with impact × feasibility scoring · Community upvotes the best ideas
           </p>
         </div>
-        <button
-          onClick={loadFeatureKits}
-          disabled={featureKitsLoading}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg border border-nexus-border hover:border-nexus-cyan/40 text-nexus-text-dim hover:text-nexus-cyan transition-all text-sm"
-        >
-          <RefreshCw size={14} className={featureKitsLoading ? 'animate-spin' : ''} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <Link to="/nexus-ai" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-nexus-border text-xs text-nexus-text-dim hover:text-white hover:border-nexus-purple/30 transition-colors">
+            <Brain size={13} /> NexusAI
+          </Link>
+          <button
+            onClick={loadFeatureKits}
+            disabled={featureKitsLoading}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-nexus-border hover:border-nexus-cyan/40 text-nexus-text-dim hover:text-nexus-cyan transition-all text-sm"
+          >
+            <RefreshCw size={14} className={featureKitsLoading ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Stats */}

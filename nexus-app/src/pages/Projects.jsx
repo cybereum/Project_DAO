@@ -5,7 +5,7 @@ import { motion as Motion } from 'framer-motion';
 import { parseEther, formatEther } from 'ethers';
 import {
   FolderKanban, Users, Milestone, CheckCircle2, ArrowRight, Plus,
-  Search, Filter, Zap, Globe, RefreshCw, AlertCircle, ExternalLink,
+  Search, Filter, Zap, Globe, RefreshCw, AlertCircle, ExternalLink, Bot,
 } from 'lucide-react';
 import PretextTruncate from '../components/PretextTruncate';
 import { FONTS, LINE_HEIGHTS } from '../config/designTokens.js';
@@ -134,6 +134,9 @@ export default function Projects() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Link to="/agent-economy" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-nexus-border text-xs text-nexus-text-dim hover:text-white hover:border-nexus-cyan/30 transition-colors">
+            <Bot size={13} /> Agent Console
+          </Link>
           <button
             onClick={() => loadEconomicProjects()}
             disabled={economicProjectsLoading}

@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion as Motion } from 'framer-motion';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { keccak256, toUtf8Bytes } from 'ethers';
 import {
   MessageCircle, Send, Inbox, CheckCircle, Lock, AlertTriangle, Eye,
-  RefreshCw, Wallet, ChevronRight, User, Search, ArrowLeft
+  RefreshCw, Wallet, ChevronRight, User, Search, ArrowLeft, Bot
 } from 'lucide-react';
 import { useApp } from '../store/appStore';
 import { markFunnelStep } from '../lib/utm.js';
@@ -236,6 +236,11 @@ export default function AgentMessages() {
           title="Agent registration required"
           desc="You must be a registered agent to use direct messaging. Register in the Agent Economy console."
         />
+        <div className="flex justify-center">
+          <Link to="/agent-economy" className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-nexus-cyan/10 border border-nexus-cyan/20 text-sm text-nexus-cyan hover:bg-nexus-cyan/20 transition-colors">
+            <Bot size={14} /> Go to Agent Console
+          </Link>
+        </div>
       </div>
     );
   }
@@ -254,6 +259,9 @@ export default function AgentMessages() {
           )}
         </div>
         <div className="flex items-center gap-2">
+          <Link to="/agent-economy" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-nexus-border text-xs text-nexus-text-dim hover:text-white hover:border-nexus-cyan/30 transition-colors">
+            <Bot size={13} /> Agent Console
+          </Link>
           <Btn variant="secondary" loading={inboxLoading} onClick={() => loadInbox()}>
             <RefreshCw size={14} /> Refresh
           </Btn>

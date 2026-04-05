@@ -341,6 +341,7 @@ export function useAppState() {
   }, [walletAddress]);
 
   const [dataLoadError, setDataLoadError] = useState('');
+  const clearDataLoadError = useCallback(() => { setDataLoadError(''); }, []);
   const handleLoadError = useCallback((label, err) => {
     setDataLoadError(`Failed to load ${label}.`);
     console.error(`${label} failed:`, err);
@@ -361,6 +362,7 @@ export function useAppState() {
   const loadAgentConfig = useCallback(async () => {
     const contract = getDaoReadContract();
     if (!contract) return;
+    clearDataLoadError();
     try {
       const [feeBps, flatFee] = await Promise.all([
         contract.cybereumFeeBps(),
@@ -369,12 +371,13 @@ export function useAppState() {
       setAgentFeeBps(Number(feeBps));
       setAgentFlatFeeWei(flatFee.toString());
     } catch (err) { handleLoadError('fee config', err); }
-  }, [getDaoReadContract, handleLoadError]);
+  }, [getDaoReadContract, handleLoadError, clearDataLoadError]);
 
   const loadAgentProfile = useCallback(async () => {
     if (!walletAddress) return;
     const contract = getDaoReadContract();
     if (!contract) return;
+    clearDataLoadError();
     try {
       const profile = await contract.getAgentProfile(walletAddress);
       setAgentProfile({
@@ -383,7 +386,7 @@ export function useAppState() {
         nativeEscrowBalance: profile.nativeEscrowBalance.toString(),
       });
     } catch (err) { handleLoadError('agent profile', err); }
-  }, [walletAddress, getDaoReadContract, handleLoadError]);
+  }, [walletAddress, getDaoReadContract, handleLoadError, clearDataLoadError]);
 
   const agentRegister = useCallback(async (metadataURI) => {
     setWalletError('');
@@ -502,11 +505,12 @@ export function useAppState() {
     if (!walletAddress || !tokenAddress) return;
     const contract = getDaoReadContract();
     if (!contract) return;
+    clearDataLoadError();
     try {
       const bal = await contract.getAgentTokenBalance(walletAddress, tokenAddress);
       setAgentTokenBalances(prev => ({ ...prev, [tokenAddress.toLowerCase()]: bal.toString() }));
     } catch (err) { handleLoadError('token balance', err); }
-  }, [walletAddress, getDaoReadContract, handleLoadError]);
+  }, [walletAddress, getDaoReadContract, handleLoadError, clearDataLoadError]);
 
   const loadAgentActivity = useCallback(async ({ forceFull = false } = {}) => {
     if (!walletAddress) return;
@@ -718,6 +722,7 @@ export function useAppState() {
   const loadEconomicProjects = useCallback(async () => {
     const contract = getDaoReadContract();
     if (!contract) return;
+    clearDataLoadError();
     setEconomicProjectsLoading(true);
     try {
       const [page, total] = await contract.getEconomicProjects(0, 50);
@@ -738,7 +743,7 @@ export function useAppState() {
       return Number(total);
     } catch (err) { handleLoadError('projects', err); }
     finally { setEconomicProjectsLoading(false); }
-  }, [getDaoReadContract, handleLoadError]);
+  }, [getDaoReadContract, handleLoadError, clearDataLoadError]);
 
   const createEconomicProject = useCallback(async (metadataURI, targetBudgetWei, deadlineTs) => {
     setWalletError('');
@@ -907,6 +912,7 @@ export function useAppState() {
     if (!walletAddress) return;
     const contract = getDaoReadContract();
     if (!contract) return;
+    clearDataLoadError();
     setInboxLoading(true);
     try {
       const [messageIds, total] = await contract.getInbox(offset, limit);
@@ -914,12 +920,13 @@ export function useAppState() {
       setInbox({ messages, total: Number(total) });
     } catch (err) { handleLoadError('inbox', err); setInbox({ messages: [], total: 0 }); }
     finally { setInboxLoading(false); }
-  }, [walletAddress, getDaoReadContract, hydrateMessages, handleLoadError]);
+  }, [walletAddress, getDaoReadContract, hydrateMessages, handleLoadError, clearDataLoadError]);
 
   const loadConversation = useCallback(async (otherAgent, offset = 0, limit = 50) => {
     if (!walletAddress) return;
     const contract = getDaoReadContract();
     if (!contract) return;
+    clearDataLoadError();
     setConversationLoading(true);
     try {
       const [messageIds, total] = await contract.getConversation(otherAgent, offset, limit);
@@ -927,7 +934,7 @@ export function useAppState() {
       setConversationMessages({ messages, total: Number(total) });
     } catch (err) { handleLoadError('conversation', err); setConversationMessages({ messages: [], total: 0 }); }
     finally { setConversationLoading(false); }
-  }, [walletAddress, getDaoReadContract, hydrateMessages, handleLoadError]);
+  }, [walletAddress, getDaoReadContract, hydrateMessages, handleLoadError, clearDataLoadError]);
 
   const agentSendMessage = useCallback(async (toAddress, encryptedContent, contentHash) => {
     setWalletError('');
@@ -963,6 +970,107 @@ export function useAppState() {
     }
   }, [getDaoWriteContract]);
 
+  // ─── Reputation state ──────────────────────────────────────────────────────
+  const [reputationLeaderboard, setReputationLeaderboard] = useState([]);
+  const [myReputation, setMyReputation] = useState(null);
+  const [reputationLoading, setReputationLoading] = useState(false);
+  const [reputationError, setReputationError] = useState('');
+
+  const loadReputation = useCallback(async () => {
+    const contract = getDaoReadContract();
+    if (!contract) {
+      setReputationLeaderboard([]);
+      setMyReputation(null);
+      setReputationError('');
+      setReputationLoading(false);
+      return;
+    }
+    clearDataLoadError();
+    setReputationLoading(true);
+    setReputationError('');
+    try {
+      const [agents_, scores, tiers, registered] = await contract.getReputationLeaderboard(0, 50);
+      const entries = agents_.map((addr, i) => ({
+        address: addr,
+        score: Number(scores[i]),
+        tier: Number(tiers[i]),
+        registered: registered[i],
+      })).filter(a => a.registered).sort((a, b) => b.score - a.score);
+      setReputationLeaderboard(entries);
+
+      if (walletAddress) {
+        try {
+          const r = await contract.getAgentReputation(walletAddress);
+          setMyReputation({
+            score: Number(r.score),
+            tier: Number(r.tier),
+            transactionCount: Number(r.transactionCount),
+            lastActiveAt: Number(r.lastActiveAt),
+            registeredAt: Number(r.registeredAt),
+            messagingFeeDiscount: Number(r.messagingFeeDiscount),
+          });
+        } catch {
+          setMyReputation(null);
+        }
+      } else {
+        setMyReputation(null);
+      }
+    } catch (err) {
+      setReputationError('Failed to load reputation data.');
+      console.error('loadReputation failed:', err);
+    }
+    finally { setReputationLoading(false); }
+  }, [getDaoReadContract, walletAddress, clearDataLoadError]);
+
+  // ─── Commerce Blackhole state ─────────────────────────────────────────────
+  const [commerceMetrics, setCommerceMetrics] = useState(null);
+  const [agentCommerceMetrics, setAgentCommerceMetrics] = useState(null);
+  const [commerceLoading, setCommerceLoading] = useState(false);
+  const [commerceError, setCommerceError] = useState('');
+
+  const loadCommerceMetrics = useCallback(async () => {
+    const contract = getDaoReadContract();
+    if (!contract) {
+      setCommerceMetrics(null);
+      setAgentCommerceMetrics(null);
+      setCommerceError('');
+      setCommerceLoading(false);
+      return;
+    }
+    clearDataLoadError();
+    setCommerceLoading(true);
+    setCommerceError('');
+    try {
+      const m = await contract.getBlackholeMetrics();
+      setCommerceMetrics({
+        totalVolume: m._totalCommerceVolume,
+        totalFees: m._totalFeesCollected,
+        agentCount: Number(m._agentCount),
+        feeBps: Number(m._feeBps),
+        exitFeeBps: Number(m._exitFeeBps),
+        messagingFee: m._messagingFeeWei,
+        aiServiceFee: m._aiServiceFeeWei,
+        assetFlatFee: m._assetTransferFlatFeeWei,
+      });
+
+      if (walletAddress) {
+        const am = await contract.getAgentCommerceMetrics(walletAddress);
+        setAgentCommerceMetrics({
+          volume: am.volume,
+          feesPaid: am.feesPaid,
+          escrow: am.escrowBalance,
+          registered: am.registered,
+        });
+      } else {
+        setAgentCommerceMetrics(null);
+      }
+    } catch (err) {
+      setCommerceError('Failed to load commerce metrics.');
+      console.error('loadCommerceMetrics failed:', err);
+    }
+    finally { setCommerceLoading(false); }
+  }, [getDaoReadContract, walletAddress, clearDataLoadError]);
+
   // ─── Feature Kit state ────────────────────────────────────────────────────
   const [featureKits, setFeatureKits] = useState([]);
   const [featureKitsLoading, setFeatureKitsLoading] = useState(false);
@@ -970,6 +1078,7 @@ export function useAppState() {
   const loadFeatureKits = useCallback(async () => {
     const contract = getDaoReadContract();
     if (!contract) return;
+    clearDataLoadError();
     setFeatureKitsLoading(true);
     try {
       const [page, total] = await contract.getFeatureKits(0, 100);
@@ -987,7 +1096,7 @@ export function useAppState() {
       return Number(total);
     } catch (err) { handleLoadError('feature kits', err); }
     finally { setFeatureKitsLoading(false); }
-  }, [getDaoReadContract, handleLoadError]);
+  }, [getDaoReadContract, handleLoadError, clearDataLoadError]);
 
   const submitFeatureKit = useCallback(async (metadataURI, priority) => {
     setWalletError('');
@@ -1042,6 +1151,10 @@ export function useAppState() {
     // direct messaging
     inbox, inboxLoading, conversationMessages, conversationLoading,
     loadInbox, loadConversation, agentSendMessage, agentMarkMessageRead,
+    // reputation
+    reputationLeaderboard, myReputation, reputationLoading, reputationError, loadReputation,
+    // commerce blackhole
+    commerceMetrics, agentCommerceMetrics, commerceLoading, commerceError, loadCommerceMetrics,
     // feature kits
     featureKits, featureKitsLoading,
     loadFeatureKits, submitFeatureKit, upvoteFeatureKit,
@@ -1068,6 +1181,8 @@ export function useAppState() {
     agentCreatePaymentRequest, agentSettlePaymentRequest, agentCancelPaymentRequest,
     inbox, inboxLoading, conversationMessages, conversationLoading,
     loadInbox, loadConversation, agentSendMessage, agentMarkMessageRead,
+    reputationLeaderboard, myReputation, reputationLoading, reputationError, loadReputation,
+    commerceMetrics, agentCommerceMetrics, commerceLoading, commerceError, loadCommerceMetrics,
     featureKits, featureKitsLoading,
     loadFeatureKits, submitFeatureKit, upvoteFeatureKit,
     stakeAndJoin, leaveDAO,
