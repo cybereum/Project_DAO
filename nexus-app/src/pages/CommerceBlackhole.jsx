@@ -38,9 +38,9 @@ function FeeRail({ label, bps, description }) {
 export default function CommerceBlackhole() {
   const {
     txPending,
-    getDaoWriteContract, dataLoadError,
+    getDaoWriteContract,
     commerceMetrics: metrics, agentCommerceMetrics: agentMetrics,
-    commerceLoading: loading, loadCommerceMetrics,
+    commerceLoading: loading, commerceError, loadCommerceMetrics,
   } = useApp();
 
   // Batch transfer state
@@ -117,10 +117,10 @@ export default function CommerceBlackhole() {
           <RefreshCw className="animate-spin text-nexus-cyan" size={24} />
           <span className="ml-3 text-nexus-text-dim">Loading blackhole metrics...</span>
         </div>
-      ) : dataLoadError && !metrics ? (
+      ) : commerceError && !metrics ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <AlertCircle size={32} className="text-amber-400 mb-3" />
-          <p className="text-nexus-text-dim text-sm">{dataLoadError}</p>
+          <p className="text-nexus-text-dim text-sm">{commerceError}</p>
           <button onClick={loadCommerceMetrics} className="mt-3 text-xs text-nexus-cyan hover:underline">Retry</button>
         </div>
       ) : metrics ? (

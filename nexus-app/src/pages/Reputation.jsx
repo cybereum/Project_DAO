@@ -28,7 +28,7 @@ export default function Reputation() {
   const {
     walletAddress,
     reputationLeaderboard: leaderboard, myReputation, reputationLoading: loading,
-    loadReputation, dataLoadError,
+    reputationError, loadReputation,
   } = useApp();
 
   useEffect(() => { loadReputation(); }, [loadReputation]);
@@ -65,10 +65,10 @@ export default function Reputation() {
           <RefreshCw className="animate-spin text-nexus-cyan" size={24} />
           <span className="ml-3 text-nexus-text-dim">Loading reputation data...</span>
         </div>
-      ) : dataLoadError && leaderboard.length === 0 ? (
+      ) : reputationError && leaderboard.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <AlertCircle size={32} className="text-amber-400 mb-3" />
-          <p className="text-nexus-text-dim text-sm">{dataLoadError}</p>
+          <p className="text-nexus-text-dim text-sm">{reputationError}</p>
           <button onClick={loadReputation} className="mt-3 text-xs text-nexus-cyan hover:underline">Retry</button>
         </div>
       ) : (

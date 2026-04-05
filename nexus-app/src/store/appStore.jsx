@@ -967,11 +967,13 @@ export function useAppState() {
   const [reputationLeaderboard, setReputationLeaderboard] = useState([]);
   const [myReputation, setMyReputation] = useState(null);
   const [reputationLoading, setReputationLoading] = useState(false);
+  const [reputationError, setReputationError] = useState('');
 
   const loadReputation = useCallback(async () => {
     const contract = getDaoReadContract();
     if (!contract) return;
     setReputationLoading(true);
+    setReputationError('');
     try {
       const [agents_, scores, tiers, registered] = await contract.getReputationLeaderboard(0, 50);
       const entries = agents_.map((addr, i) => ({
@@ -996,20 +998,27 @@ export function useAppState() {
         } catch {
           setMyReputation(null);
         }
+      } else {
+        setMyReputation(null);
       }
-    } catch (err) { handleLoadError('reputation', err); }
+    } catch (err) {
+      setReputationError('Failed to load reputation data.');
+      console.error('loadReputation failed:', err);
+    }
     finally { setReputationLoading(false); }
-  }, [getDaoReadContract, walletAddress, handleLoadError]);
+  }, [getDaoReadContract, walletAddress]);
 
   // ─── Commerce Blackhole state ─────────────────────────────────────────────
   const [commerceMetrics, setCommerceMetrics] = useState(null);
   const [agentCommerceMetrics, setAgentCommerceMetrics] = useState(null);
   const [commerceLoading, setCommerceLoading] = useState(false);
+  const [commerceError, setCommerceError] = useState('');
 
   const loadCommerceMetrics = useCallback(async () => {
     const contract = getDaoReadContract();
     if (!contract) return;
     setCommerceLoading(true);
+    setCommerceError('');
     try {
       const m = await contract.getBlackholeMetrics();
       setCommerceMetrics({
@@ -1031,10 +1040,15 @@ export function useAppState() {
           escrow: am.escrowBalance,
           registered: am.registered,
         });
+      } else {
+        setAgentCommerceMetrics(null);
       }
-    } catch (err) { handleLoadError('commerce metrics', err); }
+    } catch (err) {
+      setCommerceError('Failed to load commerce metrics.');
+      console.error('loadCommerceMetrics failed:', err);
+    }
     finally { setCommerceLoading(false); }
-  }, [getDaoReadContract, walletAddress, handleLoadError]);
+  }, [getDaoReadContract, walletAddress]);
 
   // ─── Feature Kit state ────────────────────────────────────────────────────
   const [featureKits, setFeatureKits] = useState([]);
@@ -1116,9 +1130,9 @@ export function useAppState() {
     inbox, inboxLoading, conversationMessages, conversationLoading,
     loadInbox, loadConversation, agentSendMessage, agentMarkMessageRead,
     // reputation
-    reputationLeaderboard, myReputation, reputationLoading, loadReputation,
+    reputationLeaderboard, myReputation, reputationLoading, reputationError, loadReputation,
     // commerce blackhole
-    commerceMetrics, agentCommerceMetrics, commerceLoading, loadCommerceMetrics,
+    commerceMetrics, agentCommerceMetrics, commerceLoading, commerceError, loadCommerceMetrics,
     // feature kits
     featureKits, featureKitsLoading,
     loadFeatureKits, submitFeatureKit, upvoteFeatureKit,
@@ -1145,8 +1159,8 @@ export function useAppState() {
     agentCreatePaymentRequest, agentSettlePaymentRequest, agentCancelPaymentRequest,
     inbox, inboxLoading, conversationMessages, conversationLoading,
     loadInbox, loadConversation, agentSendMessage, agentMarkMessageRead,
-    reputationLeaderboard, myReputation, reputationLoading, loadReputation,
-    commerceMetrics, agentCommerceMetrics, commerceLoading, loadCommerceMetrics,
+    reputationLeaderboard, myReputation, reputationLoading, reputationError, loadReputation,
+    commerceMetrics, agentCommerceMetrics, commerceLoading, commerceError, loadCommerceMetrics,
     featureKits, featureKitsLoading,
     loadFeatureKits, submitFeatureKit, upvoteFeatureKit,
     stakeAndJoin, leaveDAO,
