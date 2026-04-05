@@ -2826,8 +2826,8 @@ contract Project_DAO {
             }
         }
 
-        // _collectNativeFee → _recordVolume → _distributeReferralRewards
-        // Referral rewards are automatically distributed via _recordVolume.
+        // _collectNativeFee handles fee processing, including referral reward
+        // distribution, before forwarding the remainder per its internal flow.
         uint256 fee = _collectNativeFee(msg.value, "stakeAndJoinWithReferral");
         uint256 netStake = msg.value - fee;
 
