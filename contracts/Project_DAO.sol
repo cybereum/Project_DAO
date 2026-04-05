@@ -2808,13 +2808,22 @@ contract Project_DAO {
         require(bytes(metadataURI).length > 0, "metadataURI required.");
         require(bytes(metadataURI).length <= 512, "Metadata URI too long.");
 
-        // Record referral if provided
+        // Record referral if provided. Referral attribution is permanent once set.
         if (_referrer != address(0)) {
             require(agents[_referrer].registered, "Referrer must be a registered agent.");
             require(_referrer != msg.sender, "Cannot refer yourself.");
-            agentReferrer[msg.sender] = _referrer;
-            agentReferralCount[_referrer]++;
-            emit ReferralRecorded(msg.sender, _referrer);
+
+            address existingReferrer = agentReferrer[msg.sender];
+            require(
+                existingReferrer == address(0) || existingReferrer == _referrer,
+                "Referral is permanent."
+            );
+
+            if (existingReferrer == address(0)) {
+                agentReferrer[msg.sender] = _referrer;
+                agentReferralCount[_referrer]++;
+                emit ReferralRecorded(msg.sender, _referrer);
+            }
         }
 
         // _collectNativeFee → _recordVolume → _distributeReferralRewards
