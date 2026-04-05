@@ -558,8 +558,14 @@ contract Project_DAO {
         require(cybereumTreasury != address(0), "Cybereum treasury not configured.");
         uint256 fee = _calculateFee(_amount);
         if (fee > 0) {
-            (bool ok,) = payable(cybereumTreasury).call{value: fee}("");
-            require(ok, "Native fee transfer failed.");
+            // Deduct referral rewards BEFORE sending to treasury.
+            // Referral portion stays in the contract as backing for escrow credits.
+            uint256 referralTotal = _distributeReferralRewards(msg.sender, fee);
+            uint256 treasuryFee = fee - referralTotal;
+            if (treasuryFee > 0) {
+                (bool ok,) = payable(cybereumTreasury).call{value: treasuryFee}("");
+                require(ok, "Native fee transfer failed.");
+            }
             emit CybereumFeePaid(msg.sender, address(0), fee, _context);
         }
         _recordVolume(msg.sender, _amount, fee, _context);
@@ -579,6 +585,8 @@ contract Project_DAO {
     }
 
     /// @dev Record commerce volume and fee metrics for the blackhole, then refresh reputation.
+    ///      Note: referral rewards are distributed from _collectNativeFee / _collectExitFee
+    ///      BEFORE the treasury transfer, so the contract retains the backing ETH.
     function _recordVolume(address _agent, uint256 _amount, uint256 _fee, string memory _context) internal {
         totalCommerceVolume += _amount;
         totalFeesCollected += _fee;
@@ -677,8 +685,13 @@ contract Project_DAO {
         uint256 fee = (_amount * exitFeeBps) / FEE_BPS_DENOMINATOR;
         if (fee == 0) fee = 1;
         if (fee > 0) {
-            (bool ok,) = payable(cybereumTreasury).call{value: fee}("");
-            require(ok, "Exit fee transfer failed.");
+            // Deduct referral rewards before sending to treasury
+            uint256 referralTotal = _distributeReferralRewards(msg.sender, fee);
+            uint256 treasuryFee = fee - referralTotal;
+            if (treasuryFee > 0) {
+                (bool ok,) = payable(cybereumTreasury).call{value: treasuryFee}("");
+                require(ok, "Exit fee transfer failed.");
+            }
             emit ExitFeePaid(msg.sender, fee, _context);
             emit CybereumFeePaid(msg.sender, address(0), fee, _context);
         }
@@ -696,6 +709,7 @@ contract Project_DAO {
         agentAddresses.push(msg.sender);
         agentRegisteredAt[msg.sender] = block.timestamp;
         agentLastActiveAt[msg.sender] = block.timestamp;
+        _checkNetworkMilestone();
         emit AgentRegistered(msg.sender, _metadataURI);
     }
 
@@ -1717,6 +1731,7 @@ contract Project_DAO {
         agentAddresses.push(msg.sender);
         agentRegisteredAt[msg.sender] = block.timestamp;
         agentLastActiveAt[msg.sender] = block.timestamp;
+        _checkNetworkMilestone();
 
         emit MemberJoinedByStake(msg.sender, netStake);
         emit AgentRegistered(msg.sender, metadataURI);
@@ -2746,5 +2761,453 @@ contract Project_DAO {
         PaymentStream storage s = paymentStreams[_streamId];
         return (s.id, s.payer, s.recipient, s.ratePerSecond, s.totalDeposited, s.totalWithdrawn,
                 s.startTime, s.stopTime, s.status, streamBalanceOf(_streamId));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ─── NETWORK EFFECT 1: Referral Rewards (Viral Growth Loop) ────────────
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /// @notice Who referred this agent (address(0) = organic join).
+    mapping(address => address) public agentReferrer;
+    /// @notice How many agents this agent has directly referred.
+    mapping(address => uint256) public agentReferralCount;
+    /// @notice Total referral rewards earned (cumulative, in wei).
+    mapping(address => uint256) public agentReferralEarnings;
+    /// @notice Tier-1 referral reward: bps of protocol fee credited to direct referrer.
+    ///         Default 1000 = 10% of fee. Max 2500 (25%).
+    uint256 public referralRewardBps = 1000;
+    /// @notice Tier-2 referral reward: bps of protocol fee credited to referrer's referrer.
+    ///         Default 300 = 3% of fee. Max 1000 (10%).
+    uint256 public referralTier2Bps = 300;
+
+    event ReferralRecorded(address indexed agent, address indexed referrer);
+    event ReferralRewardPaid(address indexed referrer, address indexed source, uint256 amount, uint8 tier);
+    event ReferralConfigUpdated(uint256 tier1Bps, uint256 tier2Bps);
+
+    /// @notice Owner configures referral reward percentages.
+    /// @param _tier1Bps Tier-1 reward (direct referrer) in bps of protocol fee. Max 2500.
+    /// @param _tier2Bps Tier-2 reward (referrer's referrer) in bps of fee. Max 1000.
+    function setReferralConfig(uint256 _tier1Bps, uint256 _tier2Bps) external onlyOwner whenNotPaused {
+        require(_tier1Bps <= 2500, "Tier-1 reward cannot exceed 25% of fee.");
+        require(_tier2Bps <= 1000, "Tier-2 reward cannot exceed 10% of fee.");
+        require(_tier1Bps + _tier2Bps <= 3000, "Combined rewards cannot exceed 30% of fee.");
+        referralRewardBps = _tier1Bps;
+        referralTier2Bps = _tier2Bps;
+        emit ReferralConfigUpdated(_tier1Bps, _tier2Bps);
+    }
+
+    /**
+     * @notice Permissionless entry with referral attribution: stake ETH to join
+     *         and record who referred this agent. The referral is permanent.
+     * @param metadataURI  IPFS URI for agent profile metadata.
+     * @param _referrer    Address of the referring agent (must be registered). Use address(0) for no referral.
+     */
+    function stakeAndJoinWithReferral(string calldata metadataURI, address _referrer) external payable whenNotPaused {
+        require(!members[msg.sender].isMember, "Already a member.");
+        require(msg.value >= minStakeToJoin, "Insufficient stake.");
+        require(bytes(metadataURI).length > 0, "metadataURI required.");
+        require(bytes(metadataURI).length <= 512, "Metadata URI too long.");
+
+        // Record referral if provided. Referral attribution is permanent once set.
+        if (_referrer != address(0)) {
+            require(agents[_referrer].registered, "Referrer must be a registered agent.");
+            require(_referrer != msg.sender, "Cannot refer yourself.");
+
+            address existingReferrer = agentReferrer[msg.sender];
+            require(
+                existingReferrer == address(0) || existingReferrer == _referrer,
+                "Referral is permanent."
+            );
+
+            if (existingReferrer == address(0)) {
+                agentReferrer[msg.sender] = _referrer;
+                agentReferralCount[_referrer]++;
+                emit ReferralRecorded(msg.sender, _referrer);
+            }
+        }
+
+        // _collectNativeFee handles fee processing, including referral reward
+        // distribution, before forwarding the remainder per its internal flow.
+        uint256 fee = _collectNativeFee(msg.value, "stakeAndJoinWithReferral");
+        uint256 netStake = msg.value - fee;
+
+        memberStakes[msg.sender] = netStake;
+
+        members[msg.sender] = Member({
+            memberAddress: msg.sender,
+            votingPower: 1,
+            privileges: new uint256[](0),
+            isMember: true
+        });
+        memberAddresses.push(msg.sender);
+        memberCount++;
+
+        uint256 existingNativeEscrowBalance = agents[msg.sender].nativeEscrowBalance;
+        agents[msg.sender] = AgentProfile({
+            registered: true,
+            metadataURI: metadataURI,
+            nativeEscrowBalance: existingNativeEscrowBalance
+        });
+        agentAddresses.push(msg.sender);
+        agentRegisteredAt[msg.sender] = block.timestamp;
+        agentLastActiveAt[msg.sender] = block.timestamp;
+
+        _checkNetworkMilestone();
+
+        emit MemberJoinedByStake(msg.sender, netStake);
+        emit AgentRegistered(msg.sender, metadataURI);
+    }
+
+    /**
+     * @dev Distribute referral rewards from collected fees and return the total
+     *      amount credited. Called after fee collection for agents that have
+     *      referrers. Rewards are credited to referrer escrow balances, so
+     *      callers MUST retain the distributed amount in the contract (rather
+     *      than sending it to treasury) to back the escrow credits created here.
+     *
+     *      Rewards flow regardless of whether a referrer is currently registered,
+     *      because the referral relationship is permanent once earned.
+     *      Deregistered referrers may continue to accumulate rewards in escrow.
+     *
+     * @param _agent The agent whose transaction generated the fee.
+     * @param _feeAmount The total protocol fee collected.
+     * @return totalDistributed The sum of all referral rewards credited.
+     */
+    function _distributeReferralRewards(address _agent, uint256 _feeAmount) internal returns (uint256 totalDistributed) {
+        if (_feeAmount == 0) return 0;
+
+        // Tier 1: direct referrer (rewards persist even if referrer deregistered)
+        address tier1 = agentReferrer[_agent];
+        if (tier1 != address(0)) {
+            uint256 reward1 = (_feeAmount * referralRewardBps) / FEE_BPS_DENOMINATOR;
+            if (reward1 > 0) {
+                agents[tier1].nativeEscrowBalance += reward1;
+                agentReferralEarnings[tier1] += reward1;
+                totalDistributed += reward1;
+                emit ReferralRewardPaid(tier1, _agent, reward1, 1);
+            }
+
+            // Tier 2: referrer's referrer
+            address tier2 = agentReferrer[tier1];
+            if (tier2 != address(0)) {
+                uint256 reward2 = (_feeAmount * referralTier2Bps) / FEE_BPS_DENOMINATOR;
+                if (reward2 > 0) {
+                    agents[tier2].nativeEscrowBalance += reward2;
+                    agentReferralEarnings[tier2] += reward2;
+                    totalDistributed += reward2;
+                    emit ReferralRewardPaid(tier2, _agent, reward2, 2);
+                }
+            }
+        }
+    }
+
+    /**
+     * @notice Withdraw accumulated referral earnings. Unlike normal escrow
+     *         withdrawals, this works even for deregistered agents — referral
+     *         rewards are earned permanently by bringing agents into the network.
+     *         Only withdraws the referral earnings portion; other escrow stays.
+     */
+    function withdrawReferralEarnings() external whenNotPaused nonReentrant {
+        uint256 earnings = agentReferralEarnings[msg.sender];
+        require(earnings > 0, "No referral earnings to withdraw.");
+        // Cap at actual escrow balance (in case of partial withdrawals via other paths)
+        uint256 available = agents[msg.sender].nativeEscrowBalance;
+        uint256 amount = earnings < available ? earnings : available;
+        require(amount > 0, "No escrow balance available.");
+
+        agentReferralEarnings[msg.sender] -= amount;
+        agents[msg.sender].nativeEscrowBalance -= amount;
+
+        uint256 exitFee = _collectExitFee(amount, "withdraw_referral_earnings");
+        uint256 net = amount - exitFee;
+        require(net > 0, "Amount too small after exit fee.");
+
+        (bool ok,) = payable(msg.sender).call{value: net}("");
+        require(ok, "Referral earnings withdrawal failed.");
+
+        emit AgentNativeEscrowWithdrawn(msg.sender, net);
+    }
+
+    /// @notice Get referral stats for an agent.
+    function getAgentReferralStats(address _agent) external view returns (
+        address referrer,
+        uint256 referralCount,
+        uint256 referralEarnings
+    ) {
+        return (agentReferrer[_agent], agentReferralCount[_agent], agentReferralEarnings[_agent]);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ─── NETWORK EFFECT 2: Trust Graph (Cross-Agent Endorsements) ──────────
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    struct Endorsement {
+        uint256 id;
+        address endorser;
+        address endorsed;
+        uint256 agreementId;   // the completed service agreement
+        string  capability;    // which skill is endorsed (e.g. "data-oracle")
+        uint256 weight;        // endorser's reputation tier at time (1-4)
+        uint256 timestamp;
+        bool    revoked;       // true if endorser revoked this endorsement
+    }
+
+    uint256 public currentEndorsementId = 1;
+    mapping(uint256 => Endorsement) public endorsements;
+    /// @notice Cumulative trust score per agent (sum of active endorsement weights).
+    mapping(address => uint256) public agentTrustScore;
+    /// @notice Number of active (non-revoked) endorsements received per agent.
+    mapping(address => uint256) public agentEndorsementCount;
+    /// @notice Prevent duplicate endorsements: keccak256(endorser, endorsed, agreementId) => true.
+    mapping(bytes32 => bool) public endorsementExists;
+    /// @notice Per-agent list of endorsement IDs received.
+    mapping(address => uint256[]) private _agentEndorsementIds;
+
+    /// @notice Time-weighting constants for trust score view.
+    ///         Endorsements lose weight over time: 100% (< 180d), 50% (180-365d), 25% (> 365d).
+    uint256 public constant TRUST_FULL_WEIGHT_PERIOD = 180 days;
+    uint256 public constant TRUST_HALF_WEIGHT_PERIOD = 365 days;
+
+    event EndorsementCreated(
+        uint256 indexed endorsementId,
+        address indexed endorser,
+        address indexed endorsed,
+        uint256 agreementId,
+        string capability,
+        uint256 weight
+    );
+
+    event EndorsementRevoked(
+        uint256 indexed endorsementId,
+        address indexed endorser,
+        address indexed endorsed
+    );
+
+    /**
+     * @notice Endorse another agent after a completed service agreement.
+     *         Only parties to a completed agreement can endorse each other.
+     *         The endorsement weight equals the endorser's reputation tier (1-4).
+     * @param _agreementId  The completed service agreement ID.
+     * @param _endorsed     The agent being endorsed (must be the other party).
+     * @param _capability   The capability being endorsed (e.g. "data-oracle").
+     */
+    function endorseAgent(
+        uint256 _agreementId,
+        address _endorsed,
+        string calldata _capability
+    ) external onlyRegisteredAgent whenNotPaused nonReentrant {
+        ServiceAgreement storage a = serviceAgreements[_agreementId];
+        require(a.id > 0, "Agreement not found.");
+        require(a.status == AgreementStatus.Completed, "Agreement must be completed.");
+        require(
+            (msg.sender == a.client && _endorsed == a.provider) ||
+            (msg.sender == a.provider && _endorsed == a.client),
+            "Can only endorse the other party in the agreement."
+        );
+        require(bytes(_capability).length > 0 && bytes(_capability).length <= MAX_CAPABILITY_LENGTH, "Invalid capability length.");
+
+        bytes32 dedupKey = keccak256(abi.encodePacked(msg.sender, _endorsed, _agreementId));
+        require(!endorsementExists[dedupKey], "Already endorsed for this agreement.");
+        endorsementExists[dedupKey] = true;
+
+        // Weight = endorser's reputation tier + 1 (so Bronze=1, Silver=2, Gold=3, Platinum=4)
+        uint256 weight = _getReputationTier(agentReputation[msg.sender]) + 1;
+
+        uint256 id = currentEndorsementId++;
+        endorsements[id] = Endorsement({
+            id: id,
+            endorser: msg.sender,
+            endorsed: _endorsed,
+            agreementId: _agreementId,
+            capability: _capability,
+            weight: weight,
+            timestamp: block.timestamp,
+            revoked: false
+        });
+
+        agentTrustScore[_endorsed] += weight;
+        agentEndorsementCount[_endorsed]++;
+        _agentEndorsementIds[_endorsed].push(id);
+
+        emit EndorsementCreated(id, msg.sender, _endorsed, _agreementId, _capability, weight);
+    }
+
+    /// @notice Get trust stats for an agent.
+    function getAgentTrustScore(address _agent) external view returns (
+        uint256 trustScore,
+        uint256 endorsementCount
+    ) {
+        return (agentTrustScore[_agent], agentEndorsementCount[_agent]);
+    }
+
+    /// @notice Get paginated endorsement IDs received by an agent.
+    function getAgentEndorsements(address _agent, uint256 offset, uint256 limit)
+        external view returns (uint256[] memory endorsementIds, uint256 total)
+    {
+        uint256[] storage allIds = _agentEndorsementIds[_agent];
+        total = allIds.length;
+        if (offset >= total) return (new uint256[](0), total);
+        uint256 end = offset + limit;
+        if (end > total) end = total;
+        endorsementIds = new uint256[](end - offset);
+        for (uint256 i = 0; i < endorsementIds.length; i++) {
+            endorsementIds[i] = allIds[offset + i];
+        }
+    }
+
+    /// @notice Get a single endorsement by ID.
+    function getEndorsement(uint256 _endorsementId) external view returns (
+        uint256 id, address endorser, address endorsed, uint256 agreementId,
+        string memory capability, uint256 weight, uint256 timestamp, bool revoked
+    ) {
+        Endorsement storage e = endorsements[_endorsementId];
+        require(e.id > 0, "Endorsement not found.");
+        return (e.id, e.endorser, e.endorsed, e.agreementId, e.capability, e.weight, e.timestamp, e.revoked);
+    }
+
+    /**
+     * @notice Revoke a previously given endorsement. Only the original endorser
+     *         can revoke. The endorsed agent's trust score is reduced by the
+     *         endorsement weight. The endorsement record stays on-chain for
+     *         audit trail but is marked as revoked.
+     * @param _endorsementId The endorsement to revoke.
+     */
+    function revokeEndorsement(uint256 _endorsementId) external onlyRegisteredAgent whenNotPaused nonReentrant {
+        Endorsement storage e = endorsements[_endorsementId];
+        require(e.id > 0, "Endorsement not found.");
+        require(e.endorser == msg.sender, "Only the endorser can revoke.");
+        require(!e.revoked, "Endorsement already revoked.");
+
+        e.revoked = true;
+
+        // Subtract weight from endorsed agent's trust score (safe subtraction)
+        if (agentTrustScore[e.endorsed] >= e.weight) {
+            agentTrustScore[e.endorsed] -= e.weight;
+        } else {
+            agentTrustScore[e.endorsed] = 0;
+        }
+        if (agentEndorsementCount[e.endorsed] > 0) {
+            agentEndorsementCount[e.endorsed]--;
+        }
+
+        emit EndorsementRevoked(_endorsementId, msg.sender, e.endorsed);
+    }
+
+    /**
+     * @notice Compute a time-weighted trust score for an agent. Recent
+     *         endorsements carry full weight; older ones are discounted.
+     *         - < 180 days old: 100% weight
+     *         - 180-365 days old: 50% weight
+     *         - > 365 days old: 25% weight
+     *         Revoked endorsements are excluded entirely.
+     *
+     *         This is a view function (no state change) — the raw
+     *         agentTrustScore is kept for cheap writes; this view gives
+     *         a more accurate signal for discovery and ranking.
+     *
+     * @param _agent The agent to score.
+     * @return weightedScore The time-weighted trust score.
+     * @return activeEndorsements Number of non-revoked endorsements.
+     */
+    function getTimeWeightedTrustScore(address _agent) external view returns (
+        uint256 weightedScore,
+        uint256 activeEndorsements
+    ) {
+        uint256[] storage ids = _agentEndorsementIds[_agent];
+        for (uint256 i = 0; i < ids.length; i++) {
+            Endorsement storage e = endorsements[ids[i]];
+            if (e.revoked) continue;
+
+            activeEndorsements++;
+            uint256 age = block.timestamp - e.timestamp;
+
+            if (age < TRUST_FULL_WEIGHT_PERIOD) {
+                weightedScore += e.weight;             // 100%
+            } else if (age < TRUST_HALF_WEIGHT_PERIOD) {
+                weightedScore += e.weight / 2;         // 50%
+            } else {
+                weightedScore += e.weight / 4;         // 25%
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ─── NETWORK EFFECT 3: Network Growth Milestones ───────────────────────
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /// @notice The last agent-count milestone that was reached.
+    uint256 public lastNetworkMilestone;
+
+    event NetworkMilestoneReached(uint256 agentCount, uint256 milestone, string benefit);
+
+    /**
+     * @dev Check whether a network milestone has been reached and emit an event.
+     *      Called automatically when new agents register.
+     *      Milestones: 10, 50, 100, 500, 1000, 5000 agents.
+     *
+     *      Milestones are informational signals — they do NOT automatically
+     *      mutate fee parameters. Fee changes require explicit owner action
+     *      via setCybereumFeeConfig / setCommerceBlackholeConfig. This prevents:
+     *      - Sock-puppet attacks (register many agents to force fee reductions)
+     *      - Silent override of owner-configured fee settings
+     *      - Irreversible fee changes with no governance
+     */
+    function _checkNetworkMilestone() internal {
+        uint256 count = agentAddresses.length;
+        uint256 milestone = 0;
+        string memory benefit = "";
+
+        if (count >= 5000 && lastNetworkMilestone < 5000) {
+            milestone = 5000;
+            benefit = "5000 agents - governance may reduce fees to minimum";
+        } else if (count >= 1000 && lastNetworkMilestone < 1000) {
+            milestone = 1000;
+            benefit = "1000 agents - governance may reduce protocol fee";
+        } else if (count >= 500 && lastNetworkMilestone < 500) {
+            milestone = 500;
+            benefit = "500 agents - governance may reduce messaging fee";
+        } else if (count >= 100 && lastNetworkMilestone < 100) {
+            milestone = 100;
+            benefit = "100 agents - governance may adjust fee structure";
+        } else if (count >= 50 && lastNetworkMilestone < 50) {
+            milestone = 50;
+            benefit = "50 agents - discovery network reaching critical mass";
+        } else if (count >= 10 && lastNetworkMilestone < 10) {
+            milestone = 10;
+            benefit = "Network bootstrapped - discovery active";
+        }
+
+        if (milestone > 0) {
+            lastNetworkMilestone = milestone;
+            emit NetworkMilestoneReached(count, milestone, benefit);
+        }
+    }
+
+    /// @notice Get current network growth stats.
+    function getNetworkStats() external view returns (
+        uint256 totalAgents,
+        uint256 totalMembers,
+        uint256 currentMilestone,
+        uint256 nextMilestone,
+        uint256 agentsUntilNextMilestone,
+        uint256 totalVolume,
+        uint256 totalFees
+    ) {
+        totalAgents = agentAddresses.length;
+        totalMembers = memberCount;
+        currentMilestone = lastNetworkMilestone;
+
+        // Calculate next milestone
+        if (lastNetworkMilestone < 10) nextMilestone = 10;
+        else if (lastNetworkMilestone < 50) nextMilestone = 50;
+        else if (lastNetworkMilestone < 100) nextMilestone = 100;
+        else if (lastNetworkMilestone < 500) nextMilestone = 500;
+        else if (lastNetworkMilestone < 1000) nextMilestone = 1000;
+        else if (lastNetworkMilestone < 5000) nextMilestone = 5000;
+        else nextMilestone = 0; // all milestones reached
+
+        agentsUntilNextMilestone = nextMilestone > totalAgents ? nextMilestone - totalAgents : 0;
+        totalVolume = totalCommerceVolume;
+        totalFees = totalFeesCollected;
     }
 }

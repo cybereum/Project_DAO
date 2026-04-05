@@ -1061,6 +1061,180 @@ export class AgentClient {
     });
   }
 
+  // ─── Network Effect: Referral Rewards ──────────────────────────────────
+
+  /**
+   * Stake and join with referral attribution.
+   * @param {string} metadataURI IPFS URI for agent profile.
+   * @param {string} referrerAddress Address of the referring agent (or ethers.ZeroAddress for none).
+   * @param {string} [stakeEth] Amount of ETH to stake (default: minimum).
+   */
+  async stakeAndJoinWithReferral(metadataURI, referrerAddress, stakeEth) {
+    this._validateMetadataURI(metadataURI);
+    const minStake = await this.getMinStake();
+    const stakeWei = stakeEth ? ethers.parseEther(stakeEth) : minStake;
+    const tx = await this._write(() =>
+      this.contract.stakeAndJoinWithReferral(metadataURI, referrerAddress || ethers.ZeroAddress, { value: stakeWei })
+    );
+    return this._waitForTx(tx);
+  }
+
+  /**
+   * Get referral stats for an agent.
+   * @param {string} [address] Agent address (defaults to this agent).
+   * @returns {Promise<{referrer: string, referralCount: number, referralEarnings: bigint}>}
+   */
+  async getReferralStats(address) {
+    const addr = address || this.address;
+    const s = await this.contract.getAgentReferralStats(addr);
+    return {
+      referrer: s.referrer,
+      referralCount: Number(s.referralCount),
+      referralEarnings: s.referralEarnings,
+    };
+  }
+
+  /**
+   * Get referral configuration.
+   * @returns {Promise<{tier1Bps: number, tier2Bps: number}>}
+   */
+  async getReferralConfig() {
+    const [t1, t2] = await Promise.all([
+      this.contract.referralRewardBps(),
+      this.contract.referralTier2Bps(),
+    ]);
+    return { tier1Bps: Number(t1), tier2Bps: Number(t2) };
+  }
+
+  /** Listen for referral rewards paid to this agent. */
+  onReferralReward(callback) {
+    const filter = this.contract.filters.ReferralRewardPaid(this.address);
+    this.contract.on(filter, (referrer, source, amount, tier) => {
+      callback({ referrer, source, amount, tier: Number(tier) });
+    });
+  }
+
+  // ─── Network Effect: Trust Graph ──────────────────────────────────────
+
+  /**
+   * Endorse another agent after a completed service agreement.
+   * @param {number} agreementId The completed service agreement ID.
+   * @param {string} endorsedAddress The agent being endorsed.
+   * @param {string} capability The capability being endorsed (e.g. "data-oracle").
+   */
+  async endorseAgent(agreementId, endorsedAddress, capability) {
+    const tx = await this._write(() =>
+      this.contract.endorseAgent(agreementId, endorsedAddress, capability)
+    );
+    return this._waitForTx(tx);
+  }
+
+  /**
+   * Get trust score and endorsement count for an agent.
+   * @param {string} [address] Agent address (defaults to this agent).
+   * @returns {Promise<{trustScore: number, endorsementCount: number}>}
+   */
+  async getTrustScore(address) {
+    const addr = address || this.address;
+    const s = await this.contract.getAgentTrustScore(addr);
+    return {
+      trustScore: Number(s.trustScore),
+      endorsementCount: Number(s.endorsementCount),
+    };
+  }
+
+  /**
+   * Get endorsement IDs received by an agent (paginated).
+   * @param {string} [address] Agent address (defaults to this agent).
+   * @param {number} [offset=0]
+   * @param {number} [limit=50]
+   * @returns {Promise<{endorsementIds: number[], total: number}>}
+   */
+  async getAgentEndorsements(address, offset = 0, limit = 50) {
+    const addr = address || this.address;
+    const result = await this.contract.getAgentEndorsements(addr, offset, limit);
+    return {
+      endorsementIds: result.endorsementIds.map(Number),
+      total: Number(result.total),
+    };
+  }
+
+  /**
+   * Get a single endorsement by ID.
+   * @param {number} endorsementId
+   * @returns {Promise<{id, endorser, endorsed, agreementId, capability, weight, timestamp, revoked}>}
+   */
+  async getEndorsement(endorsementId) {
+    const e = await this.contract.getEndorsement(endorsementId);
+    return {
+      id: Number(e.id),
+      endorser: e.endorser,
+      endorsed: e.endorsed,
+      agreementId: Number(e.agreementId),
+      capability: e.capability,
+      weight: Number(e.weight),
+      timestamp: Number(e.timestamp),
+      revoked: e.revoked,
+    };
+  }
+
+  /**
+   * Revoke a previously given endorsement. Only the original endorser can revoke.
+   * @param {number} endorsementId
+   */
+  async revokeEndorsement(endorsementId) {
+    const tx = await this._write(() => this.contract.revokeEndorsement(endorsementId));
+    return this._waitForTx(tx);
+  }
+
+  /**
+   * Get time-weighted trust score (recent endorsements worth more).
+   * @param {string} [address] Agent address (defaults to this agent).
+   * @returns {Promise<{weightedScore: number, activeEndorsements: number}>}
+   */
+  async getTimeWeightedTrustScore(address) {
+    const addr = address || this.address;
+    const s = await this.contract.getTimeWeightedTrustScore(addr);
+    return {
+      weightedScore: Number(s.weightedScore),
+      activeEndorsements: Number(s.activeEndorsements),
+    };
+  }
+
+  /**
+   * Withdraw accumulated referral earnings. Works even if deregistered.
+   */
+  async withdrawReferralEarnings() {
+    const tx = await this._write(() => this.contract.withdrawReferralEarnings());
+    return this._waitForTx(tx);
+  }
+
+  // ─── Network Effect: Network Growth Stats ─────────────────────────────
+
+  /**
+   * Get current network growth statistics.
+   * @returns {Promise<{totalAgents, totalMembers, currentMilestone, nextMilestone, agentsUntilNextMilestone, totalVolume, totalFees}>}
+   */
+  async getNetworkStats() {
+    const s = await this.contract.getNetworkStats();
+    return {
+      totalAgents: Number(s.totalAgents),
+      totalMembers: Number(s.totalMembers),
+      currentMilestone: Number(s.currentMilestone),
+      nextMilestone: Number(s.nextMilestone),
+      agentsUntilNextMilestone: Number(s.agentsUntilNextMilestone),
+      totalVolume: s.totalVolume,
+      totalFees: s.totalFees,
+    };
+  }
+
+  /** Listen for network milestone events. */
+  onNetworkMilestone(callback) {
+    this.contract.on('NetworkMilestoneReached', (agentCount, milestone, benefit) => {
+      callback({ agentCount: Number(agentCount), milestone: Number(milestone), benefit });
+    });
+  }
+
   /** Stop all event listeners. */
   removeAllListeners() {
     this.contract.removeAllListeners();

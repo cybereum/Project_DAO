@@ -19,8 +19,9 @@
 - A **Claude-powered AI analysis server** at `nexus-ai-server/` provides on-demand intelligence.
 
 - Agents can **communicate securely** via an on-chain encrypted direct messaging channel — no external messaging infrastructure needed.
+- **Network effects** are built into the protocol: referral rewards, trust graph endorsements, and network growth milestones make the protocol more valuable as more agents join.
 
-**One contract. One fee rail. One messaging channel. The settlement primitive for agent-to-agent economies.**
+**One contract. One fee rail. One messaging channel. Three network effect flywheels. The settlement primitive for agent-to-agent economies.**
 
 ---
 
@@ -172,6 +173,27 @@ withdrawFromStream(streamId)
 
 // Either party can cancel (accrued → recipient, remainder → payer)
 cancelPaymentStream(streamId)
+```
+
+#### Step 10 — Join with referral (network effect)
+```solidity
+// New agent joins and records who referred them — referrer earns from all future commerce
+stakeAndJoinWithReferral{ value: <stakeAmount> }("ipfs://<metadata-cid>", referrerAddress)
+```
+
+#### Step 11 — Endorse after service (trust graph)
+```solidity
+// After a completed service agreement, endorse the other party
+endorseAgent(agreementId, providerAddr, "data-oracle")
+
+// Check trust score
+getAgentTrustScore(agentAddr)  // returns (trustScore, endorsementCount)
+```
+
+#### Step 12 — Monitor network growth
+```solidity
+// Check network stats and milestone progress
+getNetworkStats()  // returns (totalAgents, totalMembers, currentMilestone, nextMilestone, ...)
 ```
 
 ---
@@ -396,8 +418,32 @@ getFeatureKits(uint256 offset, uint256 limit) → (FeatureKit[], uint256 total)
 #### Open onboarding
 ```
 stakeAndJoin(string metadataURI)                                 payable
+stakeAndJoinWithReferral(string metadataURI, address referrer)   payable
 leaveDAO()
 setMinStakeToJoin(uint256 minStake)                              onlyOwner
+```
+
+#### Referral rewards (network effect)
+```
+stakeAndJoinWithReferral(string metadataURI, address referrer)   payable
+withdrawReferralEarnings()                                       works even if deregistered
+getAgentReferralStats(address agent) → (address referrer, uint256 referralCount, uint256 referralEarnings)
+setReferralConfig(uint256 tier1Bps, uint256 tier2Bps)            onlyOwner
+```
+
+#### Trust graph (endorsements)
+```
+endorseAgent(uint256 agreementId, address endorsed, string capability)
+revokeEndorsement(uint256 endorsementId)
+getAgentTrustScore(address agent) → (uint256 trustScore, uint256 endorsementCount)
+getTimeWeightedTrustScore(address agent) → (uint256 weightedScore, uint256 activeEndorsements)
+getAgentEndorsements(address agent, uint256 offset, uint256 limit) → (uint256[] endorsementIds, uint256 total)
+getEndorsement(uint256 endorsementId) → Endorsement
+```
+
+#### Network growth milestones
+```
+getNetworkStats() → (uint256 totalAgents, uint256 totalMembers, uint256 currentMilestone, uint256 nextMilestone, uint256 agentsUntilNextMilestone, uint256 totalVolume, uint256 totalFees)
 ```
 
 #### Fee management
@@ -516,6 +562,14 @@ PaymentStreamCancelled(uint256 streamId, address cancelledBy, uint256 recipientA
 // Onboarding events
 MemberJoinedByStake(address member, uint256 netStake)
 MemberLeftDAO(address member, uint256 refundedStake)
+
+// Network effect events
+ReferralRecorded(address agent, address referrer)
+ReferralRewardPaid(address referrer, address source, uint256 amount, uint8 tier)
+ReferralConfigUpdated(uint256 tier1Bps, uint256 tier2Bps)
+EndorsementCreated(uint256 endorsementId, address endorser, address endorsed, uint256 agreementId, string capability, uint256 weight)
+EndorsementRevoked(uint256 endorsementId, address endorser, address endorsed)
+NetworkMilestoneReached(uint256 agentCount, uint256 milestone, string benefit)
 ```
 
 ### Key enums & structs
@@ -535,6 +589,7 @@ EconomicProject       { id, proposer, metadataURI, targetBudget, totalFunded, de
 FeatureKit            { id, submitter, priority, status, metadataURI, voteCount, submittedAt }
 ServiceAgreement      { id, client, provider, arbiter, amount, description, status, createdAt, deadline, deliveryHash }
 PaymentStream         { id, payer, recipient, ratePerSecond, totalDeposited, totalWithdrawn, startTime, stopTime, status }
+Endorsement           { id, endorser, endorsed, agreementId, capability, weight, timestamp, revoked }
 Member                { memberAddress, votingPower, privileges[], isMember }
 Proposal              { id, description, votingDeadline, executed, proposalPassed, yesVotes, noVotes, previousMilestoneIds[], milestoneId }
 ```
@@ -649,6 +704,7 @@ Project_DAO/
 ├── FULL_IMPLEMENTATION_PLAN.md          ← Program-level roadmap
 ├── APP_DEEP_DIVE.md                     ← Frontend deep-dive
 ├── DEPLOYMENT_READINESS_PLAN.md         ← Deployment checklist
+├── NETWORK_EFFECTS.md                   ← Network effects design (referrals, trust, milestones)
 ├── hardhat.config.js                    ← Solc 0.8.26, optimizer, viaIR
 ├── package.json                         ← Root Hardhat project deps
 ├── contracts/
@@ -727,7 +783,7 @@ Tests are in `test/ProjectDAO.test.js` using Mocha/Chai with Hardhat's test help
 - `deploy()` — deploys a fresh `Project_DAO` contract with treasury configured
 - `memberAgent()` — adds a member and registers them as an agent (for quick test setup)
 
-**Test suite: 328 tests across 54 describe blocks.**
+**Test suite: 371 tests across 61 describe blocks.**
 
 **Test coverage areas:**
 - Fee configuration (defaults, owner updates, bounds checking, preview calculations)
@@ -938,7 +994,23 @@ The file `sdk/deployments.json` maps chain IDs to contract addresses and RPC hin
 | `agent.onBroadcast(callback)` | Listen for protocol broadcasts |
 | `agent.onServiceAgreement(callback)` | Listen for new service agreements (as provider) |
 | `agent.onPaymentStream(callback)` | Listen for new payment streams (as recipient) |
+| `agent.onReferralReward(callback)` | Listen for referral rewards paid to this agent |
+| `agent.onNetworkMilestone(callback)` | Listen for network growth milestones |
 | `agent.removeAllListeners()` | Stop all listeners |
+| **Network Effects: Referral Rewards** | |
+| `agent.stakeAndJoinWithReferral(metadataURI, referrer, stakeEth?)` | Join with referral attribution |
+| `agent.getReferralStats(address?)` | Get referral count, earnings, referrer |
+| `agent.getReferralConfig()` | Get tier-1 and tier-2 reward percentages |
+| `agent.withdrawReferralEarnings()` | Withdraw accumulated referral earnings (works even if deregistered) |
+| **Network Effects: Trust Graph** | |
+| `agent.endorseAgent(agreementId, endorsedAddress, capability)` | Endorse another agent after completed agreement |
+| `agent.revokeEndorsement(endorsementId)` | Revoke a previously given endorsement |
+| `agent.getTrustScore(address?)` | Get raw trust score and endorsement count |
+| `agent.getTimeWeightedTrustScore(address?)` | Get time-weighted trust score (recent endorsements worth more) |
+| `agent.getAgentEndorsements(address?, offset, limit)` | Get paginated endorsement IDs |
+| `agent.getEndorsement(endorsementId)` | Get endorsement details (includes revoked flag) |
+| **Network Effects: Network Stats** | |
+| `agent.getNetworkStats()` | Get agent count, milestones, volume, fees |
 
 ---
 
@@ -1014,4 +1086,5 @@ The file `sdk/deployments.json` maps chain IDs to contract addresses and RPC hin
 - Changelog: `CHANGELOG.md`
 - Agent metadata schema: `schemas/agent-metadata.schema.json`
 - Agent SDK: `sdk/`
+- Network effects design: `NETWORK_EFFECTS.md`
 - Deployment readiness: `DEPLOYMENT_READINESS_PLAN.md`

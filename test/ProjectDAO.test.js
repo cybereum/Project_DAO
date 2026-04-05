@@ -3990,3 +3990,535 @@ describe("leaveDAO obligation checks", () => {
     expect((await dao.members(bob.address)).isMember).to.equal(false);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── NETWORK EFFECT 1: Referral Rewards ───────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("Referral Rewards", () => {
+  describe("stakeAndJoinWithReferral", () => {
+    it("records referral relationship", async () => {
+      const { dao, alice, bob } = await deploy();
+      // Alice joins first (no referral)
+      await dao.connect(alice).stakeAndJoin("ipfs://a", { value: ethers.parseEther("0.1") });
+      // Bob joins with Alice as referrer
+      await expect(
+        dao.connect(bob).stakeAndJoinWithReferral("ipfs://b", alice.address, { value: ethers.parseEther("0.1") })
+      ).to.emit(dao, "ReferralRecorded").withArgs(bob.address, alice.address);
+
+      expect(await dao.agentReferrer(bob.address)).to.equal(alice.address);
+      expect(await dao.agentReferralCount(alice.address)).to.equal(1n);
+    });
+
+    it("allows joining with no referrer (address(0))", async () => {
+      const { dao, alice } = await deploy();
+      await dao.connect(alice).stakeAndJoinWithReferral("ipfs://a", ethers.ZeroAddress, { value: ethers.parseEther("0.1") });
+      expect(await dao.agentReferrer(alice.address)).to.equal(ethers.ZeroAddress);
+    });
+
+    it("reverts if referrer is not registered", async () => {
+      const { dao, alice, bob } = await deploy();
+      await expect(
+        dao.connect(alice).stakeAndJoinWithReferral("ipfs://a", bob.address, { value: ethers.parseEther("0.1") })
+      ).to.be.revertedWith("Referrer must be a registered agent.");
+    });
+
+    it("reverts if referring yourself (not registered)", async () => {
+      const { dao, alice } = await deploy();
+      // Self-referral fails because the caller is not a registered agent yet
+      await expect(
+        dao.connect(alice).stakeAndJoinWithReferral("ipfs://a", alice.address, { value: ethers.parseEther("0.1") })
+      ).to.be.revertedWith("Referrer must be a registered agent.");
+    });
+  });
+
+  describe("referral reward distribution", () => {
+    it("pays tier-1 referral rewards on commerce", async () => {
+      const { dao, alice, bob } = await deploy();
+      // Alice is a member+agent (referrer)
+      await dao.connect(alice).stakeAndJoin("ipfs://a", { value: ethers.parseEther("0.1") });
+      // Bob joins with Alice as referrer
+      await dao.connect(bob).stakeAndJoinWithReferral("ipfs://b", alice.address, { value: ethers.parseEther("0.1") });
+      // Bob deposits to generate commerce fees
+      const aliceBalBefore = (await dao.getAgentProfile(alice.address)).nativeEscrowBalance;
+      await dao.connect(bob).depositNativeToEscrow({ value: ethers.parseEther("1") });
+      const aliceBalAfter = (await dao.getAgentProfile(alice.address)).nativeEscrowBalance;
+      // Alice should have earned referral reward (10% of the fee Bob paid)
+      expect(aliceBalAfter).to.be.gt(aliceBalBefore);
+    });
+
+    it("pays tier-2 referral rewards (referrer's referrer)", async () => {
+      const { dao, owner, alice, bob, carol } = await deploy();
+      // Alice is original referrer
+      await dao.connect(alice).stakeAndJoin("ipfs://a", { value: ethers.parseEther("0.1") });
+      // Bob referred by Alice
+      await dao.connect(bob).stakeAndJoinWithReferral("ipfs://b", alice.address, { value: ethers.parseEther("0.1") });
+      // Carol referred by Bob (Alice is tier-2)
+      await dao.connect(carol).stakeAndJoinWithReferral("ipfs://c", bob.address, { value: ethers.parseEther("0.1") });
+
+      const aliceBalBefore = (await dao.getAgentProfile(alice.address)).nativeEscrowBalance;
+      // Carol generates commerce
+      await dao.connect(carol).depositNativeToEscrow({ value: ethers.parseEther("1") });
+      const aliceBalAfter = (await dao.getAgentProfile(alice.address)).nativeEscrowBalance;
+      // Alice (tier-2 referrer) should earn 3% of Carol's fee
+      expect(aliceBalAfter).to.be.gt(aliceBalBefore);
+    });
+
+    it("getAgentReferralStats returns correct data", async () => {
+      const { dao, alice, bob } = await deploy();
+      await dao.connect(alice).stakeAndJoin("ipfs://a", { value: ethers.parseEther("0.1") });
+      await dao.connect(bob).stakeAndJoinWithReferral("ipfs://b", alice.address, { value: ethers.parseEther("0.1") });
+      // Bob generates some commerce to create earnings for Alice
+      await dao.connect(bob).depositNativeToEscrow({ value: ethers.parseEther("1") });
+
+      const stats = await dao.getAgentReferralStats(alice.address);
+      expect(stats.referrer).to.equal(ethers.ZeroAddress); // Alice has no referrer
+      expect(stats.referralCount).to.equal(1n); // Alice referred Bob
+      expect(stats.referralEarnings).to.be.gt(0n); // Alice earned from Bob's commerce
+    });
+  });
+
+  describe("referral config", () => {
+    it("owner can update referral config", async () => {
+      const { dao } = await deploy();
+      await dao.setReferralConfig(2000, 500);
+      expect(await dao.referralRewardBps()).to.equal(2000n);
+      expect(await dao.referralTier2Bps()).to.equal(500n);
+    });
+
+    it("reverts if tier-1 exceeds 25%", async () => {
+      const { dao } = await deploy();
+      await expect(dao.setReferralConfig(2501, 300)).to.be.revertedWith(
+        "Tier-1 reward cannot exceed 25% of fee."
+      );
+    });
+
+    it("reverts if tier-2 exceeds 10%", async () => {
+      const { dao } = await deploy();
+      await expect(dao.setReferralConfig(1000, 1001)).to.be.revertedWith(
+        "Tier-2 reward cannot exceed 10% of fee."
+      );
+    });
+
+    it("reverts if combined exceeds 30%", async () => {
+      const { dao } = await deploy();
+      await expect(dao.setReferralConfig(2500, 1000)).to.be.revertedWith(
+        "Combined rewards cannot exceed 30% of fee."
+      );
+    });
+
+    it("non-owner cannot update referral config", async () => {
+      const { dao, alice } = await deploy();
+      await expect(dao.connect(alice).setReferralConfig(1000, 300)).to.be.revertedWith(
+        "Only the owner can call this function."
+      );
+    });
+  });
+
+  describe("referral reward solvency", () => {
+    it("contract balance always covers total escrow claims after referral rewards", async () => {
+      const { dao, alice, bob, carol } = await deploy();
+      const daoAddress = await dao.getAddress();
+      // Alice joins, Bob referred by Alice, Carol referred by Bob
+      await dao.connect(alice).stakeAndJoin("ipfs://a", { value: ethers.parseEther("0.1") });
+      await dao.connect(bob).stakeAndJoinWithReferral("ipfs://b", alice.address, { value: ethers.parseEther("0.1") });
+      await dao.connect(carol).stakeAndJoinWithReferral("ipfs://c", bob.address, { value: ethers.parseEther("0.1") });
+
+      // Carol generates heavy commerce (lots of fees → lots of referral rewards)
+      await dao.connect(carol).depositNativeToEscrow({ value: ethers.parseEther("5") });
+
+      // Sum all escrow claims
+      const aliceEscrow = (await dao.getAgentProfile(alice.address)).nativeEscrowBalance;
+      const bobEscrow = (await dao.getAgentProfile(bob.address)).nativeEscrowBalance;
+      const carolEscrow = (await dao.getAgentProfile(carol.address)).nativeEscrowBalance;
+      const aliceStake = await dao.memberStakes(alice.address);
+      const bobStake = await dao.memberStakes(bob.address);
+      const carolStake = await dao.memberStakes(carol.address);
+
+      const totalClaims = aliceEscrow + bobEscrow + carolEscrow + aliceStake + bobStake + carolStake;
+      const contractBalance = await ethers.provider.getBalance(daoAddress);
+
+      // Contract must hold at least as much as all claims combined
+      expect(contractBalance).to.be.gte(totalClaims);
+    });
+  });
+
+  describe("referral rewards after deregistration", () => {
+    it("deregistered referrer still accumulates rewards", async () => {
+      const { dao, alice, bob } = await deploy();
+      await dao.connect(alice).stakeAndJoin("ipfs://a", { value: ethers.parseEther("0.1") });
+      await dao.connect(bob).stakeAndJoinWithReferral("ipfs://b", alice.address, { value: ethers.parseEther("0.1") });
+
+      // Alice leaves the DAO (deregisters)
+      await dao.connect(alice).leaveDAO();
+      expect((await dao.getAgentProfile(alice.address)).registered).to.equal(false);
+
+      // Bob still generates commerce — Alice should still earn referral rewards
+      await dao.connect(bob).depositNativeToEscrow({ value: ethers.parseEther("1") });
+
+      const stats = await dao.getAgentReferralStats(alice.address);
+      expect(stats.referralEarnings).to.be.gt(0n);
+      // Earnings sit in Alice's escrow even though she's deregistered
+      const profile = await dao.getAgentProfile(alice.address);
+      expect(profile.nativeEscrowBalance).to.be.gt(0n);
+    });
+
+    it("deregistered referrer can withdraw referral earnings", async () => {
+      const { dao, alice, bob } = await deploy();
+      await dao.connect(alice).stakeAndJoin("ipfs://a", { value: ethers.parseEther("0.1") });
+      await dao.connect(bob).stakeAndJoinWithReferral("ipfs://b", alice.address, { value: ethers.parseEther("0.1") });
+
+      // Alice leaves
+      await dao.connect(alice).leaveDAO();
+
+      // Bob generates commerce
+      await dao.connect(bob).depositNativeToEscrow({ value: ethers.parseEther("1") });
+
+      const earningsBefore = (await dao.getAgentReferralStats(alice.address)).referralEarnings;
+      expect(earningsBefore).to.be.gt(0n);
+
+      // Alice can withdraw even though deregistered
+      await dao.connect(alice).withdrawReferralEarnings();
+
+      const earningsAfter = (await dao.getAgentReferralStats(alice.address)).referralEarnings;
+      expect(earningsAfter).to.equal(0n);
+    });
+
+    it("withdrawReferralEarnings reverts with no earnings", async () => {
+      const { dao, alice } = await deploy();
+      await expect(
+        dao.connect(alice).withdrawReferralEarnings()
+      ).to.be.revertedWith("No referral earnings to withdraw.");
+    });
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// ─── NETWORK EFFECT 2: Trust Graph (Endorsements) ───────────────────────────
+// ═══════��══════════════════════════════════════════════════��════════════════════
+
+describe("Trust Graph (Endorsements)", () => {
+  // Helper: create and complete a service agreement between two agents
+  async function completeAgreement(dao, client, provider) {
+    await dao.connect(client).depositNativeToEscrow({ value: ethers.parseEther("1") });
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(client).createServiceAgreement(
+      provider.address, ethers.ZeroAddress, ethers.parseEther("0.1"), deadline, "test service"
+    );
+    const agreementId = Number(await dao.currentServiceAgreementId()) - 1;
+    const deliveryHash = ethers.keccak256(ethers.toUtf8Bytes("delivery-proof"));
+    await dao.connect(provider).submitDelivery(agreementId, deliveryHash);
+    await dao.connect(client).approveDelivery(agreementId);
+    return agreementId;
+  }
+
+  it("client can endorse provider after completed agreement", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    const agreementId = await completeAgreement(dao, alice, bob);
+
+    await expect(
+      dao.connect(alice).endorseAgent(agreementId, bob.address, "data-oracle")
+    ).to.emit(dao, "EndorsementCreated")
+      .withArgs(1, alice.address, bob.address, agreementId, "data-oracle", anyValue);
+
+    const trust = await dao.getAgentTrustScore(bob.address);
+    expect(trust.trustScore).to.be.gte(1n);
+    expect(trust.endorsementCount).to.equal(1n);
+  });
+
+  it("provider can endorse client after completed agreement", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    const agreementId = await completeAgreement(dao, alice, bob);
+
+    await dao.connect(bob).endorseAgent(agreementId, alice.address, "reliable-payer");
+    const trust = await dao.getAgentTrustScore(alice.address);
+    expect(trust.endorsementCount).to.equal(1n);
+  });
+
+  it("both parties can endorse each other for the same agreement", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    const agreementId = await completeAgreement(dao, alice, bob);
+
+    await dao.connect(alice).endorseAgent(agreementId, bob.address, "data-oracle");
+    await dao.connect(bob).endorseAgent(agreementId, alice.address, "reliable-payer");
+
+    expect((await dao.getAgentTrustScore(bob.address)).endorsementCount).to.equal(1n);
+    expect((await dao.getAgentTrustScore(alice.address)).endorsementCount).to.equal(1n);
+  });
+
+  it("prevents duplicate endorsement for same agreement", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    const agreementId = await completeAgreement(dao, alice, bob);
+
+    await dao.connect(alice).endorseAgent(agreementId, bob.address, "data-oracle");
+    await expect(
+      dao.connect(alice).endorseAgent(agreementId, bob.address, "data-oracle")
+    ).to.be.revertedWith("Already endorsed for this agreement.");
+  });
+
+  it("reverts if agreement is not completed", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1") });
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(alice).createServiceAgreement(
+      bob.address, ethers.ZeroAddress, ethers.parseEther("0.1"), deadline, "test"
+    );
+
+    await expect(
+      dao.connect(alice).endorseAgent(1, bob.address, "data-oracle")
+    ).to.be.revertedWith("Agreement must be completed.");
+  });
+
+  it("reverts if endorsing non-party to agreement", async () => {
+    const { dao, alice, bob, carol } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    await memberAgent(dao, carol);
+    const agreementId = await completeAgreement(dao, alice, bob);
+
+    await expect(
+      dao.connect(alice).endorseAgent(agreementId, carol.address, "data-oracle")
+    ).to.be.revertedWith("Can only endorse the other party in the agreement.");
+  });
+
+  it("endorsement weight reflects endorser reputation tier", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    const agreementId = await completeAgreement(dao, alice, bob);
+
+    await dao.connect(alice).endorseAgent(agreementId, bob.address, "data-oracle");
+    const endorsement = await dao.getEndorsement(1);
+    // New agent = Bronze tier (0), weight should be tier+1 = 1
+    expect(endorsement.weight).to.be.gte(1n);
+  });
+
+  it("trust score accumulates across multiple endorsements", async () => {
+    const { dao, owner, alice, bob, carol } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    await memberAgent(dao, carol);
+
+    // First agreement: alice→bob
+    const id1 = await completeAgreement(dao, alice, bob);
+    await dao.connect(alice).endorseAgent(id1, bob.address, "data-oracle");
+
+    // Second agreement: carol→bob
+    await dao.connect(carol).depositNativeToEscrow({ value: ethers.parseEther("1") });
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(carol).createServiceAgreement(
+      bob.address, ethers.ZeroAddress, ethers.parseEther("0.05"), deadline, "second"
+    );
+    const id2 = Number(await dao.currentServiceAgreementId()) - 1;
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("proof2"));
+    await dao.connect(bob).submitDelivery(id2, hash);
+    await dao.connect(carol).approveDelivery(id2);
+    await dao.connect(carol).endorseAgent(id2, bob.address, "data-oracle");
+
+    const trust = await dao.getAgentTrustScore(bob.address);
+    expect(trust.endorsementCount).to.equal(2n);
+    expect(trust.trustScore).to.be.gte(2n);
+  });
+
+  it("getAgentEndorsements returns paginated endorsement IDs", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    const agreementId = await completeAgreement(dao, alice, bob);
+    await dao.connect(alice).endorseAgent(agreementId, bob.address, "data-oracle");
+
+    const result = await dao.getAgentEndorsements(bob.address, 0, 50);
+    expect(result.total).to.equal(1n);
+    expect(result.endorsementIds.length).to.equal(1);
+  });
+
+  it("getEndorsement returns correct data", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    const agreementId = await completeAgreement(dao, alice, bob);
+    await dao.connect(alice).endorseAgent(agreementId, bob.address, "data-oracle");
+
+    const e = await dao.getEndorsement(1);
+    expect(e.endorser).to.equal(alice.address);
+    expect(e.endorsed).to.equal(bob.address);
+    expect(e.capability).to.equal("data-oracle");
+    expect(e.agreementId).to.equal(BigInt(agreementId));
+    expect(e.revoked).to.equal(false);
+  });
+
+  it("reverts getEndorsement for non-existent ID", async () => {
+    const { dao } = await deploy();
+    await expect(dao.getEndorsement(999)).to.be.revertedWith("Endorsement not found.");
+  });
+
+  describe("endorsement revocation", () => {
+    it("endorser can revoke their endorsement", async () => {
+      const { dao, alice, bob } = await deploy();
+      await memberAgent(dao, alice);
+      await memberAgent(dao, bob);
+      const agreementId = await completeAgreement(dao, alice, bob);
+      await dao.connect(alice).endorseAgent(agreementId, bob.address, "data-oracle");
+
+      const trustBefore = await dao.getAgentTrustScore(bob.address);
+      expect(trustBefore.endorsementCount).to.equal(1n);
+
+      await expect(
+        dao.connect(alice).revokeEndorsement(1)
+      ).to.emit(dao, "EndorsementRevoked").withArgs(1, alice.address, bob.address);
+
+      // Trust score should decrease
+      const trustAfter = await dao.getAgentTrustScore(bob.address);
+      expect(trustAfter.endorsementCount).to.equal(0n);
+      expect(trustAfter.trustScore).to.equal(0n);
+
+      // Endorsement record should be marked revoked
+      const e = await dao.getEndorsement(1);
+      expect(e.revoked).to.equal(true);
+    });
+
+    it("reverts if non-endorser tries to revoke", async () => {
+      const { dao, alice, bob } = await deploy();
+      await memberAgent(dao, alice);
+      await memberAgent(dao, bob);
+      const agreementId = await completeAgreement(dao, alice, bob);
+      await dao.connect(alice).endorseAgent(agreementId, bob.address, "data-oracle");
+
+      await expect(
+        dao.connect(bob).revokeEndorsement(1)
+      ).to.be.revertedWith("Only the endorser can revoke.");
+    });
+
+    it("reverts if already revoked", async () => {
+      const { dao, alice, bob } = await deploy();
+      await memberAgent(dao, alice);
+      await memberAgent(dao, bob);
+      const agreementId = await completeAgreement(dao, alice, bob);
+      await dao.connect(alice).endorseAgent(agreementId, bob.address, "data-oracle");
+      await dao.connect(alice).revokeEndorsement(1);
+
+      await expect(
+        dao.connect(alice).revokeEndorsement(1)
+      ).to.be.revertedWith("Endorsement already revoked.");
+    });
+
+    it("reverts for non-existent endorsement", async () => {
+      const { dao, alice } = await deploy();
+      await memberAgent(dao, alice);
+      await expect(
+        dao.connect(alice).revokeEndorsement(999)
+      ).to.be.revertedWith("Endorsement not found.");
+    });
+  });
+
+  describe("time-weighted trust score", () => {
+    it("returns full weight for recent endorsements", async () => {
+      const { dao, alice, bob } = await deploy();
+      await memberAgent(dao, alice);
+      await memberAgent(dao, bob);
+      const agreementId = await completeAgreement(dao, alice, bob);
+      await dao.connect(alice).endorseAgent(agreementId, bob.address, "data-oracle");
+
+      const raw = await dao.getAgentTrustScore(bob.address);
+      const weighted = await dao.getTimeWeightedTrustScore(bob.address);
+      // Recent endorsement should have full weight
+      expect(weighted.weightedScore).to.equal(raw.trustScore);
+      expect(weighted.activeEndorsements).to.equal(1n);
+    });
+
+    it("excludes revoked endorsements from weighted score", async () => {
+      const { dao, alice, bob } = await deploy();
+      await memberAgent(dao, alice);
+      await memberAgent(dao, bob);
+      const agreementId = await completeAgreement(dao, alice, bob);
+      await dao.connect(alice).endorseAgent(agreementId, bob.address, "data-oracle");
+      await dao.connect(alice).revokeEndorsement(1);
+
+      const weighted = await dao.getTimeWeightedTrustScore(bob.address);
+      expect(weighted.weightedScore).to.equal(0n);
+      expect(weighted.activeEndorsements).to.equal(0n);
+    });
+  });
+});
+
+// ══════════════��════════════════════════════════���══════════════════════���════════
+// ─── NETWORK EFFECT 3: Network Growth Milestones ───────────���────────────────
+// ═════════���══════════════���════════════════════════════════��═════════════════════
+
+describe("Network Growth Milestones", () => {
+  it("emits NetworkMilestoneReached at 10 agents", async () => {
+    const { dao, owner, treasury } = await deploy();
+    const signers = await ethers.getSigners();
+    // Register 9 agents (owner can be member already, so we need 10 total registrations)
+    for (let i = 1; i <= 9; i++) {
+      await dao.addMember(signers[i].address, 10);
+      await dao.connect(signers[i]).registerAgent(`ipfs://agent${i}`);
+    }
+    // The 10th agent triggers the milestone
+    await expect(
+      dao.connect(signers[10]).stakeAndJoin(`ipfs://agent10`, { value: ethers.parseEther("0.01") })
+    ).to.emit(dao, "NetworkMilestoneReached")
+      .withArgs(10, 10, "Network bootstrapped - discovery active");
+
+    expect(await dao.lastNetworkMilestone()).to.equal(10n);
+  });
+
+  it("getNetworkStats returns correct milestone data", async () => {
+    const { dao } = await deploy();
+    const stats = await dao.getNetworkStats();
+    expect(stats.totalAgents).to.equal(0n);
+    expect(stats.currentMilestone).to.equal(0n);
+    expect(stats.nextMilestone).to.equal(10n);
+    expect(stats.agentsUntilNextMilestone).to.equal(10n);
+  });
+
+  it("getNetworkStats reflects registered agents", async () => {
+    const { dao, alice } = await deploy();
+    await dao.addMember(alice.address, 10);
+    await dao.connect(alice).registerAgent("ipfs://a");
+    const stats = await dao.getNetworkStats();
+    expect(stats.totalAgents).to.equal(1n);
+    expect(stats.agentsUntilNextMilestone).to.equal(9n);
+  });
+
+  it("milestone is not re-emitted if already reached", async () => {
+    const { dao, owner, treasury } = await deploy();
+    const signers = await ethers.getSigners();
+    // Reach 10 agents
+    for (let i = 1; i <= 10; i++) {
+      await dao.connect(signers[i]).stakeAndJoin(`ipfs://agent${i}`, { value: ethers.parseEther("0.01") });
+    }
+    expect(await dao.lastNetworkMilestone()).to.equal(10n);
+    // Adding 11th agent should not re-emit the 10-agent milestone
+    const tx = await dao.connect(signers[11]).stakeAndJoin(`ipfs://agent11`, { value: ethers.parseEther("0.01") });
+    const receipt = await tx.wait();
+    const milestoneEvents = receipt.logs.filter(l => {
+      try { return dao.interface.parseLog(l)?.name === "NetworkMilestoneReached"; } catch { return false; }
+    });
+    expect(milestoneEvents.length).to.equal(0);
+  });
+
+  it("registerAgent also triggers milestone check", async () => {
+    const { dao } = await deploy();
+    const signers = await ethers.getSigners();
+    // Use stakeAndJoin for first 9
+    for (let i = 1; i <= 9; i++) {
+      await dao.connect(signers[i]).stakeAndJoin(`ipfs://agent${i}`, { value: ethers.parseEther("0.01") });
+    }
+    // 10th via addMember + registerAgent
+    await dao.addMember(signers[10].address, 10);
+    await expect(
+      dao.connect(signers[10]).registerAgent("ipfs://agent10")
+    ).to.emit(dao, "NetworkMilestoneReached");
+  });
+});
