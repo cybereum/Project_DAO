@@ -2858,22 +2858,18 @@ contract Project_DAO {
     }
 
     /**
-     * @dev Distribute referral rewards from collected fees. Called after every
-     *      fee collection for agents that have referrers. Rewards are credited
-     *      to referrer escrow balances (keeping value in the protocol).
+     * @dev Distribute referral rewards from collected fees and return the total
+     *      amount credited. Called after fee collection for agents that have
+     *      referrers. Rewards are credited to referrer escrow balances, so
+     *      callers MUST retain the distributed amount in the contract (rather
+     *      than sending it to treasury) to back the escrow credits created here.
      *
-     *      Rewards flow regardless of whether the referrer is still registered —
-     *      the referral relationship was earned by bringing the agent in and is
-     *      permanent. Deregistered referrers accumulate rewards in their escrow
-     *      and can reclaim them if they rejoin.
+     *      Rewards flow regardless of whether a referrer is currently registered,
+     *      because the referral relationship is permanent once earned.
+     *      Deregistered referrers may continue to accumulate rewards in escrow.
      *
      * @param _agent The agent whose transaction generated the fee.
      * @param _feeAmount The total protocol fee collected.
-     */
-    /**
-     * @dev Distribute referral rewards from the fee, returning the total amount
-     *      distributed. Callers MUST retain this amount in the contract (not send
-     *      it to treasury) to back the escrow credits created here.
      * @return totalDistributed The sum of all referral rewards credited.
      */
     function _distributeReferralRewards(address _agent, uint256 _feeAmount) internal returns (uint256 totalDistributed) {
