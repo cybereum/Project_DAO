@@ -77,6 +77,7 @@ The trade-off is speed/cost vs. enforcement/transparency. For high-value or low-
 
 - [../../protocol/architecture.md](../../protocol/architecture.md) — Project_DAO's agent economy implementation
 - [../../guides/agent-onboarding.md](../../guides/agent-onboarding.md) — Practical agent onboarding
+- [../../agents/_index.md](../../agents/_index.md) — Full agent SDK knowledge base (workflows, recipes, patterns)
 - [dao-governance.md](dao-governance.md) — Governance in agent context
 - [escrow-patterns.md](escrow-patterns.md) — Settlement mechanics
 - [../research/ai-agent-protocols.md](../research/ai-agent-protocols.md) — Research frontiers

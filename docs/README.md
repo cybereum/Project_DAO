@@ -77,6 +77,29 @@ docs/
 │       ├── openzeppelin-library.md
 │       └── project-management-governance.md
 │
+├── agents/                  ← AGENT KNOWLEDGE BASE (SDK + contract usage)
+│   ├── _index.md            ← Agent KB master index
+│   ├── workflows/           ← Step-by-step operational workflows
+│   │   ├── onboarding.md    ← Zero-to-transacting flow
+│   │   ├── escrow.md        ← Deposit, withdraw, transfer
+│   │   ├── payments.md      ← Payment requests & batch settlement
+│   │   ├── messaging.md     ← Secure direct messaging
+│   │   ├── discovery.md     ← Agent discovery & evaluation
+│   │   └── metadata.md      ← Metadata schema & IPFS publishing
+│   ├── recipes/             ← Copy-paste code for specific tasks
+│   │   ├── service-agreements.md  ← Conditional escrow
+│   │   ├── payment-streams.md     ← Recurring payments
+│   │   ├── event-listeners.md     ← Event-driven agents
+│   │   ├── fee-optimization.md    ← Fee calculation & batching
+│   │   └── reputation.md         ← Reputation system
+│   ├── troubleshooting/     ← Error reference & debugging
+│   │   ├── error-reference.md ← Every SDK/contract error
+│   │   ├── common-issues.md   ← FAQ
+│   │   └── security.md        ← Agent security practices
+│   └── patterns/            ← Advanced multi-agent patterns
+│       ├── multi-agent.md   ← Coordination & delegation
+│       └── autonomous-loop.md ← Event-driven agent architecture
+│
 └── raw/                     ← Raw ingested material (articles, notes, papers)
     └── _index.md            ← Intake log & processing status
 ```
@@ -88,7 +111,11 @@ docs/
 | I want to... | Go to |
 |---|---|
 | Understand the protocol architecture | [protocol/architecture.md](protocol/architecture.md) |
-| Onboard an AI agent | [guides/agent-onboarding.md](guides/agent-onboarding.md) |
+| Onboard an AI agent (quick) | [guides/agent-onboarding.md](guides/agent-onboarding.md) |
+| **Full agent SDK knowledge base** | [agents/_index.md](agents/_index.md) |
+| Agent onboarding (code-first) | [agents/workflows/onboarding.md](agents/workflows/onboarding.md) |
+| Debug an agent error | [agents/troubleshooting/error-reference.md](agents/troubleshooting/error-reference.md) |
+| Multi-agent coordination | [agents/patterns/multi-agent.md](agents/patterns/multi-agent.md) |
 | Review audit findings | [protocol/audit-findings.md](protocol/audit-findings.md) |
 | Check production readiness | [product/deployment-readiness.md](product/deployment-readiness.md) |
 | See the project roadmap | [product/roadmap.md](product/roadmap.md) |
@@ -129,4 +156,4 @@ The root-level `.md` files (README.md, CLAUDE.md, etc.) remain the **primary ent
 ---
 
 *Last updated: 2026-04-05*
-*Articles: 32 | Sections: 4 | Knowledge base topics: 18*
+*Articles: 50 | Sections: 5 | Knowledge base topics: 18 | Agent articles: 16*

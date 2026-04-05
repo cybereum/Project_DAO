@@ -20,6 +20,7 @@
 
 ## Related
 
+- [../agents/_index.md](../agents/_index.md) — **Agent-specific knowledge base** (code-first, copy-paste recipes)
 - [../protocol/_index.md](../protocol/_index.md) — Technical protocol details
 - [../product/product-guide.md](../product/product-guide.md) — Product overview and personas
 

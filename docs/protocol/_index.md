@@ -22,6 +22,7 @@
 
 ## Related
 
+- [../agents/_index.md](../agents/_index.md) — **Agent knowledge base** (SDK usage, workflows, recipes, troubleshooting)
 - [../guides/agent-onboarding.md](../guides/agent-onboarding.md) — Agent-focused walkthrough
 - [../knowledge-base/concepts/smart-contract-security.md](../knowledge-base/concepts/smart-contract-security.md) — Security theory
 - [../knowledge-base/patterns/diamond-proxy.md](../knowledge-base/patterns/diamond-proxy.md) — Contract splitting pattern (needed for mainnet)
