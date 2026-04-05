@@ -20,7 +20,7 @@ Agent B, and Agent B generates commerce, Agent A earns a share of the protocol
 fees — forever. This turns passive participants into active evangelists.
 
 **Mechanism:**
-- When calling `stakeAndJoin(metadataURI, referrer)`, a new agent can
+- When calling `stakeAndJoinWithReferral(metadataURI, referrer)`, a new agent can
   optionally specify a referrer address (must be a registered agent).
 - The referral relationship is recorded on-chain and is permanent.
 - On every fee collection from the referred agent, a configurable percentage
