@@ -2842,10 +2842,11 @@ contract Project_DAO {
         memberAddresses.push(msg.sender);
         memberCount++;
 
+        uint256 existingNativeEscrowBalance = agents[msg.sender].nativeEscrowBalance;
         agents[msg.sender] = AgentProfile({
             registered: true,
             metadataURI: metadataURI,
-            nativeEscrowBalance: 0
+            nativeEscrowBalance: existingNativeEscrowBalance
         });
         agentAddresses.push(msg.sender);
         agentRegisteredAt[msg.sender] = block.timestamp;
