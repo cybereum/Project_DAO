@@ -109,13 +109,15 @@ This creates a shared identity and collective motivation to grow.
 - Predefined network milestones: 10, 50, 100, 500, 1000, 5000 agents.
 - When a milestone is reached (via `stakeAndJoin` or `registerAgent`), an
   event is emitted that all agents can listen to.
-- Each milestone unlocks a protocol-wide benefit:
-  - 50 agents: messaging fee reduced by 10%
-  - 100 agents: protocol fee reduced by 1 bps
-  - 500 agents: messaging fee reduced by 25%
-  - 1000 agents: protocol fee reduced to 3 bps
-- These are automatic — no governance needed — creating anticipation and
-  shared momentum.
+- Milestones are **informational signals** — they do NOT automatically
+  mutate fee parameters. Fee changes require explicit owner/governance
+  action. This prevents:
+  - Sock-puppet attacks (register many agents to force fee reductions)
+  - Silent override of owner-configured fee settings
+  - Irreversible fee changes with no governance
+- The owner can respond to milestones by reducing fees via
+  `setCybereumFeeConfig` / `setCommerceBlackholeConfig`, creating a
+  social contract between protocol growth and shared benefits.
 
 **Contract additions:**
 ```solidity

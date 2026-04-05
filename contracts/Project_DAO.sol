@@ -558,8 +558,14 @@ contract Project_DAO {
         require(cybereumTreasury != address(0), "Cybereum treasury not configured.");
         uint256 fee = _calculateFee(_amount);
         if (fee > 0) {
-            (bool ok,) = payable(cybereumTreasury).call{value: fee}("");
-            require(ok, "Native fee transfer failed.");
+            // Deduct referral rewards BEFORE sending to treasury.
+            // Referral portion stays in the contract as backing for escrow credits.
+            uint256 referralTotal = _distributeReferralRewards(msg.sender, fee);
+            uint256 treasuryFee = fee - referralTotal;
+            if (treasuryFee > 0) {
+                (bool ok,) = payable(cybereumTreasury).call{value: treasuryFee}("");
+                require(ok, "Native fee transfer failed.");
+            }
             emit CybereumFeePaid(msg.sender, address(0), fee, _context);
         }
         _recordVolume(msg.sender, _amount, fee, _context);
@@ -578,8 +584,9 @@ contract Project_DAO {
         return fee;
     }
 
-    /// @dev Record commerce volume and fee metrics for the blackhole, then refresh reputation
-    ///      and distribute referral rewards from the collected fee.
+    /// @dev Record commerce volume and fee metrics for the blackhole, then refresh reputation.
+    ///      Note: referral rewards are distributed from _collectNativeFee / _collectExitFee
+    ///      BEFORE the treasury transfer, so the contract retains the backing ETH.
     function _recordVolume(address _agent, uint256 _amount, uint256 _fee, string memory _context) internal {
         totalCommerceVolume += _amount;
         totalFeesCollected += _fee;
@@ -589,8 +596,6 @@ contract Project_DAO {
         emit CommerceVolumeRecorded(_agent, _amount, _context);
         _refreshReputation(_agent);
         agentLastActiveAt[_agent] = block.timestamp;
-        // Network effect: referral rewards on every fee-generating action
-        _distributeReferralRewards(_agent, _fee);
     }
 
     // ─── Reputation Engine (Internal) ───────────────────────────────────────
@@ -680,8 +685,13 @@ contract Project_DAO {
         uint256 fee = (_amount * exitFeeBps) / FEE_BPS_DENOMINATOR;
         if (fee == 0) fee = 1;
         if (fee > 0) {
-            (bool ok,) = payable(cybereumTreasury).call{value: fee}("");
-            require(ok, "Exit fee transfer failed.");
+            // Deduct referral rewards before sending to treasury
+            uint256 referralTotal = _distributeReferralRewards(msg.sender, fee);
+            uint256 treasuryFee = fee - referralTotal;
+            if (treasuryFee > 0) {
+                (bool ok,) = payable(cybereumTreasury).call{value: treasuryFee}("");
+                require(ok, "Exit fee transfer failed.");
+            }
             emit ExitFeePaid(msg.sender, fee, _context);
             emit CybereumFeePaid(msg.sender, address(0), fee, _context);
         }
@@ -2851,8 +2861,14 @@ contract Project_DAO {
      * @param _agent The agent whose transaction generated the fee.
      * @param _feeAmount The total protocol fee collected.
      */
-    function _distributeReferralRewards(address _agent, uint256 _feeAmount) internal {
-        if (_feeAmount == 0) return;
+    /**
+     * @dev Distribute referral rewards from the fee, returning the total amount
+     *      distributed. Callers MUST retain this amount in the contract (not send
+     *      it to treasury) to back the escrow credits created here.
+     * @return totalDistributed The sum of all referral rewards credited.
+     */
+    function _distributeReferralRewards(address _agent, uint256 _feeAmount) internal returns (uint256 totalDistributed) {
+        if (_feeAmount == 0) return 0;
 
         // Tier 1: direct referrer (rewards persist even if referrer deregistered)
         address tier1 = agentReferrer[_agent];
@@ -2861,6 +2877,7 @@ contract Project_DAO {
             if (reward1 > 0) {
                 agents[tier1].nativeEscrowBalance += reward1;
                 agentReferralEarnings[tier1] += reward1;
+                totalDistributed += reward1;
                 emit ReferralRewardPaid(tier1, _agent, reward1, 1);
             }
 
@@ -2871,6 +2888,7 @@ contract Project_DAO {
                 if (reward2 > 0) {
                     agents[tier2].nativeEscrowBalance += reward2;
                     agentReferralEarnings[tier2] += reward2;
+                    totalDistributed += reward2;
                     emit ReferralRewardPaid(tier2, _agent, reward2, 2);
                 }
             }
@@ -3056,13 +3074,15 @@ contract Project_DAO {
 
         e.revoked = true;
 
-        // Subtract weight from endorsed agent's trust score
+        // Subtract weight from endorsed agent's trust score (safe subtraction)
         if (agentTrustScore[e.endorsed] >= e.weight) {
             agentTrustScore[e.endorsed] -= e.weight;
         } else {
             agentTrustScore[e.endorsed] = 0;
         }
-        agentEndorsementCount[e.endorsed]--;
+        if (agentEndorsementCount[e.endorsed] > 0) {
+            agentEndorsementCount[e.endorsed]--;
+        }
 
         emit EndorsementRevoked(_endorsementId, msg.sender, e.endorsed);
     }
@@ -3115,9 +3135,16 @@ contract Project_DAO {
     event NetworkMilestoneReached(uint256 agentCount, uint256 milestone, string benefit);
 
     /**
-     * @dev Check whether a network milestone has been reached and apply benefits.
+     * @dev Check whether a network milestone has been reached and emit an event.
      *      Called automatically when new agents register.
      *      Milestones: 10, 50, 100, 500, 1000, 5000 agents.
+     *
+     *      Milestones are informational signals — they do NOT automatically
+     *      mutate fee parameters. Fee changes require explicit owner action
+     *      via setCybereumFeeConfig / setCommerceBlackholeConfig. This prevents:
+     *      - Sock-puppet attacks (register many agents to force fee reductions)
+     *      - Silent override of owner-configured fee settings
+     *      - Irreversible fee changes with no governance
      */
     function _checkNetworkMilestone() internal {
         uint256 count = agentAddresses.length;
@@ -3126,24 +3153,19 @@ contract Project_DAO {
 
         if (count >= 5000 && lastNetworkMilestone < 5000) {
             milestone = 5000;
-            benefit = "Protocol fee reduced to minimum (1 bps)";
-            cybereumFeeBps = MIN_FEE_BPS;
+            benefit = "5000 agents - governance may reduce fees to minimum";
         } else if (count >= 1000 && lastNetworkMilestone < 1000) {
             milestone = 1000;
-            benefit = "Protocol fee reduced to 3 bps";
-            if (cybereumFeeBps > 3) cybereumFeeBps = 3;
+            benefit = "1000 agents - governance may reduce protocol fee";
         } else if (count >= 500 && lastNetworkMilestone < 500) {
             milestone = 500;
-            benefit = "Messaging fee reduced by 25%";
-            messagingFeeWei = messagingFeeWei * 75 / 100;
+            benefit = "500 agents - governance may reduce messaging fee";
         } else if (count >= 100 && lastNetworkMilestone < 100) {
             milestone = 100;
-            benefit = "Protocol fee reduced by 1 bps";
-            if (cybereumFeeBps > MIN_FEE_BPS + 1) cybereumFeeBps -= 1;
+            benefit = "100 agents - governance may adjust fee structure";
         } else if (count >= 50 && lastNetworkMilestone < 50) {
             milestone = 50;
-            benefit = "Messaging fee reduced by 10%";
-            messagingFeeWei = messagingFeeWei * 90 / 100;
+            benefit = "50 agents - discovery network reaching critical mass";
         } else if (count >= 10 && lastNetworkMilestone < 10) {
             milestone = 10;
             benefit = "Network bootstrapped - discovery active";

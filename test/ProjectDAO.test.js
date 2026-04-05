@@ -4115,6 +4115,34 @@ describe("Referral Rewards", () => {
     });
   });
 
+  describe("referral reward solvency", () => {
+    it("contract balance always covers total escrow claims after referral rewards", async () => {
+      const { dao, alice, bob, carol } = await deploy();
+      const daoAddress = await dao.getAddress();
+      // Alice joins, Bob referred by Alice, Carol referred by Bob
+      await dao.connect(alice).stakeAndJoin("ipfs://a", { value: ethers.parseEther("0.1") });
+      await dao.connect(bob).stakeAndJoinWithReferral("ipfs://b", alice.address, { value: ethers.parseEther("0.1") });
+      await dao.connect(carol).stakeAndJoinWithReferral("ipfs://c", bob.address, { value: ethers.parseEther("0.1") });
+
+      // Carol generates heavy commerce (lots of fees → lots of referral rewards)
+      await dao.connect(carol).depositNativeToEscrow({ value: ethers.parseEther("5") });
+
+      // Sum all escrow claims
+      const aliceEscrow = (await dao.getAgentProfile(alice.address)).nativeEscrowBalance;
+      const bobEscrow = (await dao.getAgentProfile(bob.address)).nativeEscrowBalance;
+      const carolEscrow = (await dao.getAgentProfile(carol.address)).nativeEscrowBalance;
+      const aliceStake = await dao.memberStakes(alice.address);
+      const bobStake = await dao.memberStakes(bob.address);
+      const carolStake = await dao.memberStakes(carol.address);
+
+      const totalClaims = aliceEscrow + bobEscrow + carolEscrow + aliceStake + bobStake + carolStake;
+      const contractBalance = await ethers.provider.getBalance(daoAddress);
+
+      // Contract must hold at least as much as all claims combined
+      expect(contractBalance).to.be.gte(totalClaims);
+    });
+  });
+
   describe("referral rewards after deregistration", () => {
     it("deregistered referrer still accumulates rewards", async () => {
       const { dao, alice, bob } = await deploy();
