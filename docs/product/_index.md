@@ -15,9 +15,9 @@
 
 - **Feature completeness**: ~70%
 - **Production readiness**: 87/100
-- **Test count**: 328 across 54 describe blocks
+- **Test count**: 391 across 61 describe blocks
 - **Contract readiness score**: 8.2/10
-- **Blocker**: Contract size (41 KB) must be split before mainnet
+- **Blocker**: Contract size (~124 KB) must be split before mainnet
 
 ## Related
 

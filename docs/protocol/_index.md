@@ -14,8 +14,8 @@
 
 ## Key Facts (Quick Reference)
 
-- **Contract**: `contracts/Project_DAO.sol` (~1633 lines, Solidity 0.8.26)
-- **Size**: ~41 KB (exceeds 24 KB EIP-170 limit — needs splitting for mainnet)
+- **Contract**: `contracts/Project_DAO.sol` (~2750 lines, Solidity 0.8.26)
+- **Size**: ~124 KB source (~53 KB bytecode, exceeds 24 KB EIP-170 limit — needs splitting for mainnet)
 - **Fee**: 5 bps default (0.05%), minimum 1 bps, non-bypassable
 - **Treasury**: `cybereum.eth` — set via `setCybereumTreasury()`
 - **Access tiers**: Owner > Member > Registered Agent > Public (read-only)

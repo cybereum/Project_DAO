@@ -7,7 +7,7 @@
 
 ## Critical (Blocks Mainnet)
 
-- [ ] **Contract splitting** — Split Project_DAO.sol (~41 KB) into Diamond facets (<24 KB each)
+- [ ] **Contract splitting** — Split Project_DAO.sol (~2750 lines, ~53 KB bytecode) into Diamond facets (<24 KB each)
   - See: [knowledge-base/patterns/diamond-proxy.md](knowledge-base/patterns/diamond-proxy.md)
   - Depends on: architectural decision (Diamond vs. library extraction)
   - Effort: Large

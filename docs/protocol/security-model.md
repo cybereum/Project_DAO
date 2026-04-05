@@ -43,7 +43,7 @@ The guard is implemented inline (not via OpenZeppelin's ReentrancyGuard) to avoi
 ## Known Security Constraints
 
 ### Critical
-1. **Contract size** (41 KB > 24 KB limit) — cannot deploy to mainnet without splitting
+1. **Contract size** (~53 KB bytecode > 24 KB limit) — cannot deploy to mainnet without splitting
 2. **Shared ETH pool** — agent escrow, project funds, and stakes share `address(this).balance`. Cross-contamination risk if one pool is depleted by another.
 
 ### High

@@ -97,7 +97,7 @@ Agent A calls transferNativeBetweenAgents(agentB, amount, "payment")
 
 ## Known Architectural Constraints
 
-1. **Contract size**: ~41 KB exceeds EIP-170 limit. Needs Diamond proxy or library extraction for mainnet. See [../knowledge-base/patterns/diamond-proxy.md](../knowledge-base/patterns/diamond-proxy.md).
+1. **Contract size**: ~53 KB bytecode exceeds 24 KB EIP-170 limit. Needs Diamond proxy or library extraction for mainnet. See [../knowledge-base/patterns/diamond-proxy.md](../knowledge-base/patterns/diamond-proxy.md).
 2. **Shared ETH pool**: All escrow, project funds, and stakes share `address(this).balance`. See [audit-findings.md](audit-findings.md) C-2.
 3. **O(n) member iteration**: `addMember`/`removeMember` iterate all milestones. Gas grows with milestone count.
 4. **1-based proposal indexing**: Proposals use 1-based IDs but stored in 0-based array. Functional but confusing.

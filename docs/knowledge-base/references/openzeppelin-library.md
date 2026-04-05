@@ -34,7 +34,7 @@
 ## Why Custom Instead of OZ?
 
 Project_DAO uses custom implementations for:
-1. **Smaller bytecode**: Avoiding inheritance overhead (contract already at 41 KB)
+1. **Smaller bytecode**: Avoiding inheritance overhead (contract already at ~53 KB bytecode)
 2. **Simpler dependencies**: Fewer imports = less surface area
 3. **Custom semantics**: Role system has DAO-specific features (milestone-scoped roles)
 

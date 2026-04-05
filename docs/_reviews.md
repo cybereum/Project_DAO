@@ -10,7 +10,7 @@
 - **Type**: Documentation restructuring
 - **Reviewer**: Claude (AI)
 - **Scope**: Full repository documentation inventory and reorganization
-- **Outcome**: Created `docs/` knowledge base with 27 articles across 4 sections (protocol, guides, product, knowledge-base), centralized TODO tracker, review log, and raw intake pipeline
+- **Outcome**: Created `docs/` knowledge base with 32 articles across 4 sections (protocol, guides, product, knowledge-base), centralized TODO tracker, review log, and raw intake pipeline
 - **Findings**:
   - 14 root-level .md files (~5,300 lines) were unorganized — flat structure with no cross-linking
   - No centralized TODO or review tracking existed
@@ -50,7 +50,7 @@
 - **Scope**: Full contract suite (Project_DAO.sol, AssetNFT.sol, VCDAO.sol, MilestoneTracker*.sol)
 - **Outcome**: 29 findings (2 critical, 6 high, 13 medium, 8 low, 8 informational)
 - **Key findings**:
-  - C-1: Contract exceeds EIP-170 size limit (41 KB)
+  - C-1: Contract exceeds EIP-170 size limit (~53 KB bytecode)
   - C-2: Shared ETH pool cross-contamination risk
   - H-1: No timelock on critical owner functions
   - H-2: No professional audit

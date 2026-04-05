@@ -29,7 +29,7 @@
 - `setCybereumTreasury`, `setCybereumFeeConfig`, `setAIServiceFee`, `addPermission` — added `whenNotPaused`
 - SDK: `_validateMetadataURI()` on all write-path methods
 - Frontend: per-route `RouteErrorBoundary`, hidden stack traces in production, `txPending` reset on disconnect
-- Tests: 285 → 328 tests, 49 → 54 describe blocks
+- Tests: 285 → 391 tests, 49 → 61 describe blocks
 
 ---
 

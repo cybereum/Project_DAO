@@ -6,7 +6,7 @@
 
 ## Contract Details
 
-- **File**: `contracts/Project_DAO.sol` (~1633 lines)
+- **File**: `contracts/Project_DAO.sol` (~2750 lines)
 - **Compiler**: Solidity 0.8.26, optimizer enabled, `viaIR: true`
 - **Inheritance**: OpenZeppelin ERC-721, inline ReentrancyGuard
 - **Deployed address**: Set via `VITE_PROJECT_DAO_ADDRESS` env var

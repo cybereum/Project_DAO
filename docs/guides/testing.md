@@ -7,7 +7,7 @@
 ## Running Tests
 
 ```bash
-npx hardhat test                    # All 328 tests
+npx hardhat test                    # All 391 tests
 npx hardhat test --grep "escrow"    # Filter by pattern
 cd nexus-app && npm run lint        # Frontend linting
 ```
@@ -16,7 +16,7 @@ cd nexus-app && npm run lint        # Frontend linting
 
 - **Framework**: Mocha/Chai with Hardhat test helpers
 - **File**: `test/ProjectDAO.test.js`
-- **Structure**: 54 describe blocks, 328 tests
+- **Structure**: 61 describe blocks, 391 tests
 - **Helpers**: `deploy()` (fresh contract), `memberAgent()` (member + agent setup)
 
 ## Coverage Areas

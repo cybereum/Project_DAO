@@ -21,7 +21,7 @@
 ## Critical Findings
 
 ### C-1: Contract exceeds EIP-170 size limit [OPEN]
-- **Impact**: Contract cannot be deployed to mainnet (41 KB > 24 KB limit)
+- **Impact**: Contract cannot be deployed to mainnet (~124 KB source, ~53 KB bytecode > 24 KB limit)
 - **Remediation**: Requires contract splitting via Diamond proxy (EIP-2535) or library extraction
 - **Status**: Architectural decision pending. See [../knowledge-base/patterns/diamond-proxy.md](../knowledge-base/patterns/diamond-proxy.md)
 - **Effort**: Large

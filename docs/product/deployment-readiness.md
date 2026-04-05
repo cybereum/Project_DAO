@@ -22,7 +22,7 @@
 |---|---|---|
 | Smart Contract Security | 8.5/10 | All reentrancy + pause gaps closed |
 | Event Audit Trail | 9/10 | Complete |
-| Test Coverage | 8.5/10 | 328 tests, 54 describe blocks |
+| Test Coverage | 8.5/10 | 391 tests, 61 describe blocks |
 | SDK Robustness | 8.5/10 | Input validation on all write paths |
 | Frontend Error Handling | 8/10 | Per-route error boundaries |
 | CI Pipeline | 6/10 | Compiles, tests, lints — no security scanning |
@@ -31,7 +31,7 @@
 
 | Priority | Issue | Effort | Impact |
 |---|---|---|---|
-| **CRITICAL** | Contract size (41 KB > 24 KB) — needs splitting | Large | +0.5 |
+| **CRITICAL** | Contract size (~124 KB source, ~53 KB bytecode > 24 KB) — needs splitting | Large | +0.5 |
 | **CRITICAL** | No professional audit | External | +0.5 |
 | HIGH | No timelock/multisig on owner functions | Medium | +0.3 |
 | HIGH | No event indexer/subgraph | Medium | +0.3 |

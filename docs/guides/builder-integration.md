@@ -20,7 +20,7 @@
 ```bash
 npm install                    # Root dependencies
 npx hardhat compile            # Compile contracts
-npx hardhat test               # Run 328 tests
+npx hardhat test               # Run 391 tests
 CYBEREUM_TREASURY=0x... npx hardhat run scripts/deploy.js --network <network>
 ```
 

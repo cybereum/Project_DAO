@@ -1,12 +1,12 @@
 # Diamond Proxy Pattern (EIP-2535)
 
-> Splitting large contracts into modular facets that share state — the solution for Project_DAO's 41 KB size problem.
+> Splitting large contracts into modular facets that share state — the solution for Project_DAO's oversized contract problem (~53 KB bytecode vs. 24 KB limit).
 
 ---
 
 ## The Problem
 
-Project_DAO.sol is ~41 KB, exceeding the 24,576-byte EIP-170 limit. It cannot be deployed to Ethereum mainnet or most L2s without splitting.
+Project_DAO.sol is ~124 KB source (~53 KB compiled bytecode), far exceeding the 24,576-byte EIP-170 limit. It cannot be deployed to Ethereum mainnet or most L2s without splitting.
 
 ## What is the Diamond Pattern?
 

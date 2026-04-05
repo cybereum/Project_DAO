@@ -7,7 +7,7 @@
 ## Why L2 for Project_DAO?
 
 Two reasons:
-1. **Contract size**: At ~41 KB, Project_DAO exceeds the 24 KB EIP-170 limit on L1. Some L2s have higher or no contract size limits.
+1. **Contract size**: At ~124 KB source (~53 KB bytecode), Project_DAO far exceeds the 24 KB EIP-170 limit on L1. Some L2s have higher or no contract size limits.
 2. **Gas costs**: Agent-to-agent microtransactions need low gas to be economically viable.
 
 ## Rollup Taxonomy

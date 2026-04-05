@@ -129,4 +129,4 @@ The root-level `.md` files (README.md, CLAUDE.md, etc.) remain the **primary ent
 ---
 
 *Last updated: 2026-04-05*
-*Articles: 27 | Sections: 4 | Knowledge base topics: 15*
+*Articles: 32 | Sections: 4 | Knowledge base topics: 18*
