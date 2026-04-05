@@ -341,6 +341,7 @@ export function useAppState() {
   }, [walletAddress]);
 
   const [dataLoadError, setDataLoadError] = useState('');
+  const clearDataLoadError = useCallback(() => { setDataLoadError(''); }, []);
   const handleLoadError = useCallback((label, err) => {
     setDataLoadError(`Failed to load ${label}.`);
     console.error(`${label} failed:`, err);
@@ -361,6 +362,7 @@ export function useAppState() {
   const loadAgentConfig = useCallback(async () => {
     const contract = getDaoReadContract();
     if (!contract) return;
+    clearDataLoadError();
     try {
       const [feeBps, flatFee] = await Promise.all([
         contract.cybereumFeeBps(),
@@ -369,12 +371,13 @@ export function useAppState() {
       setAgentFeeBps(Number(feeBps));
       setAgentFlatFeeWei(flatFee.toString());
     } catch (err) { handleLoadError('fee config', err); }
-  }, [getDaoReadContract, handleLoadError]);
+  }, [getDaoReadContract, handleLoadError, clearDataLoadError]);
 
   const loadAgentProfile = useCallback(async () => {
     if (!walletAddress) return;
     const contract = getDaoReadContract();
     if (!contract) return;
+    clearDataLoadError();
     try {
       const profile = await contract.getAgentProfile(walletAddress);
       setAgentProfile({
@@ -383,7 +386,7 @@ export function useAppState() {
         nativeEscrowBalance: profile.nativeEscrowBalance.toString(),
       });
     } catch (err) { handleLoadError('agent profile', err); }
-  }, [walletAddress, getDaoReadContract, handleLoadError]);
+  }, [walletAddress, getDaoReadContract, handleLoadError, clearDataLoadError]);
 
   const agentRegister = useCallback(async (metadataURI) => {
     setWalletError('');
@@ -502,11 +505,12 @@ export function useAppState() {
     if (!walletAddress || !tokenAddress) return;
     const contract = getDaoReadContract();
     if (!contract) return;
+    clearDataLoadError();
     try {
       const bal = await contract.getAgentTokenBalance(walletAddress, tokenAddress);
       setAgentTokenBalances(prev => ({ ...prev, [tokenAddress.toLowerCase()]: bal.toString() }));
     } catch (err) { handleLoadError('token balance', err); }
-  }, [walletAddress, getDaoReadContract, handleLoadError]);
+  }, [walletAddress, getDaoReadContract, handleLoadError, clearDataLoadError]);
 
   const loadAgentActivity = useCallback(async ({ forceFull = false } = {}) => {
     if (!walletAddress) return;
@@ -718,6 +722,7 @@ export function useAppState() {
   const loadEconomicProjects = useCallback(async () => {
     const contract = getDaoReadContract();
     if (!contract) return;
+    clearDataLoadError();
     setEconomicProjectsLoading(true);
     try {
       const [page, total] = await contract.getEconomicProjects(0, 50);
@@ -738,7 +743,7 @@ export function useAppState() {
       return Number(total);
     } catch (err) { handleLoadError('projects', err); }
     finally { setEconomicProjectsLoading(false); }
-  }, [getDaoReadContract, handleLoadError]);
+  }, [getDaoReadContract, handleLoadError, clearDataLoadError]);
 
   const createEconomicProject = useCallback(async (metadataURI, targetBudgetWei, deadlineTs) => {
     setWalletError('');
@@ -907,6 +912,7 @@ export function useAppState() {
     if (!walletAddress) return;
     const contract = getDaoReadContract();
     if (!contract) return;
+    clearDataLoadError();
     setInboxLoading(true);
     try {
       const [messageIds, total] = await contract.getInbox(offset, limit);
@@ -914,12 +920,13 @@ export function useAppState() {
       setInbox({ messages, total: Number(total) });
     } catch (err) { handleLoadError('inbox', err); setInbox({ messages: [], total: 0 }); }
     finally { setInboxLoading(false); }
-  }, [walletAddress, getDaoReadContract, hydrateMessages, handleLoadError]);
+  }, [walletAddress, getDaoReadContract, hydrateMessages, handleLoadError, clearDataLoadError]);
 
   const loadConversation = useCallback(async (otherAgent, offset = 0, limit = 50) => {
     if (!walletAddress) return;
     const contract = getDaoReadContract();
     if (!contract) return;
+    clearDataLoadError();
     setConversationLoading(true);
     try {
       const [messageIds, total] = await contract.getConversation(otherAgent, offset, limit);
@@ -927,7 +934,7 @@ export function useAppState() {
       setConversationMessages({ messages, total: Number(total) });
     } catch (err) { handleLoadError('conversation', err); setConversationMessages({ messages: [], total: 0 }); }
     finally { setConversationLoading(false); }
-  }, [walletAddress, getDaoReadContract, hydrateMessages, handleLoadError]);
+  }, [walletAddress, getDaoReadContract, hydrateMessages, handleLoadError, clearDataLoadError]);
 
   const agentSendMessage = useCallback(async (toAddress, encryptedContent, contentHash) => {
     setWalletError('');
@@ -971,7 +978,12 @@ export function useAppState() {
 
   const loadReputation = useCallback(async () => {
     const contract = getDaoReadContract();
-    if (!contract) return;
+    if (!contract) {
+      setReputationLeaderboard([]);
+      setMyReputation(null);
+      setReputationError('');
+      return;
+    }
     setReputationLoading(true);
     setReputationError('');
     try {
@@ -1016,7 +1028,12 @@ export function useAppState() {
 
   const loadCommerceMetrics = useCallback(async () => {
     const contract = getDaoReadContract();
-    if (!contract) return;
+    if (!contract) {
+      setCommerceMetrics(null);
+      setAgentCommerceMetrics(null);
+      setCommerceError('');
+      return;
+    }
     setCommerceLoading(true);
     setCommerceError('');
     try {
@@ -1057,6 +1074,7 @@ export function useAppState() {
   const loadFeatureKits = useCallback(async () => {
     const contract = getDaoReadContract();
     if (!contract) return;
+    clearDataLoadError();
     setFeatureKitsLoading(true);
     try {
       const [page, total] = await contract.getFeatureKits(0, 100);
@@ -1074,7 +1092,7 @@ export function useAppState() {
       return Number(total);
     } catch (err) { handleLoadError('feature kits', err); }
     finally { setFeatureKitsLoading(false); }
-  }, [getDaoReadContract, handleLoadError]);
+  }, [getDaoReadContract, handleLoadError, clearDataLoadError]);
 
   const submitFeatureKit = useCallback(async (metadataURI, priority) => {
     setWalletError('');
