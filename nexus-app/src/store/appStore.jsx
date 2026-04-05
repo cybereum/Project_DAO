@@ -1032,6 +1032,7 @@ export function useAppState() {
       setCommerceMetrics(null);
       setAgentCommerceMetrics(null);
       setCommerceError('');
+      setCommerceLoading(false);
       return;
     }
     setCommerceLoading(true);
