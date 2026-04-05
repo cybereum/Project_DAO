@@ -46,6 +46,12 @@ export class AgentClient {
     return null;
   }
 
+  _requireEvent(receipt, eventName, argName) {
+    const value = this._extractEvent(receipt, eventName, argName);
+    if (value == null) throw new Error(`Event "${eventName}" (arg: "${argName}") not found in transaction receipt`);
+    return value;
+  }
+
   // ─── Identity ──────────────────────────────────────────────────────────
 
   /** Register this agent on-chain with an IPFS metadata URI. */
@@ -164,7 +170,7 @@ export class AgentClient {
   async createPaymentRequest(payerAddress, amount, { isNative = true, tokenAddress = ethers.ZeroAddress, description = '' } = {}) {
     const tx = await this.contract.createAgentPaymentRequest(payerAddress, tokenAddress, amount, isNative, description);
     const receipt = await tx.wait();
-    return this._extractEvent(receipt, 'AgentPaymentRequestCreated', 'requestId') ?? receipt;
+    return this._requireEvent(receipt, 'AgentPaymentRequestCreated', 'requestId');
   }
 
   /** Settle (pay) a payment request. For native requests, sends ETH. */
@@ -218,7 +224,7 @@ export class AgentClient {
   async createProject(metadataURI, targetBudgetWei, deadlineUnix) {
     const tx = await this.contract.createEconomicProject(metadataURI, targetBudgetWei, deadlineUnix);
     const receipt = await tx.wait();
-    return this._extractEvent(receipt, 'EconomicProjectCreated', 'projectId') ?? receipt;
+    return this._requireEvent(receipt, 'EconomicProjectCreated', 'projectId');
   }
 
   /** Fund a project with ETH. */
@@ -253,7 +259,7 @@ export class AgentClient {
     const typeHash = ethers.id(serviceType);
     const tx = await this.contract.listService(typeHash, metadataURI, pricePerCallWei);
     const receipt = await tx.wait();
-    return this._extractEvent(receipt, 'ServiceListed', 'serviceId') ?? receipt;
+    return this._requireEvent(receipt, 'ServiceListed', 'serviceId');
   }
 
   /** Update an existing service listing. */
@@ -325,7 +331,7 @@ export class AgentClient {
     }
     const tx = await this.contract.createServiceAgreement(serviceId, requestURI, expiresAt, { value });
     const receipt = await tx.wait();
-    return this._extractEvent(receipt, 'AgreementCreated', 'agreementId') ?? receipt;
+    return this._requireEvent(receipt, 'AgreementCreated', 'agreementId');
   }
 
   /** Fulfill a service agreement (provider submits response). */
