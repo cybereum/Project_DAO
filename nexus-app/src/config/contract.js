@@ -171,6 +171,38 @@ export const PROJECT_DAO_ABI = [
   'function agentTransactionCount(address) external view returns (uint256)',
   'event ReputationUpdated(address indexed agent, uint256 oldScore, uint256 newScore, uint256 tier)',
   'event ReputationDecayApplied(address indexed agent, uint256 pointsDecayed, uint256 newScore)',
+
+  // ─── Capability-Indexed Discovery ──────────────────────────────────────
+  'function setAgentCapabilities(string[] calldata _capabilities) external',
+  'function getAgentCapabilities(address _agent) external view returns (string[])',
+  'function discoverAgentsByCapability(string calldata _capability, uint256 offset, uint256 limit) external view returns (address[] addresses, string[] metadataURIs, uint256 total)',
+  'function getCapabilityAgentCount(string calldata _capability) external view returns (uint256)',
+  'event AgentCapabilitiesUpdated(address indexed agent, string[] capabilities)',
+
+  // ─── Service Agreements ────────────────────────────────────────────────
+  'function createServiceAgreement(address _provider, address _arbiter, uint256 _amount, uint256 _deadline, string calldata _description) external returns (uint256)',
+  'function submitDelivery(uint256 _agreementId, bytes32 _deliveryHash) external',
+  'function approveDelivery(uint256 _agreementId) external',
+  'function disputeServiceAgreement(uint256 _agreementId) external',
+  'function resolveServiceDispute(uint256 _agreementId, bool _inFavorOfProvider) external',
+  'function cancelServiceAgreement(uint256 _agreementId) external',
+  'function getServiceAgreement(uint256 _agreementId) external view returns (uint256 id, address client, address provider, address arbiter, uint256 amount, string description, uint8 status, uint256 createdAt, uint256 deadline, bytes32 deliveryHash)',
+  'event ServiceAgreementCreated(uint256 indexed agreementId, address indexed client, address indexed provider, address arbiter, uint256 amount, uint256 deadline, string description)',
+  'event ServiceDeliverySubmitted(uint256 indexed agreementId, address indexed provider, bytes32 deliveryHash)',
+  'event ServiceAgreementCompleted(uint256 indexed agreementId, address indexed client, address indexed provider, uint256 paidAmount)',
+  'event ServiceAgreementDisputed(uint256 indexed agreementId, address indexed disputant)',
+  'event ServiceDisputeResolved(uint256 indexed agreementId, bool inFavorOfProvider, address indexed resolver)',
+  'event ServiceAgreementCancelled(uint256 indexed agreementId, address indexed cancelledBy)',
+
+  // ─── Payment Streams ──────────────────────────────────────────────────
+  'function createPaymentStream(address _recipient, uint256 _totalDeposit, uint256 _startTime, uint256 _stopTime) external returns (uint256)',
+  'function streamBalanceOf(uint256 _streamId) external view returns (uint256)',
+  'function withdrawFromStream(uint256 _streamId) external',
+  'function cancelPaymentStream(uint256 _streamId) external',
+  'function getPaymentStream(uint256 _streamId) external view returns (uint256 id, address payer, address recipient, uint256 ratePerSecond, uint256 totalDeposited, uint256 totalWithdrawn, uint256 startTime, uint256 stopTime, uint8 status, uint256 withdrawable)',
+  'event PaymentStreamCreated(uint256 indexed streamId, address indexed payer, address indexed recipient, uint256 ratePerSecond, uint256 totalDeposit, uint256 startTime, uint256 stopTime)',
+  'event PaymentStreamWithdrawn(uint256 indexed streamId, address indexed recipient, uint256 amount)',
+  'event PaymentStreamCancelled(uint256 indexed streamId, address indexed cancelledBy, uint256 recipientAmount, uint256 payerRefund)',
 ];
 
 export function hasContractConfig() {

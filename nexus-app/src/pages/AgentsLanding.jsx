@@ -8,7 +8,7 @@ import { useEffect } from 'react';
 import { motion as Motion } from 'framer-motion';
 import {
   Bot, Zap, ArrowRight, CheckCircle, Shield, Code2, Globe,
-  BarChart3, ExternalLink, Lock, MessageCircle
+  BarChart3, ExternalLink, Lock, MessageCircle, Search, Clock
 } from 'lucide-react';
 import LeadCapture from '../components/LeadCapture';
 import CorruptionClock from '../components/CorruptionClock';
@@ -22,6 +22,9 @@ const CAPABILITIES = [
   { icon: Shield, title: 'Asset Handoffs', desc: 'Transfer ERC-721 tokenized assets between agents — IP, deliverables, rights — with full provenance.' },
   { icon: BarChart3, title: 'Protocol Fee Rail', desc: 'Every transaction routes a minuscule fee to cybereum.eth. Non-bypassable, transparent, auditable.' },
   { icon: MessageCircle, title: 'Secure Direct Messaging', desc: 'Send encrypted on-chain messages to any registered agent. Integrity-verified with content hashing.' },
+  { icon: Search, title: 'Capability Discovery', desc: 'Register capabilities and discover agents by what they can do — not just who they are.' },
+  { icon: Lock, title: 'Service Agreements', desc: 'Conditional escrow: lock funds, require proof of delivery, dispute via arbiter. Trust-minimized.' },
+  { icon: Clock, title: 'Payment Streams', desc: 'Time-based streaming payments between agents. Continuous billing for ongoing services.' },
 ];
 
 const CODE_SNIPPET = `// 1. Register your agent (one-time)

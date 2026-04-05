@@ -1731,8 +1731,10 @@ contract Project_DAO {
         require(members[msg.sender].isMember, "Not a member.");
         require(memberStakes[msg.sender] > 0 || msg.sender != owner, "Owner cannot leave.");
 
-        // Prevent leaving while proposer on an active/open project (O(1) check)
+        // Prevent leaving while involved in active obligations (O(1) checks)
         require(activeProjectCount[msg.sender] == 0, "Cancel active projects before leaving.");
+        require(activeAgreementCount[msg.sender] == 0, "Resolve active service agreements before leaving.");
+        require(activeStreamCount[msg.sender] == 0, "Cancel active payment streams before leaving.");
 
         uint256 stake = memberStakes[msg.sender];
         memberStakes[msg.sender] = 0;
@@ -2299,5 +2301,450 @@ contract Project_DAO {
     function setReputationDecayConfig(uint256 _decayPerDay, uint256 _gracePeriod) external onlyOwner {
         reputationDecayPerDay = _decayPerDay;
         reputationDecayGracePeriod = _gracePeriod;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ─── PRIORITY 1: Capability-Indexed Agent Discovery ─────────────────────
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /// @notice Maximum capability tags per agent.
+    uint256 public constant MAX_CAPABILITIES = 16;
+    /// @notice Maximum length of a capability tag string.
+    uint256 public constant MAX_CAPABILITY_LENGTH = 64;
+
+    /// @notice Per-agent ordered list of capability tags.
+    mapping(address => string[]) private agentCapabilities;
+
+    /// @notice Reverse index: capability tag => set of agent addresses.
+    mapping(bytes32 => address[]) private capabilityAgents;
+    /// @notice Quick membership check for the reverse index.
+    mapping(bytes32 => mapping(address => bool)) private capabilityAgentExists;
+    /// @notice Position index for O(1) removal: capability key => agent => index in capabilityAgents[key].
+    mapping(bytes32 => mapping(address => uint256)) private capabilityAgentIndex;
+
+    event AgentCapabilitiesUpdated(address indexed agent, string[] capabilities);
+
+    /// @notice Set the full capability list for the calling agent.
+    ///         Replaces any previous capabilities.
+    /// @param _capabilities Array of capability tag strings (e.g. ["payment-settlement", "data-oracle"]).
+    function setAgentCapabilities(string[] calldata _capabilities) external onlyRegisteredAgent whenNotPaused {
+        require(_capabilities.length <= MAX_CAPABILITIES, "Too many capabilities.");
+
+        string[] storage old = agentCapabilities[msg.sender];
+        for (uint256 i = 0; i < old.length; i++) {
+            bytes32 key = keccak256(bytes(old[i]));
+            if (capabilityAgentExists[key][msg.sender]) {
+                capabilityAgentExists[key][msg.sender] = false;
+                address[] storage arr = capabilityAgents[key];
+                uint256 idx = capabilityAgentIndex[key][msg.sender];
+                uint256 last = arr.length - 1;
+                if (idx != last) {
+                    address moved = arr[last];
+                    arr[idx] = moved;
+                    capabilityAgentIndex[key][moved] = idx;
+                }
+                arr.pop();
+            }
+        }
+        delete agentCapabilities[msg.sender];
+
+        // Add new entries
+        for (uint256 i = 0; i < _capabilities.length; i++) {
+            bytes memory cap = bytes(_capabilities[i]);
+            require(cap.length > 0 && cap.length <= MAX_CAPABILITY_LENGTH, "Invalid capability tag length.");
+            bytes32 key = keccak256(cap);
+            agentCapabilities[msg.sender].push(_capabilities[i]);
+            if (!capabilityAgentExists[key][msg.sender]) {
+                capabilityAgentIndex[key][msg.sender] = capabilityAgents[key].length;
+                capabilityAgents[key].push(msg.sender);
+                capabilityAgentExists[key][msg.sender] = true;
+            }
+        }
+
+        emit AgentCapabilitiesUpdated(msg.sender, _capabilities);
+    }
+
+    /// @notice Get the capability tags for a specific agent.
+    function getAgentCapabilities(address _agent) external view returns (string[] memory) {
+        return agentCapabilities[_agent];
+    }
+
+    /// @notice Discover agents by capability tag with pagination.
+    /// @param _capability The capability tag to search for.
+    /// @param offset      0-based starting index.
+    /// @param limit       Maximum results to return.
+    function discoverAgentsByCapability(string calldata _capability, uint256 offset, uint256 limit)
+        external view returns (address[] memory addresses, string[] memory metadataURIs, uint256 total)
+    {
+        bytes32 key = keccak256(bytes(_capability));
+        address[] storage agents_ = capabilityAgents[key];
+        total = agents_.length;
+        if (total == 0 || offset >= total) {
+            return (new address[](0), new string[](0), total);
+        }
+        uint256 end = offset + limit;
+        if (end > total) end = total;
+        uint256 count = end - offset;
+        addresses = new address[](count);
+        metadataURIs = new string[](count);
+        for (uint256 i = 0; i < count; i++) {
+            address addr = agents_[offset + i];
+            addresses[i] = addr;
+            metadataURIs[i] = agents[addr].metadataURI;
+        }
+    }
+
+    /// @notice Get the number of agents registered for a given capability.
+    function getCapabilityAgentCount(string calldata _capability) external view returns (uint256) {
+        return capabilityAgents[keccak256(bytes(_capability))].length;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ─── PRIORITY 2: Service Agreements with Conditional Escrow ──────────────
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    enum AgreementStatus { Active, Delivered, Completed, Disputed, Cancelled }
+
+    struct ServiceAgreement {
+        uint256 id;
+        address client;       // Agent requesting service
+        address provider;     // Agent delivering service
+        address arbiter;      // Optional arbiter (address(0) = no arbiter)
+        uint256 amount;       // Native ETH locked in escrow
+        string  description;  // Service description / terms
+        AgreementStatus status;
+        uint256 createdAt;
+        uint256 deadline;     // Provider must deliver before this time
+        bytes32 deliveryHash; // Proof of delivery (set by provider)
+    }
+
+    mapping(uint256 => ServiceAgreement) public serviceAgreements;
+    uint256 public currentServiceAgreementId = 1;
+    /// @notice Tracks active agreements per agent (client + provider). Blocks leaveDAO when > 0.
+    mapping(address => uint256) public activeAgreementCount;
+
+    event ServiceAgreementCreated(uint256 indexed agreementId, address indexed client, address indexed provider, address arbiter, uint256 amount, uint256 deadline, string description);
+    event ServiceDeliverySubmitted(uint256 indexed agreementId, address indexed provider, bytes32 deliveryHash);
+    event ServiceAgreementCompleted(uint256 indexed agreementId, address indexed client, address indexed provider, uint256 paidAmount);
+    event ServiceAgreementDisputed(uint256 indexed agreementId, address indexed disputant);
+    event ServiceDisputeResolved(uint256 indexed agreementId, bool inFavorOfProvider, address indexed resolver);
+    event ServiceAgreementCancelled(uint256 indexed agreementId, address indexed cancelledBy);
+
+    /// @notice Client creates a service agreement, locking native ETH from their escrow.
+    /// @param _provider  The agent who will deliver the service.
+    /// @param _arbiter   Optional dispute resolver (address(0) for no arbiter).
+    /// @param _amount    Amount of native ETH to lock from client's escrow.
+    /// @param _deadline  Unix timestamp by which provider must deliver.
+    /// @param _description Service terms / description.
+    function createServiceAgreement(
+        address _provider,
+        address _arbiter,
+        uint256 _amount,
+        uint256 _deadline,
+        string calldata _description
+    ) external onlyRegisteredAgent whenNotPaused returns (uint256) {
+        require(agents[_provider].registered, "Provider must be a registered agent.");
+        require(_provider != msg.sender, "Cannot create agreement with yourself.");
+        require(_amount > 0, "Amount must be greater than zero.");
+        require(_deadline > block.timestamp, "Deadline must be in the future.");
+        require(agents[msg.sender].nativeEscrowBalance >= _amount, "Insufficient escrow balance.");
+        if (_arbiter != address(0)) {
+            require(agents[_arbiter].registered, "Arbiter must be a registered agent.");
+            require(_arbiter != msg.sender && _arbiter != _provider, "Arbiter must be a third party.");
+        }
+
+        agents[msg.sender].nativeEscrowBalance -= _amount;
+        activeAgreementCount[msg.sender]++;
+        activeAgreementCount[_provider]++;
+
+        uint256 id = currentServiceAgreementId++;
+        serviceAgreements[id] = ServiceAgreement({
+            id: id,
+            client: msg.sender,
+            provider: _provider,
+            arbiter: _arbiter,
+            amount: _amount,
+            description: _description,
+            status: AgreementStatus.Active,
+            createdAt: block.timestamp,
+            deadline: _deadline,
+            deliveryHash: bytes32(0)
+        });
+
+        emit ServiceAgreementCreated(id, msg.sender, _provider, _arbiter, _amount, _deadline, _description);
+        return id;
+    }
+
+    /// @notice Provider submits proof of delivery.
+    /// @param _agreementId The service agreement ID.
+    /// @param _deliveryHash Hash of the delivery proof (e.g. keccak256 of result data).
+    function submitDelivery(uint256 _agreementId, bytes32 _deliveryHash) external onlyRegisteredAgent whenNotPaused {
+        ServiceAgreement storage a = serviceAgreements[_agreementId];
+        require(a.id > 0, "Agreement not found.");
+        require(a.provider == msg.sender, "Only the provider can submit delivery.");
+        require(a.status == AgreementStatus.Active, "Agreement is not active.");
+        require(block.timestamp <= a.deadline, "Delivery deadline has passed.");
+        require(_deliveryHash != bytes32(0), "Delivery hash cannot be empty.");
+
+        a.deliveryHash = _deliveryHash;
+        a.status = AgreementStatus.Delivered;
+
+        emit ServiceDeliverySubmitted(_agreementId, msg.sender, _deliveryHash);
+    }
+
+    /// @notice Client approves delivery and releases escrowed funds to provider.
+    /// @param _agreementId The service agreement ID.
+    function approveDelivery(uint256 _agreementId) external onlyRegisteredAgent whenNotPaused nonReentrant {
+        ServiceAgreement storage a = serviceAgreements[_agreementId];
+        require(a.id > 0, "Agreement not found.");
+        require(a.client == msg.sender, "Only the client can approve delivery.");
+        require(a.status == AgreementStatus.Delivered, "Delivery not yet submitted.");
+
+        a.status = AgreementStatus.Completed;
+        activeAgreementCount[a.client]--;
+        activeAgreementCount[a.provider]--;
+
+        uint256 fee = _collectNativeFee(a.amount, "service_agreement_complete");
+        uint256 net = a.amount - fee;
+        agents[a.provider].nativeEscrowBalance += net;
+
+        emit ServiceAgreementCompleted(_agreementId, a.client, a.provider, net);
+    }
+
+    /// @notice Dispute a service agreement. Can be called by client or provider.
+    ///         Requires an arbiter to have been set.
+    function disputeServiceAgreement(uint256 _agreementId) external onlyRegisteredAgent whenNotPaused {
+        ServiceAgreement storage a = serviceAgreements[_agreementId];
+        require(a.id > 0, "Agreement not found.");
+        require(msg.sender == a.client || msg.sender == a.provider, "Not a party to this agreement.");
+        require(a.status == AgreementStatus.Active || a.status == AgreementStatus.Delivered, "Cannot dispute in current status.");
+        require(a.arbiter != address(0), "No arbiter assigned - use cancelServiceAgreement instead.");
+
+        a.status = AgreementStatus.Disputed;
+        emit ServiceAgreementDisputed(_agreementId, msg.sender);
+    }
+
+    /// @notice Arbiter resolves a disputed agreement, directing funds to provider or back to client.
+    /// @param _agreementId The service agreement ID.
+    /// @param _inFavorOfProvider True = release to provider, False = refund to client.
+    function resolveServiceDispute(uint256 _agreementId, bool _inFavorOfProvider) external onlyRegisteredAgent whenNotPaused nonReentrant {
+        ServiceAgreement storage a = serviceAgreements[_agreementId];
+        require(a.id > 0, "Agreement not found.");
+        require(a.arbiter == msg.sender, "Only the arbiter can resolve disputes.");
+        require(a.status == AgreementStatus.Disputed, "Agreement is not disputed.");
+
+        a.status = AgreementStatus.Completed;
+        activeAgreementCount[a.client]--;
+        activeAgreementCount[a.provider]--;
+
+        uint256 fee = _collectNativeFee(a.amount, "service_dispute_resolution");
+        uint256 net = a.amount - fee;
+
+        if (_inFavorOfProvider) {
+            agents[a.provider].nativeEscrowBalance += net;
+        } else {
+            agents[a.client].nativeEscrowBalance += net;
+        }
+
+        emit ServiceDisputeResolved(_agreementId, _inFavorOfProvider, msg.sender);
+    }
+
+    /// @notice Cancel an active agreement (no delivery yet). Client gets refund.
+    ///         Only client can cancel an Active agreement. If deadline passed and
+    ///         no delivery, client can also cancel a non-delivered agreement.
+    function cancelServiceAgreement(uint256 _agreementId) external onlyRegisteredAgent whenNotPaused nonReentrant {
+        ServiceAgreement storage a = serviceAgreements[_agreementId];
+        require(a.id > 0, "Agreement not found.");
+        require(a.status == AgreementStatus.Active, "Can only cancel active agreements.");
+        require(msg.sender == a.client || msg.sender == a.provider, "Not a party to this agreement.");
+        require(
+            msg.sender == a.client || block.timestamp > a.deadline,
+            "Provider can only cancel after deadline."
+        );
+
+        a.status = AgreementStatus.Cancelled;
+        activeAgreementCount[a.client]--;
+        activeAgreementCount[a.provider]--;
+        agents[a.client].nativeEscrowBalance += a.amount;
+
+        emit ServiceAgreementCancelled(_agreementId, msg.sender);
+    }
+
+    /// @notice Get a service agreement by ID.
+    function getServiceAgreement(uint256 _agreementId) external view returns (
+        uint256 id, address client, address provider, address arbiter,
+        uint256 amount, string memory description, AgreementStatus status,
+        uint256 createdAt, uint256 deadline, bytes32 deliveryHash
+    ) {
+        ServiceAgreement storage a = serviceAgreements[_agreementId];
+        return (a.id, a.client, a.provider, a.arbiter, a.amount, a.description, a.status, a.createdAt, a.deadline, a.deliveryHash);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ─── PRIORITY 3: Recurring Payment Streams ──────────────────────────────
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    enum StreamStatus { Active, Paused, Cancelled, Completed }
+
+    struct PaymentStream {
+        uint256 id;
+        address payer;           // Agent funding the stream
+        address recipient;       // Agent receiving payments
+        uint256 ratePerSecond;   // Wei per second
+        uint256 totalDeposited;  // Total deposited into this stream
+        uint256 totalWithdrawn;  // Total already claimed by recipient
+        uint256 startTime;       // When the stream starts
+        uint256 stopTime;        // When the stream ends
+        StreamStatus status;
+    }
+
+    mapping(uint256 => PaymentStream) public paymentStreams;
+    uint256 public currentPaymentStreamId = 1;
+    /// @notice Tracks active streams per agent (payer + recipient). Blocks leaveDAO when > 0.
+    mapping(address => uint256) public activeStreamCount;
+
+    event PaymentStreamCreated(uint256 indexed streamId, address indexed payer, address indexed recipient, uint256 ratePerSecond, uint256 totalDeposit, uint256 startTime, uint256 stopTime);
+    event PaymentStreamWithdrawn(uint256 indexed streamId, address indexed recipient, uint256 amount);
+    event PaymentStreamCancelled(uint256 indexed streamId, address indexed cancelledBy, uint256 recipientAmount, uint256 payerRefund);
+
+    /// @notice Create a payment stream from caller's escrow to recipient.
+    /// @param _recipient  Agent receiving the stream.
+    /// @param _totalDeposit Total native ETH to stream (from caller's escrow).
+    /// @param _startTime  Unix timestamp when streaming begins.
+    /// @param _stopTime   Unix timestamp when streaming ends.
+    function createPaymentStream(
+        address _recipient,
+        uint256 _totalDeposit,
+        uint256 _startTime,
+        uint256 _stopTime
+    ) external onlyRegisteredAgent whenNotPaused returns (uint256) {
+        require(agents[_recipient].registered, "Recipient must be a registered agent.");
+        require(_recipient != msg.sender, "Cannot stream to yourself.");
+        require(_totalDeposit > 0, "Deposit must be greater than zero.");
+        require(_stopTime > _startTime, "Stop time must be after start time.");
+        require(_startTime >= block.timestamp, "Start time must be now or in the future.");
+        require(agents[msg.sender].nativeEscrowBalance >= _totalDeposit, "Insufficient escrow balance.");
+
+        uint256 duration = _stopTime - _startTime;
+        uint256 ratePerSecond = _totalDeposit / duration;
+        require(ratePerSecond > 0, "Rate per second too low - increase deposit or shorten duration.");
+
+        // Adjust totalDeposit to exact multiple of rate to avoid dust
+        uint256 adjustedDeposit = ratePerSecond * duration;
+        agents[msg.sender].nativeEscrowBalance -= adjustedDeposit;
+        activeStreamCount[msg.sender]++;
+        activeStreamCount[_recipient]++;
+
+        uint256 id = currentPaymentStreamId++;
+        paymentStreams[id] = PaymentStream({
+            id: id,
+            payer: msg.sender,
+            recipient: _recipient,
+            ratePerSecond: ratePerSecond,
+            totalDeposited: adjustedDeposit,
+            totalWithdrawn: 0,
+            startTime: _startTime,
+            stopTime: _stopTime,
+            status: StreamStatus.Active
+        });
+
+        emit PaymentStreamCreated(id, msg.sender, _recipient, ratePerSecond, adjustedDeposit, _startTime, _stopTime);
+        return id;
+    }
+
+    /// @notice Calculate how much the recipient can currently withdraw from a stream.
+    function streamBalanceOf(uint256 _streamId) public view returns (uint256) {
+        PaymentStream storage s = paymentStreams[_streamId];
+        if (s.id == 0 || s.status == StreamStatus.Cancelled) return 0;
+
+        uint256 elapsed;
+        if (block.timestamp >= s.stopTime) {
+            elapsed = s.stopTime - s.startTime;
+        } else if (block.timestamp > s.startTime) {
+            elapsed = block.timestamp - s.startTime;
+        } else {
+            elapsed = 0;
+        }
+
+        uint256 earned = elapsed * s.ratePerSecond;
+        return earned > s.totalWithdrawn ? earned - s.totalWithdrawn : 0;
+    }
+
+    /// @notice Recipient withdraws accrued funds from a stream into their escrow.
+    function withdrawFromStream(uint256 _streamId) external onlyRegisteredAgent whenNotPaused nonReentrant {
+        PaymentStream storage s = paymentStreams[_streamId];
+        require(s.id > 0, "Stream not found.");
+        require(s.recipient == msg.sender, "Only the recipient can withdraw.");
+        require(s.status == StreamStatus.Active, "Stream is not active.");
+
+        // Inline balance calc to avoid redundant SLOAD from streamBalanceOf
+        uint256 elapsed;
+        if (block.timestamp >= s.stopTime) {
+            elapsed = s.stopTime - s.startTime;
+        } else if (block.timestamp > s.startTime) {
+            elapsed = block.timestamp - s.startTime;
+        }
+        uint256 available = elapsed * s.ratePerSecond;
+        available = available > s.totalWithdrawn ? available - s.totalWithdrawn : 0;
+        require(available > 0, "No funds available to withdraw.");
+
+        s.totalWithdrawn += available;
+
+        uint256 fee = _collectNativeFee(available, "stream_withdraw");
+        uint256 net = available - fee;
+        agents[msg.sender].nativeEscrowBalance += net;
+
+        // Auto-complete if fully withdrawn
+        if (s.totalWithdrawn >= s.totalDeposited) {
+            s.status = StreamStatus.Completed;
+            activeStreamCount[s.payer]--;
+            activeStreamCount[s.recipient]--;
+        }
+
+        emit PaymentStreamWithdrawn(_streamId, msg.sender, net);
+    }
+
+    /// @notice Cancel a stream. Accrued funds go to recipient, remainder refunded to payer.
+    ///         Either payer or recipient can cancel.
+    function cancelPaymentStream(uint256 _streamId) external onlyRegisteredAgent whenNotPaused nonReentrant {
+        PaymentStream storage s = paymentStreams[_streamId];
+        require(s.id > 0, "Stream not found.");
+        require(s.status == StreamStatus.Active, "Stream is not active.");
+        require(msg.sender == s.payer || msg.sender == s.recipient, "Not a party to this stream.");
+
+        // Calculate accrued amount BEFORE changing status (streamBalanceOf returns 0 if Cancelled)
+        uint256 recipientAmount = streamBalanceOf(_streamId);
+        uint256 payerRefund = s.totalDeposited - s.totalWithdrawn - recipientAmount;
+
+        s.status = StreamStatus.Cancelled;
+        activeStreamCount[s.payer]--;
+        activeStreamCount[s.recipient]--;
+
+        // Pay recipient their earned portion (with fee)
+        uint256 recipientNet = 0;
+        if (recipientAmount > 0) {
+            s.totalWithdrawn += recipientAmount;
+            uint256 fee = _collectNativeFee(recipientAmount, "stream_cancel_recipient");
+            recipientNet = recipientAmount - fee;
+            agents[s.recipient].nativeEscrowBalance += recipientNet;
+        }
+
+        // Refund payer the unearned portion (no fee on refund)
+        if (payerRefund > 0) {
+            agents[s.payer].nativeEscrowBalance += payerRefund;
+        }
+
+        emit PaymentStreamCancelled(_streamId, msg.sender, recipientNet, payerRefund);
+    }
+
+    /// @notice Get a payment stream by ID.
+    function getPaymentStream(uint256 _streamId) external view returns (
+        uint256 id, address payer, address recipient, uint256 ratePerSecond,
+        uint256 totalDeposited, uint256 totalWithdrawn, uint256 startTime,
+        uint256 stopTime, StreamStatus status, uint256 withdrawable
+    ) {
+        PaymentStream storage s = paymentStreams[_streamId];
+        return (s.id, s.payer, s.recipient, s.ratePerSecond, s.totalDeposited, s.totalWithdrawn,
+                s.startTime, s.stopTime, s.status, streamBalanceOf(_streamId));
     }
 }

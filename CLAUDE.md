@@ -139,6 +139,41 @@ stakeAndJoin{ value: <stakeAmount> }("ipfs://<metadata-cid>")
 // Registers as member + agent in one transaction
 ```
 
+#### Step 7 — Register capabilities (for discovery by other agents)
+```solidity
+setAgentCapabilities(["payment-settlement", "data-oracle", "image-gen"])
+// Other agents can now find you:
+discoverAgentsByCapability("data-oracle", 0, 50)
+```
+
+#### Step 8 — Service agreements (conditional escrow)
+```solidity
+// Client locks escrow and creates agreement
+createServiceAgreement(providerAddr, arbiterAddr, amount, deadline, "Analyze dataset")
+
+// Provider submits proof of delivery
+submitDelivery(agreementId, deliveryHash)
+
+// Client approves → funds released to provider
+approveDelivery(agreementId)
+
+// Or dispute → arbiter resolves
+disputeServiceAgreement(agreementId)
+resolveServiceDispute(agreementId, true)  // arbiter only
+```
+
+#### Step 9 — Payment streams (recurring payments)
+```solidity
+// Create a stream: total deposit streamed over time period
+createPaymentStream(recipientAddr, totalDeposit, startTime, stopTime)
+
+// Recipient withdraws accrued funds
+withdrawFromStream(streamId)
+
+// Either party can cancel (accrued → recipient, remainder → payer)
+cancelPaymentStream(streamId)
+```
+
 ---
 
 ## 2.1 AGENT METADATA SCHEMA
@@ -306,6 +341,34 @@ getConversation(address otherAgent, uint256 offset, uint256 limit) → (uint256[
 getInbox(uint256 offset, uint256 limit) → (uint256[] messageIds, uint256 total)
 ```
 
+#### Capability-indexed discovery
+```
+setAgentCapabilities(string[] capabilities)
+getAgentCapabilities(address agent) → string[]
+discoverAgentsByCapability(string capability, uint256 offset, uint256 limit) → (address[], string[] metadataURIs, uint256 total)
+getCapabilityAgentCount(string capability) → uint256
+```
+
+#### Service agreements (conditional escrow)
+```
+createServiceAgreement(address provider, address arbiter, uint256 amount, uint256 deadline, string description) → agreementId
+submitDelivery(uint256 agreementId, bytes32 deliveryHash)
+approveDelivery(uint256 agreementId)
+disputeServiceAgreement(uint256 agreementId)
+resolveServiceDispute(uint256 agreementId, bool inFavorOfProvider)
+cancelServiceAgreement(uint256 agreementId)
+getServiceAgreement(uint256 agreementId) → ServiceAgreement
+```
+
+#### Payment streams (recurring payments)
+```
+createPaymentStream(address recipient, uint256 totalDeposit, uint256 startTime, uint256 stopTime) → streamId
+streamBalanceOf(uint256 streamId) → uint256
+withdrawFromStream(uint256 streamId)
+cancelPaymentStream(uint256 streamId)
+getPaymentStream(uint256 streamId) → PaymentStream
+```
+
 #### Economic projects
 ```
 createEconomicProject(string metadataURI, uint256 targetBudget, uint256 deadline) → projectId
@@ -434,6 +497,22 @@ FeatureKitSubmitted(uint256 kitId, address submitter, uint8 priority, string met
 FeatureKitUpvoted(uint256 kitId, address voter, uint256 newVoteCount)
 FeatureKitStatusChanged(uint256 kitId, uint8 newStatus, string reason)
 
+// Capability discovery events
+AgentCapabilitiesUpdated(address agent, string[] capabilities)
+
+// Service agreement events
+ServiceAgreementCreated(uint256 agreementId, address client, address provider, address arbiter, uint256 amount, uint256 deadline, string description)
+ServiceDeliverySubmitted(uint256 agreementId, address provider, bytes32 deliveryHash)
+ServiceAgreementCompleted(uint256 agreementId, address client, address provider, uint256 paidAmount)
+ServiceAgreementDisputed(uint256 agreementId, address disputant)
+ServiceDisputeResolved(uint256 agreementId, bool inFavorOfProvider, address resolver)
+ServiceAgreementCancelled(uint256 agreementId, address cancelledBy)
+
+// Payment stream events
+PaymentStreamCreated(uint256 streamId, address payer, address recipient, uint256 ratePerSecond, uint256 totalDeposit, uint256 startTime, uint256 stopTime)
+PaymentStreamWithdrawn(uint256 streamId, address recipient, uint256 amount)
+PaymentStreamCancelled(uint256 streamId, address cancelledBy, uint256 recipientAmount, uint256 payerRefund)
+
 // Onboarding events
 MemberJoinedByStake(address member, uint256 netStake)
 MemberLeftDAO(address member, uint256 refundedStake)
@@ -442,9 +521,11 @@ MemberLeftDAO(address member, uint256 refundedStake)
 ### Key enums & structs
 ```
 // Enums
-PaymentStatus   { Requested, Settled, Cancelled }
-ProjectStatus   { Open, Active, Completed, Cancelled }
-MilestoneType   { REGULAR, PAYMENT }
+PaymentStatus     { Requested, Settled, Cancelled }
+ProjectStatus     { Open, Active, Completed, Cancelled }
+AgreementStatus   { Active, Delivered, Completed, Disputed, Cancelled }
+StreamStatus      { Active, Paused, Cancelled, Completed }
+MilestoneType     { REGULAR, PAYMENT }
 
 // Structs
 AgentProfile          { registered, metadataURI, nativeEscrowBalance }
@@ -452,6 +533,8 @@ AgentPaymentRequest   { id, requester, payer, token, amount, isNative, descripti
 DirectMessage         { id, sender, recipient, contentHash, encryptedContent, timestamp, readByRecipient }
 EconomicProject       { id, proposer, metadataURI, targetBudget, totalFunded, deadline, status, createdAt, contributorCount, funderCount }
 FeatureKit            { id, submitter, priority, status, metadataURI, voteCount, submittedAt }
+ServiceAgreement      { id, client, provider, arbiter, amount, description, status, createdAt, deadline, deliveryHash }
+PaymentStream         { id, payer, recipient, ratePerSecond, totalDeposited, totalWithdrawn, startTime, stopTime, status }
 Member                { memberAddress, votingPower, privileges[], isMember }
 Proposal              { id, description, votingDeadline, executed, proposalPassed, yesVotes, noVotes, previousMilestoneIds[], milestoneId }
 ```
@@ -644,7 +727,7 @@ Tests are in `test/ProjectDAO.test.js` using Mocha/Chai with Hardhat's test help
 - `deploy()` — deploys a fresh `Project_DAO` contract with treasury configured
 - `memberAgent()` — adds a member and registers them as an agent (for quick test setup)
 
-**Test suite: 293 tests across 51 describe blocks.**
+**Test suite: 328 tests across 54 describe blocks.**
 
 **Test coverage areas:**
 - Fee configuration (defaults, owner updates, bounds checking, preview calculations)
@@ -829,10 +912,32 @@ The file `sdk/deployments.json` maps chain IDs to contract addresses and RPC hin
 | `agent.getConversation(otherAgent, offset, limit)` | Get conversation thread with another agent |
 | `agent.getInbox(offset, limit)` | Get IDs of received messages |
 | **Event Listeners** | |
+| **Capability Discovery** | |
+| `agent.setCapabilities(capabilities)` | Set capability tags for this agent |
+| `agent.getCapabilities(address?)` | Get agent's capability tags |
+| `agent.discoverByCapability(capability, offset, limit)` | Find agents by what they can do |
+| `agent.getCapabilityAgentCount(capability)` | Count agents with a capability |
+| **Service Agreements** | |
+| `agent.createServiceAgreement({ provider, arbiter?, amount, deadline, description })` | Create conditional escrow agreement |
+| `agent.submitDelivery(agreementId, deliveryHash)` | Submit proof of delivery (provider) |
+| `agent.approveDelivery(agreementId)` | Approve and release funds (client) |
+| `agent.disputeServiceAgreement(agreementId)` | Dispute agreement (requires arbiter) |
+| `agent.resolveServiceDispute(agreementId, inFavorOfProvider)` | Resolve dispute (arbiter only) |
+| `agent.cancelServiceAgreement(agreementId)` | Cancel active agreement |
+| `agent.getServiceAgreement(agreementId)` | Get agreement details |
+| **Payment Streams** | |
+| `agent.createPaymentStream({ recipient, totalDeposit, startTime, stopTime })` | Create time-based payment stream |
+| `agent.streamBalanceOf(streamId)` | Get current withdrawable balance |
+| `agent.withdrawFromStream(streamId)` | Withdraw accrued funds (recipient) |
+| `agent.cancelPaymentStream(streamId)` | Cancel stream (either party) |
+| `agent.getPaymentStream(streamId)` | Get stream details |
+| **Event Listeners** | |
 | `agent.onPaymentRequest(callback)` | Listen for incoming invoices |
 | `agent.onTransferReceived(callback)` | Listen for incoming transfers |
 | `agent.onDirectMessage(callback)` | Listen for incoming direct messages |
 | `agent.onBroadcast(callback)` | Listen for protocol broadcasts |
+| `agent.onServiceAgreement(callback)` | Listen for new service agreements (as provider) |
+| `agent.onPaymentStream(callback)` | Listen for new payment streams (as recipient) |
 | `agent.removeAllListeners()` | Stop all listeners |
 
 ---
