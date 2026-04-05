@@ -144,6 +144,7 @@ export const PROJECT_DAO_ABI = [
   'function referralTier2Bps() external view returns (uint256)',
   'event ReferralRecorded(address indexed agent, address indexed referrer)',
   'event ReferralRewardPaid(address indexed referrer, address indexed source, uint256 amount, uint8 tier)',
+  'event ReferralConfigUpdated(uint256 tier1Bps, uint256 tier2Bps)',
 
   // ─── Network Effect: Trust Graph (Endorsements) ───────────────────────
   'function endorseAgent(uint256 _agreementId, address _endorsed, string calldata _capability) external',
