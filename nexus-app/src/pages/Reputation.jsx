@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useApp } from '../store/appStore';
 import { motion as Motion } from 'framer-motion';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from 'recharts';
-import { Trophy, Star, Medal, Target, TrendingUp, Award, Crown, Zap, RefreshCw, Shield } from 'lucide-react';
+import { Trophy, Star, Medal, Target, TrendingUp, Award, Crown, Zap, RefreshCw, Shield, Bot, Activity, AlertCircle } from 'lucide-react';
 
 const anim = (i) => ({ initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, transition: { delay: i * 0.05 } });
 
@@ -24,48 +25,11 @@ function shortenAddress(addr) {
 }
 
 export default function Reputation() {
-  const { getDaoReadContract, walletAddress } = useApp();
-  const [leaderboard, setLeaderboard] = useState([]);
-  const [myReputation, setMyReputation] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  const loadReputation = useCallback(async () => {
-    const contract = getDaoReadContract();
-    if (!contract) { setLoading(false); return; }
-    try {
-      setLoading(true);
-      const [agents_, scores, tiers, registered] = await contract.getReputationLeaderboard(0, 50);
-      const entries = agents_.map((addr, i) => ({
-        address: addr,
-        score: Number(scores[i]),
-        tier: Number(tiers[i]),
-        registered: registered[i],
-      })).filter(a => a.registered);
-      // Sort by score descending
-      entries.sort((a, b) => b.score - a.score);
-      setLeaderboard(entries);
-
-      if (walletAddress) {
-        try {
-          const r = await contract.getAgentReputation(walletAddress);
-          setMyReputation({
-            score: Number(r.score),
-            tier: Number(r.tier),
-            transactionCount: Number(r.transactionCount),
-            lastActiveAt: Number(r.lastActiveAt),
-            registeredAt: Number(r.registeredAt),
-            messagingFeeDiscount: Number(r.messagingFeeDiscount),
-          });
-        } catch {
-          setMyReputation(null);
-        }
-      }
-    } catch (e) {
-      console.error('Failed to load reputation:', e);
-    } finally {
-      setLoading(false);
-    }
-  }, [getDaoReadContract, walletAddress]);
+  const {
+    walletAddress,
+    reputationLeaderboard: leaderboard, myReputation, reputationLoading: loading,
+    loadReputation, dataLoadError,
+  } = useApp();
 
   useEffect(() => { loadReputation(); }, [loadReputation]);
 
@@ -76,20 +40,36 @@ export default function Reputation() {
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
-      <div>
-        <h1 className="text-2xl font-bold text-glow-cyan flex items-center gap-3">
-          <Trophy className="text-amber-400" size={24} />
-          Reputation Leaderboard
-        </h1>
-        <p className="text-nexus-text-dim text-sm mt-1">
-          On-chain reputation derived from commerce activity. More volume, more transactions, more reputation.
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-glow-cyan flex items-center gap-3">
+            <Trophy className="text-amber-400" size={24} />
+            Reputation Leaderboard
+          </h1>
+          <p className="text-nexus-text-dim text-sm mt-1">
+            On-chain reputation derived from commerce activity. More volume, more transactions, more reputation.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link to="/agent-economy" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-nexus-cyan/10 border border-nexus-cyan/20 text-xs text-nexus-cyan hover:bg-nexus-cyan/20 transition-colors">
+            <Bot size={13} /> Agent Console
+          </Link>
+          <Link to="/commerce-blackhole" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-nexus-border text-xs text-nexus-text-dim hover:text-white hover:border-nexus-cyan/30 transition-colors">
+            <Activity size={13} /> Commerce Metrics
+          </Link>
+        </div>
       </div>
 
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <RefreshCw className="animate-spin text-nexus-cyan" size={24} />
           <span className="ml-3 text-nexus-text-dim">Loading reputation data...</span>
+        </div>
+      ) : dataLoadError && leaderboard.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <AlertCircle size={32} className="text-amber-400 mb-3" />
+          <p className="text-nexus-text-dim text-sm">{dataLoadError}</p>
+          <button onClick={loadReputation} className="mt-3 text-xs text-nexus-cyan hover:underline">Retry</button>
         </div>
       ) : (
         <>

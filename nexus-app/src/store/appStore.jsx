@@ -963,6 +963,79 @@ export function useAppState() {
     }
   }, [getDaoWriteContract]);
 
+  // ─── Reputation state ──────────────────────────────────────────────────────
+  const [reputationLeaderboard, setReputationLeaderboard] = useState([]);
+  const [myReputation, setMyReputation] = useState(null);
+  const [reputationLoading, setReputationLoading] = useState(false);
+
+  const loadReputation = useCallback(async () => {
+    const contract = getDaoReadContract();
+    if (!contract) return;
+    setReputationLoading(true);
+    try {
+      const [agents_, scores, tiers, registered] = await contract.getReputationLeaderboard(0, 50);
+      const entries = agents_.map((addr, i) => ({
+        address: addr,
+        score: Number(scores[i]),
+        tier: Number(tiers[i]),
+        registered: registered[i],
+      })).filter(a => a.registered).sort((a, b) => b.score - a.score);
+      setReputationLeaderboard(entries);
+
+      if (walletAddress) {
+        try {
+          const r = await contract.getAgentReputation(walletAddress);
+          setMyReputation({
+            score: Number(r.score),
+            tier: Number(r.tier),
+            transactionCount: Number(r.transactionCount),
+            lastActiveAt: Number(r.lastActiveAt),
+            registeredAt: Number(r.registeredAt),
+            messagingFeeDiscount: Number(r.messagingFeeDiscount),
+          });
+        } catch {
+          setMyReputation(null);
+        }
+      }
+    } catch (err) { handleLoadError('reputation', err); }
+    finally { setReputationLoading(false); }
+  }, [getDaoReadContract, walletAddress, handleLoadError]);
+
+  // ─── Commerce Blackhole state ─────────────────────────────────────────────
+  const [commerceMetrics, setCommerceMetrics] = useState(null);
+  const [agentCommerceMetrics, setAgentCommerceMetrics] = useState(null);
+  const [commerceLoading, setCommerceLoading] = useState(false);
+
+  const loadCommerceMetrics = useCallback(async () => {
+    const contract = getDaoReadContract();
+    if (!contract) return;
+    setCommerceLoading(true);
+    try {
+      const m = await contract.getBlackholeMetrics();
+      setCommerceMetrics({
+        totalVolume: m._totalCommerceVolume,
+        totalFees: m._totalFeesCollected,
+        agentCount: Number(m._agentCount),
+        feeBps: Number(m._feeBps),
+        exitFeeBps: Number(m._exitFeeBps),
+        messagingFee: m._messagingFeeWei,
+        aiServiceFee: m._aiServiceFeeWei,
+        assetFlatFee: m._assetTransferFlatFeeWei,
+      });
+
+      if (walletAddress) {
+        const am = await contract.getAgentCommerceMetrics(walletAddress);
+        setAgentCommerceMetrics({
+          volume: am.volume,
+          feesPaid: am.feesPaid,
+          escrow: am.escrowBalance,
+          registered: am.registered,
+        });
+      }
+    } catch (err) { handleLoadError('commerce metrics', err); }
+    finally { setCommerceLoading(false); }
+  }, [getDaoReadContract, walletAddress, handleLoadError]);
+
   // ─── Feature Kit state ────────────────────────────────────────────────────
   const [featureKits, setFeatureKits] = useState([]);
   const [featureKitsLoading, setFeatureKitsLoading] = useState(false);
@@ -1042,6 +1115,10 @@ export function useAppState() {
     // direct messaging
     inbox, inboxLoading, conversationMessages, conversationLoading,
     loadInbox, loadConversation, agentSendMessage, agentMarkMessageRead,
+    // reputation
+    reputationLeaderboard, myReputation, reputationLoading, loadReputation,
+    // commerce blackhole
+    commerceMetrics, agentCommerceMetrics, commerceLoading, loadCommerceMetrics,
     // feature kits
     featureKits, featureKitsLoading,
     loadFeatureKits, submitFeatureKit, upvoteFeatureKit,
@@ -1068,6 +1145,8 @@ export function useAppState() {
     agentCreatePaymentRequest, agentSettlePaymentRequest, agentCancelPaymentRequest,
     inbox, inboxLoading, conversationMessages, conversationLoading,
     loadInbox, loadConversation, agentSendMessage, agentMarkMessageRead,
+    reputationLeaderboard, myReputation, reputationLoading, loadReputation,
+    commerceMetrics, agentCommerceMetrics, commerceLoading, loadCommerceMetrics,
     featureKits, featureKitsLoading,
     loadFeatureKits, submitFeatureKit, upvoteFeatureKit,
     stakeAndJoin, leaveDAO,

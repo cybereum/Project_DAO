@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { motion as Motion } from 'framer-motion';
 import { formatEther, parseEther } from 'ethers';
 import {
   Activity, TrendingUp, Zap, DollarSign, Users, ArrowDownRight,
-  Send, RefreshCw, Shield, Eye, BarChart3, Gauge
+  Send, RefreshCw, Shield, Eye, BarChart3, Gauge, Bot, Trophy, AlertCircle
 } from 'lucide-react';
 import { useApp, waitWithTimeout } from '../store/appStore';
 
@@ -35,10 +36,12 @@ function FeeRail({ label, bps, description }) {
 }
 
 export default function CommerceBlackhole() {
-  const { getDaoReadContract, getDaoWriteContract, walletAddress } = useApp();
-  const [metrics, setMetrics] = useState(null);
-  const [agentMetrics, setAgentMetrics] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const {
+    txPending,
+    getDaoWriteContract, dataLoadError,
+    commerceMetrics: metrics, agentCommerceMetrics: agentMetrics,
+    commerceLoading: loading, loadCommerceMetrics,
+  } = useApp();
 
   // Batch transfer state
   const [batchRecipients, setBatchRecipients] = useState('');
@@ -46,40 +49,7 @@ export default function CommerceBlackhole() {
   const [batchMemos, setBatchMemos] = useState('');
   const [batchStatus, setBatchStatus] = useState('');
 
-  const loadMetrics = useCallback(async () => {
-    const contract = getDaoReadContract();
-    if (!contract) { setLoading(false); return; }
-    try {
-      setLoading(true);
-      const m = await contract.getBlackholeMetrics();
-      setMetrics({
-        totalVolume: m._totalCommerceVolume,
-        totalFees: m._totalFeesCollected,
-        agentCount: Number(m._agentCount),
-        feeBps: Number(m._feeBps),
-        exitFeeBps: Number(m._exitFeeBps),
-        messagingFee: m._messagingFeeWei,
-        aiServiceFee: m._aiServiceFeeWei,
-        assetFlatFee: m._assetTransferFlatFeeWei,
-      });
-
-      if (walletAddress) {
-        const am = await contract.getAgentCommerceMetrics(walletAddress);
-        setAgentMetrics({
-          volume: am.volume,
-          feesPaid: am.feesPaid,
-          escrow: am.escrowBalance,
-          registered: am.registered,
-        });
-      }
-    } catch (e) {
-      console.error('Failed to load blackhole metrics:', e);
-    } finally {
-      setLoading(false);
-    }
-  }, [getDaoReadContract, walletAddress]);
-
-  useEffect(() => { loadMetrics(); }, [loadMetrics]);
+  useEffect(() => { loadCommerceMetrics(); }, [loadCommerceMetrics]);
 
   const handleBatchTransfer = async () => {
     const contract = await getDaoWriteContract();
@@ -102,7 +72,7 @@ export default function CommerceBlackhole() {
       setBatchRecipients('');
       setBatchAmounts('');
       setBatchMemos('');
-      loadMetrics();
+      loadCommerceMetrics();
     } catch (e) {
       setBatchStatus(`Error: ${e.reason || e.message}`);
     }
@@ -118,24 +88,40 @@ export default function CommerceBlackhole() {
   return (
     <div className="space-y-8 max-w-6xl mx-auto">
       {/* Header */}
-      <div>
-        <Motion.h1
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-3xl font-bold flex items-center gap-3"
-        >
-          <Activity className="text-red-500" size={28} />
-          Commerce Blackhole
-        </Motion.h1>
-        <p className="text-nexus-text-dim mt-2">
-          Every value movement is tracked. Every exit is taxed. The blackhole sucks in all agent commerce.
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <Motion.h1
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-3xl font-bold flex items-center gap-3"
+          >
+            <Activity className="text-red-500" size={28} />
+            Commerce Blackhole
+          </Motion.h1>
+          <p className="text-nexus-text-dim mt-2">
+            Every value movement is tracked. Every exit is taxed. The blackhole sucks in all agent commerce.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link to="/agent-economy" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-nexus-cyan/10 border border-nexus-cyan/20 text-xs text-nexus-cyan hover:bg-nexus-cyan/20 transition-colors">
+            <Bot size={13} /> Agent Console
+          </Link>
+          <Link to="/reputation" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-nexus-border text-xs text-nexus-text-dim hover:text-white hover:border-nexus-cyan/30 transition-colors">
+            <Trophy size={13} /> Reputation
+          </Link>
+        </div>
       </div>
 
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <RefreshCw className="animate-spin text-nexus-cyan" size={24} />
           <span className="ml-3 text-nexus-text-dim">Loading blackhole metrics...</span>
+        </div>
+      ) : dataLoadError && !metrics ? (
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <AlertCircle size={32} className="text-amber-400 mb-3" />
+          <p className="text-nexus-text-dim text-sm">{dataLoadError}</p>
+          <button onClick={loadCommerceMetrics} className="mt-3 text-xs text-nexus-cyan hover:underline">Retry</button>
         </div>
       ) : metrics ? (
         <>
@@ -216,9 +202,14 @@ export default function CommerceBlackhole() {
           {/* Agent Metrics */}
           {agentMetrics && agentMetrics.registered && (
             <div className="p-6 rounded-2xl border border-nexus-border bg-nexus-surface/50">
-              <div className="flex items-center gap-2 mb-5">
-                <Eye size={18} className="text-nexus-cyan" />
-                <h3 className="font-semibold text-base">Your Commerce Footprint</h3>
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-2">
+                  <Eye size={18} className="text-nexus-cyan" />
+                  <h3 className="font-semibold text-base">Your Commerce Footprint</h3>
+                </div>
+                <Link to="/reputation" className="text-xs text-nexus-cyan hover:underline flex items-center gap-1">
+                  <Trophy size={12} /> View your reputation tier
+                </Link>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <StatCard
@@ -285,9 +276,11 @@ export default function CommerceBlackhole() {
             </div>
             <button
               onClick={handleBatchTransfer}
-              className="px-6 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-medium flex items-center gap-2 transition"
+              disabled={txPending}
+              className="px-6 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-medium flex items-center gap-2 transition"
             >
-              <Send size={14} /> Execute Batch Transfer
+              {txPending ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
+              Execute Batch Transfer
             </button>
             {batchStatus && (
               <p className={`text-xs mt-3 ${batchStatus.startsWith('Error') ? 'text-red-400' : 'text-green-400'}`}>

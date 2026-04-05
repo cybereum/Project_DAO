@@ -5,8 +5,9 @@ import {
   Bot, Wallet, ArrowUpRight, ArrowDownLeft, Send, FileText,
   CheckCircle, XCircle, Clock, Zap, Info, Copy, ExternalLink,
   RefreshCw, Shield, Twitter, Share2, Link2, Coins, Image,
-  MessageCircle, Inbox, Lock, Eye
+  MessageCircle, Inbox, Lock, Eye, Trophy, Activity
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { generateReferralLink, markFunnelStep } from '../lib/utm.js';
 import { trackEvent } from '../lib/analytics.js';
 import { useApp } from '../store/appStore';
@@ -283,7 +284,16 @@ export default function AgentEconomy() {
             Every transfer routes a minuscule protocol fee to <span className="text-nexus-cyan font-mono">cybereum.eth</span> — non-bypassable by design.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <Link to="/reputation" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-nexus-border text-xs text-nexus-text-dim hover:text-white hover:border-nexus-cyan/30 transition-colors">
+            <Trophy size={13} /> Reputation
+          </Link>
+          <Link to="/commerce-blackhole" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-nexus-border text-xs text-nexus-text-dim hover:text-white hover:border-nexus-cyan/30 transition-colors">
+            <Activity size={13} /> Commerce
+          </Link>
+          <Link to="/messages" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-nexus-border text-xs text-nexus-text-dim hover:text-white hover:border-nexus-cyan/30 transition-colors">
+            <MessageCircle size={13} /> Messages
+          </Link>
           <button onClick={refresh} className="p-2 rounded-lg border border-nexus-border text-nexus-text-dim hover:text-nexus-text transition-colors" title="Refresh">
             <RefreshCw size={16} />
           </button>
