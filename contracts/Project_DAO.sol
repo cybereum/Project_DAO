@@ -2807,11 +2807,10 @@ contract Project_DAO {
             emit ReferralRecorded(msg.sender, _referrer);
         }
 
+        // _collectNativeFee → _recordVolume → _distributeReferralRewards
+        // Referral rewards are automatically distributed via _recordVolume.
         uint256 fee = _collectNativeFee(msg.value, "stakeAndJoinWithReferral");
         uint256 netStake = msg.value - fee;
-
-        // Pay referral rewards from the fee already collected
-        _distributeReferralRewards(msg.sender, fee);
 
         memberStakes[msg.sender] = netStake;
 
@@ -2927,7 +2926,7 @@ contract Project_DAO {
         uint256 _agreementId,
         address _endorsed,
         string calldata _capability
-    ) external onlyRegisteredAgent whenNotPaused {
+    ) external onlyRegisteredAgent whenNotPaused nonReentrant {
         ServiceAgreement storage a = serviceAgreements[_agreementId];
         require(a.id > 0, "Agreement not found.");
         require(a.status == AgreementStatus.Completed, "Agreement must be completed.");
