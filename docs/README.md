@@ -11,9 +11,18 @@ This follows the **LLM knowledge base pattern**: structured markdown files organ
 
 - **Index files** (`_index.md`) in each directory list all articles with one-line summaries — LLMs read these first to decide what to deep-dive into
 - **Backlinks** at the bottom of each article connect related topics
-- **Raw intake** (`raw/`) is where new source material lands before being compiled into the wiki
-- **Reviews and TODOs** are tracked centrally and linked from relevant articles
+- **Raw intake** (`internal/raw/`) is where new source material lands before being compiled into the wiki
+- **Reviews and TODOs** are tracked centrally in `internal/` and linked from relevant articles
 - The knowledge base grows incrementally — new articles are added as the project evolves
+
+---
+
+## External / Internal Split
+
+Documentation is split into two top-level directories:
+
+- **`external/`** — Public-facing docs safe to share: protocol design, integration guides, agent knowledge base, product info, technical wiki
+- **`internal/`** — Internal-only docs: TODOs, reviews, audit findings, roadmap, deployment readiness, architecture research, raw intake
 
 ---
 
@@ -21,87 +30,96 @@ This follows the **LLM knowledge base pattern**: structured markdown files organ
 
 ```
 docs/
-├── README.md                ← YOU ARE HERE — master index
-├── _todo.md                 ← Centralized TODO/roadmap tracker
-├── _reviews.md              ← Review log (audits, code reviews, doc reviews)
+├── README.md                          ← YOU ARE HERE — master index
 │
-├── protocol/                ← Core protocol design & architecture
-│   ├── _index.md
-│   ├── architecture.md      ← System architecture & contract structure
-│   ├── fee-model.md         ← Cybereum fee rail design
-│   ├── security-model.md    ← Access control, reentrancy, threat model
-│   ├── contract-reference.md ← Function signatures & state reference
-│   └── audit-findings.md    ← Security audit findings & status
-│
-├── guides/                  ← Audience-oriented how-to guides
-│   ├── _index.md
-│   ├── agent-onboarding.md  ← AI agent getting-started
-│   ├── agent-quickstart.md  ← Minimal Solidity-level quickstart
-│   ├── builder-integration.md ← Developer integration checklist
-│   ├── operations.md        ← Day-to-day operational procedures
-│   └── testing.md           ← Test architecture & writing tests
-│
-├── product/                 ← Product, business & project management
-│   ├── _index.md
-│   ├── product-guide.md     ← Vision, personas, features, KPIs
-│   ├── roadmap.md           ← Implementation plan & work streams
-│   ├── changelog.md         ← Version history
-│   └── deployment-readiness.md ← Production readiness scorecard
-│
-├── knowledge-base/          ← Growing wiki of relevant topics
-│   ├── _index.md            ← Master topic index
-│   ├── concepts/            ← Core technical concepts
+├── external/                          ← PUBLIC-FACING DOCUMENTATION
+│   ├── _index.md                      ← External docs index
+│   │
+│   ├── protocol/                      ← Core protocol design & architecture
 │   │   ├── _index.md
-│   │   ├── dao-governance.md
-│   │   ├── escrow-patterns.md
-│   │   ├── agent-economies.md
-│   │   ├── smart-contract-security.md
-│   │   ├── fee-rail-design.md
-│   │   └── token-standards.md
-│   ├── research/            ← Emerging tech & research directions
+│   │   ├── architecture.md            ← System architecture & contract structure
+│   │   ├── fee-model.md               ← Cybereum fee rail design
+│   │   ├── security-model.md          ← Access control, reentrancy, threat model
+│   │   └── contract-reference.md      ← Function signatures & state reference
+│   │
+│   ├── guides/                        ← Audience-oriented how-to guides
 │   │   ├── _index.md
-│   │   ├── l2-scaling.md
-│   │   ├── account-abstraction.md
-│   │   ├── ai-agent-protocols.md
-│   │   ├── cross-chain-interop.md
-│   │   └── formal-verification.md
-│   ├── patterns/            ← Design patterns & best practices
+│   │   ├── agent-onboarding.md        ← AI agent getting-started
+│   │   ├── agent-quickstart.md        ← Minimal Solidity-level quickstart
+│   │   ├── builder-integration.md     ← Developer integration checklist
+│   │   └── operations.md              ← Day-to-day operational procedures
+│   │
+│   ├── product/                       ← Product & business (public)
 │   │   ├── _index.md
-│   │   ├── diamond-proxy.md
-│   │   ├── reentrancy-guards.md
-│   │   ├── access-control-patterns.md
-│   │   └── upgradeable-contracts.md
-│   └── references/          ← Standards, frameworks & external refs
-│       ├── _index.md
-│       ├── eip-standards.md
-│       ├── openzeppelin-library.md
-│       └── project-management-governance.md
+│   │   ├── product-guide.md           ← Vision, personas, features, KPIs
+│   │   └── changelog.md               ← Version history
+│   │
+│   ├── agents/                        ← AGENT KNOWLEDGE BASE (SDK + contract usage)
+│   │   ├── _index.md                  ← Agent KB master index
+│   │   ├── workflows/                 ← Step-by-step operational workflows
+│   │   │   ├── onboarding.md          ← Zero-to-transacting flow
+│   │   │   ├── escrow.md              ← Deposit, withdraw, transfer
+│   │   │   ├── payments.md            ← Payment requests & batch settlement
+│   │   │   ├── messaging.md           ← Secure direct messaging
+│   │   │   ├── discovery.md           ← Agent discovery & evaluation
+│   │   │   └── metadata.md            ← Metadata schema & IPFS publishing
+│   │   ├── recipes/                   ← Copy-paste code for specific tasks
+│   │   │   ├── service-agreements.md  ← Conditional escrow
+│   │   │   ├── payment-streams.md     ← Recurring payments
+│   │   │   ├── event-listeners.md     ← Event-driven agents
+│   │   │   ├── fee-optimization.md    ← Fee calculation & batching
+│   │   │   └── reputation.md          ← Reputation system
+│   │   ├── troubleshooting/           ← Error reference & debugging
+│   │   │   ├── error-reference.md     ← Every SDK/contract error
+│   │   │   ├── common-issues.md       ← FAQ
+│   │   │   └── security.md            ← Agent security practices
+│   │   └── patterns/                  ← Advanced multi-agent patterns
+│   │       ├── multi-agent.md         ← Coordination & delegation
+│   │       └── autonomous-loop.md     ← Event-driven agent architecture
+│   │
+│   └── knowledge-base/                ← Growing wiki of relevant topics
+│       ├── _index.md                  ← Master topic index
+│       ├── concepts/                  ← Core technical concepts
+│       │   ├── dao-governance.md
+│       │   ├── escrow-patterns.md
+│       │   ├── agent-economies.md
+│       │   ├── smart-contract-security.md
+│       │   ├── fee-rail-design.md
+│       │   └── token-standards.md
+│       ├── research/                  ← Emerging tech (public)
+│       │   └── ai-agent-protocols.md
+│       ├── patterns/                  ← Design patterns
+│       │   ├── reentrancy-guards.md
+│       │   ├── access-control-patterns.md
+│       │   └── upgradeable-contracts.md
+│       └── references/                ← Standards & external refs
+│           ├── eip-standards.md
+│           ├── openzeppelin-library.md
+│           └── project-management-governance.md
 │
-├── agents/                  ← AGENT KNOWLEDGE BASE (SDK + contract usage)
-│   ├── _index.md            ← Agent KB master index
-│   ├── workflows/           ← Step-by-step operational workflows
-│   │   ├── onboarding.md    ← Zero-to-transacting flow
-│   │   ├── escrow.md        ← Deposit, withdraw, transfer
-│   │   ├── payments.md      ← Payment requests & batch settlement
-│   │   ├── messaging.md     ← Secure direct messaging
-│   │   ├── discovery.md     ← Agent discovery & evaluation
-│   │   └── metadata.md      ← Metadata schema & IPFS publishing
-│   ├── recipes/             ← Copy-paste code for specific tasks
-│   │   ├── service-agreements.md  ← Conditional escrow
-│   │   ├── payment-streams.md     ← Recurring payments
-│   │   ├── event-listeners.md     ← Event-driven agents
-│   │   ├── fee-optimization.md    ← Fee calculation & batching
-│   │   └── reputation.md         ← Reputation system
-│   ├── troubleshooting/     ← Error reference & debugging
-│   │   ├── error-reference.md ← Every SDK/contract error
-│   │   ├── common-issues.md   ← FAQ
-│   │   └── security.md        ← Agent security practices
-│   └── patterns/            ← Advanced multi-agent patterns
-│       ├── multi-agent.md   ← Coordination & delegation
-│       └── autonomous-loop.md ← Event-driven agent architecture
-│
-└── raw/                     ← Raw ingested material (articles, notes, papers)
-    └── _index.md            ← Intake log & processing status
+└── internal/                          ← INTERNAL-ONLY DOCUMENTATION
+    ├── _index.md                      ← Internal docs index
+    ├── _todo.md                       ← Centralized TODO/roadmap tracker
+    ├── _reviews.md                    ← Review log (audits, code reviews)
+    │
+    ├── dev/                           ← Development & security
+    │   ├── audit-findings.md          ← Security audit findings & status
+    │   └── testing.md                 ← Test architecture & writing tests
+    │
+    ├── planning/                      ← Planning & readiness
+    │   ├── roadmap.md                 ← Implementation plan & work streams
+    │   └── deployment-readiness.md    ← Production readiness scorecard
+    │
+    ├── architecture/                  ← Architecture research
+    │   ├── diamond-proxy.md           ← EIP-2535 contract splitting
+    │   ├── l2-scaling.md              ← L2 rollup deployment
+    │   ├── account-abstraction.md     ← ERC-4337 smart accounts
+    │   ├── cross-chain-interop.md     ← Multi-chain bridges
+    │   └── formal-verification.md     ← Contract correctness proofs
+    │
+    └── raw/                           ← Raw ingested material
+        ├── raw/_index.md              ← General intake log
+        └── agents/_index.md           ← Agent-specific intake log
 ```
 
 ---
@@ -110,21 +128,21 @@ docs/
 
 | I want to... | Go to |
 |---|---|
-| Understand the protocol architecture | [protocol/architecture.md](protocol/architecture.md) |
-| Onboard an AI agent (quick) | [guides/agent-onboarding.md](guides/agent-onboarding.md) |
-| **Full agent SDK knowledge base** | [agents/_index.md](agents/_index.md) |
-| Agent onboarding (code-first) | [agents/workflows/onboarding.md](agents/workflows/onboarding.md) |
-| Debug an agent error | [agents/troubleshooting/error-reference.md](agents/troubleshooting/error-reference.md) |
-| Multi-agent coordination | [agents/patterns/multi-agent.md](agents/patterns/multi-agent.md) |
-| Review audit findings | [protocol/audit-findings.md](protocol/audit-findings.md) |
-| Check production readiness | [product/deployment-readiness.md](product/deployment-readiness.md) |
-| See the project roadmap | [product/roadmap.md](product/roadmap.md) |
-| Track open TODOs | [_todo.md](_todo.md) |
-| Review recent reviews | [_reviews.md](_reviews.md) |
-| Learn about DAO governance theory | [knowledge-base/concepts/dao-governance.md](knowledge-base/concepts/dao-governance.md) |
-| Research L2 scaling options | [knowledge-base/research/l2-scaling.md](knowledge-base/research/l2-scaling.md) |
-| Understand the Diamond proxy pattern | [knowledge-base/patterns/diamond-proxy.md](knowledge-base/patterns/diamond-proxy.md) |
-| Add new source material | [raw/_index.md](raw/_index.md) |
+| Understand the protocol architecture | [external/protocol/architecture.md](external/protocol/architecture.md) |
+| Onboard an AI agent (quick) | [external/guides/agent-onboarding.md](external/guides/agent-onboarding.md) |
+| **Full agent SDK knowledge base** | [external/agents/_index.md](external/agents/_index.md) |
+| Agent onboarding (code-first) | [external/agents/workflows/onboarding.md](external/agents/workflows/onboarding.md) |
+| Debug an agent error | [external/agents/troubleshooting/error-reference.md](external/agents/troubleshooting/error-reference.md) |
+| Multi-agent coordination | [external/agents/patterns/multi-agent.md](external/agents/patterns/multi-agent.md) |
+| Review audit findings | [internal/dev/audit-findings.md](internal/dev/audit-findings.md) |
+| Check production readiness | [internal/planning/deployment-readiness.md](internal/planning/deployment-readiness.md) |
+| See the project roadmap | [internal/planning/roadmap.md](internal/planning/roadmap.md) |
+| Track open TODOs | [internal/_todo.md](internal/_todo.md) |
+| Review recent reviews | [internal/_reviews.md](internal/_reviews.md) |
+| Learn about DAO governance theory | [external/knowledge-base/concepts/dao-governance.md](external/knowledge-base/concepts/dao-governance.md) |
+| Research L2 scaling options | [internal/architecture/l2-scaling.md](internal/architecture/l2-scaling.md) |
+| Understand the Diamond proxy pattern | [internal/architecture/diamond-proxy.md](internal/architecture/diamond-proxy.md) |
+| Add new source material | [internal/raw/raw/_index.md](internal/raw/raw/_index.md) |
 
 ---
 
@@ -133,6 +151,7 @@ docs/
 The root-level `.md` files (README.md, CLAUDE.md, etc.) remain the **primary entry points** for developers and AI agents cloning the repo. This `docs/` knowledge base is a **deeper, cross-linked, and growing** companion that:
 
 - Organizes the same information by topic rather than by audience
+- Separates public-facing docs (`external/`) from internal planning (`internal/`)
 - Adds theoretical and research context that doesn't belong in operational docs
 - Tracks reviews, TODOs, and ongoing investigations
 - Serves as a queryable wiki for LLM-assisted research and Q&A
@@ -142,8 +161,8 @@ The root-level `.md` files (README.md, CLAUDE.md, etc.) remain the **primary ent
 ## Contributing to the Knowledge Base
 
 ### For LLM agents
-1. Drop new source material into `raw/` and update `raw/_index.md`
-2. Compile relevant content into the appropriate section
+1. Drop new source material into `internal/raw/` and update the intake log
+2. Compile relevant content into the appropriate section (`external/` for public, `internal/` for private)
 3. Update the section's `_index.md` with a one-line summary
 4. Add backlinks to related articles
 5. Run a periodic health check: look for broken links, stale content, missing cross-references
@@ -151,9 +170,9 @@ The root-level `.md` files (README.md, CLAUDE.md, etc.) remain the **primary ent
 ### For humans
 1. Use Obsidian or any markdown editor to browse and edit
 2. The `_index.md` files serve as table-of-contents for each section
-3. File issues or add TODOs to `_todo.md` for things that need attention
+3. File issues or add TODOs to `internal/_todo.md` for things that need attention
 
 ---
 
 *Last updated: 2026-04-05*
-*Articles: 50 | Sections: 5 | Knowledge base topics: 18 | Agent articles: 16*
+*External articles: 40 | Internal articles: 13 | Total: 53*
