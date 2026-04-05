@@ -139,6 +139,7 @@ export const PROJECT_DAO_ABI = [
   // ─── Network Effect: Referral Rewards ─────────────────────────────────
   'function stakeAndJoinWithReferral(string calldata metadataURI, address _referrer) external payable',
   'function getAgentReferralStats(address _agent) external view returns (address referrer, uint256 referralCount, uint256 referralEarnings)',
+  'function withdrawReferralEarnings() external',
   'function referralRewardBps() external view returns (uint256)',
   'function referralTier2Bps() external view returns (uint256)',
   'event ReferralRecorded(address indexed agent, address indexed referrer)',
@@ -146,10 +147,13 @@ export const PROJECT_DAO_ABI = [
 
   // ─── Network Effect: Trust Graph (Endorsements) ───────────────────────
   'function endorseAgent(uint256 _agreementId, address _endorsed, string calldata _capability) external',
+  'function revokeEndorsement(uint256 _endorsementId) external',
   'function getAgentTrustScore(address _agent) external view returns (uint256 trustScore, uint256 endorsementCount)',
+  'function getTimeWeightedTrustScore(address _agent) external view returns (uint256 weightedScore, uint256 activeEndorsements)',
   'function getAgentEndorsements(address _agent, uint256 offset, uint256 limit) external view returns (uint256[] endorsementIds, uint256 total)',
-  'function getEndorsement(uint256 _endorsementId) external view returns (uint256 id, address endorser, address endorsed, uint256 agreementId, string capability, uint256 weight, uint256 timestamp)',
+  'function getEndorsement(uint256 _endorsementId) external view returns (uint256 id, address endorser, address endorsed, uint256 agreementId, string capability, uint256 weight, uint256 timestamp, bool revoked)',
   'event EndorsementCreated(uint256 indexed endorsementId, address indexed endorser, address indexed endorsed, uint256 agreementId, string capability, uint256 weight)',
+  'event EndorsementRevoked(uint256 indexed endorsementId, address indexed endorser, address indexed endorsed)',
 
   // ─── Network Effect: Network Growth Milestones ────────────────────────
   'function getNetworkStats() external view returns (uint256 totalAgents, uint256 totalMembers, uint256 currentMilestone, uint256 nextMilestone, uint256 agentsUntilNextMilestone, uint256 totalVolume, uint256 totalFees)',

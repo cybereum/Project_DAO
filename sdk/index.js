@@ -1162,7 +1162,7 @@ export class AgentClient {
   /**
    * Get a single endorsement by ID.
    * @param {number} endorsementId
-   * @returns {Promise<{id, endorser, endorsed, agreementId, capability, weight, timestamp}>}
+   * @returns {Promise<{id, endorser, endorsed, agreementId, capability, weight, timestamp, revoked}>}
    */
   async getEndorsement(endorsementId) {
     const e = await this.contract.getEndorsement(endorsementId);
@@ -1174,7 +1174,39 @@ export class AgentClient {
       capability: e.capability,
       weight: Number(e.weight),
       timestamp: Number(e.timestamp),
+      revoked: e.revoked,
     };
+  }
+
+  /**
+   * Revoke a previously given endorsement. Only the original endorser can revoke.
+   * @param {number} endorsementId
+   */
+  async revokeEndorsement(endorsementId) {
+    const tx = await this._write(() => this.contract.revokeEndorsement(endorsementId));
+    return this._waitForTx(tx);
+  }
+
+  /**
+   * Get time-weighted trust score (recent endorsements worth more).
+   * @param {string} [address] Agent address (defaults to this agent).
+   * @returns {Promise<{weightedScore: number, activeEndorsements: number}>}
+   */
+  async getTimeWeightedTrustScore(address) {
+    const addr = address || this.address;
+    const s = await this.contract.getTimeWeightedTrustScore(addr);
+    return {
+      weightedScore: Number(s.weightedScore),
+      activeEndorsements: Number(s.activeEndorsements),
+    };
+  }
+
+  /**
+   * Withdraw accumulated referral earnings. Works even if deregistered.
+   */
+  async withdrawReferralEarnings() {
+    const tx = await this._write(() => this.contract.withdrawReferralEarnings());
+    return this._waitForTx(tx);
   }
 
   // ─── Network Effect: Network Growth Stats ─────────────────────────────

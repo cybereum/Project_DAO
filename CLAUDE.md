@@ -426,6 +426,7 @@ setMinStakeToJoin(uint256 minStake)                              onlyOwner
 #### Referral rewards (network effect)
 ```
 stakeAndJoinWithReferral(string metadataURI, address referrer)   payable
+withdrawReferralEarnings()                                       works even if deregistered
 getAgentReferralStats(address agent) → (address referrer, uint256 referralCount, uint256 referralEarnings)
 setReferralConfig(uint256 tier1Bps, uint256 tier2Bps)            onlyOwner
 ```
@@ -433,7 +434,9 @@ setReferralConfig(uint256 tier1Bps, uint256 tier2Bps)            onlyOwner
 #### Trust graph (endorsements)
 ```
 endorseAgent(uint256 agreementId, address endorsed, string capability)
+revokeEndorsement(uint256 endorsementId)
 getAgentTrustScore(address agent) → (uint256 trustScore, uint256 endorsementCount)
+getTimeWeightedTrustScore(address agent) → (uint256 weightedScore, uint256 activeEndorsements)
 getAgentEndorsements(address agent, uint256 offset, uint256 limit) → (uint256[] endorsementIds, uint256 total)
 getEndorsement(uint256 endorsementId) → Endorsement
 ```
@@ -565,6 +568,7 @@ ReferralRecorded(address agent, address referrer)
 ReferralRewardPaid(address referrer, address source, uint256 amount, uint8 tier)
 ReferralConfigUpdated(uint256 tier1Bps, uint256 tier2Bps)
 EndorsementCreated(uint256 endorsementId, address endorser, address endorsed, uint256 agreementId, string capability, uint256 weight)
+EndorsementRevoked(uint256 endorsementId, address endorser, address endorsed)
 NetworkMilestoneReached(uint256 agentCount, uint256 milestone, string benefit)
 ```
 
@@ -585,7 +589,7 @@ EconomicProject       { id, proposer, metadataURI, targetBudget, totalFunded, de
 FeatureKit            { id, submitter, priority, status, metadataURI, voteCount, submittedAt }
 ServiceAgreement      { id, client, provider, arbiter, amount, description, status, createdAt, deadline, deliveryHash }
 PaymentStream         { id, payer, recipient, ratePerSecond, totalDeposited, totalWithdrawn, startTime, stopTime, status }
-Endorsement           { id, endorser, endorsed, agreementId, capability, weight, timestamp }
+Endorsement           { id, endorser, endorsed, agreementId, capability, weight, timestamp, revoked }
 Member                { memberAddress, votingPower, privileges[], isMember }
 Proposal              { id, description, votingDeadline, executed, proposalPassed, yesVotes, noVotes, previousMilestoneIds[], milestoneId }
 ```
@@ -779,7 +783,7 @@ Tests are in `test/ProjectDAO.test.js` using Mocha/Chai with Hardhat's test help
 - `deploy()` — deploys a fresh `Project_DAO` contract with treasury configured
 - `memberAgent()` — adds a member and registers them as an agent (for quick test setup)
 
-**Test suite: 362 tests across 57 describe blocks.**
+**Test suite: 371 tests across 61 describe blocks.**
 
 **Test coverage areas:**
 - Fee configuration (defaults, owner updates, bounds checking, preview calculations)
@@ -997,11 +1001,14 @@ The file `sdk/deployments.json` maps chain IDs to contract addresses and RPC hin
 | `agent.stakeAndJoinWithReferral(metadataURI, referrer, stakeEth?)` | Join with referral attribution |
 | `agent.getReferralStats(address?)` | Get referral count, earnings, referrer |
 | `agent.getReferralConfig()` | Get tier-1 and tier-2 reward percentages |
+| `agent.withdrawReferralEarnings()` | Withdraw accumulated referral earnings (works even if deregistered) |
 | **Network Effects: Trust Graph** | |
 | `agent.endorseAgent(agreementId, endorsedAddress, capability)` | Endorse another agent after completed agreement |
-| `agent.getTrustScore(address?)` | Get trust score and endorsement count |
+| `agent.revokeEndorsement(endorsementId)` | Revoke a previously given endorsement |
+| `agent.getTrustScore(address?)` | Get raw trust score and endorsement count |
+| `agent.getTimeWeightedTrustScore(address?)` | Get time-weighted trust score (recent endorsements worth more) |
 | `agent.getAgentEndorsements(address?, offset, limit)` | Get paginated endorsement IDs |
-| `agent.getEndorsement(endorsementId)` | Get endorsement details |
+| `agent.getEndorsement(endorsementId)` | Get endorsement details (includes revoked flag) |
 | **Network Effects: Network Stats** | |
 | `agent.getNetworkStats()` | Get agent count, milestones, volume, fees |
 

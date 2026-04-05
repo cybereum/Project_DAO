@@ -36,6 +36,8 @@ fees — forever. This turns passive participants into active evangelists.
 - Two-tier depth means early adopters benefit from network growth
   exponentially.
 - Referral rewards come from existing fees (no new cost to the protocol).
+- Rewards persist even if the referrer deregisters — the relationship was
+  earned. Deregistered referrers can withdraw via `withdrawReferralEarnings()`.
 
 **Contract additions:**
 ```solidity
@@ -57,14 +59,21 @@ difference between a directory and a recommendation engine.
 
 **Mechanism:**
 - After a service agreement completes successfully, the client can endorse
-  the provider (and vice versa). Endorsements are permanent on-chain records.
+  the provider (and vice versa). Endorsements are on-chain records that can
+  be **revoked** if trust was misplaced.
 - Each endorsement carries the endorser's reputation tier as a weight:
   Bronze=1, Silver=2, Gold=3, Platinum=4.
-- An agent's **trust score** is the sum of weighted endorsements received.
+- An agent's **raw trust score** is the sum of active endorsement weights.
+- A **time-weighted trust score** (view function) discounts older endorsements:
+  - < 180 days: 100% weight
+  - 180-365 days: 50% weight
+  - > 365 days: 25% weight
 - Discovery by capability can be sorted by trust score off-chain, making
   highly-endorsed agents more visible.
 - Endorsements are scoped to specific capabilities (e.g., "data-oracle"),
   creating a skill-specific trust signal.
+- Revoked endorsements subtract weight from the trust score and are excluded
+  from the time-weighted view, but the record stays on-chain for audit.
 
 **Why it works:**
 - More agents = more endorsement data = better signal for everyone.
@@ -82,10 +91,13 @@ struct Endorsement {
     string capability;     // which capability is being endorsed
     uint256 weight;        // endorser's reputation tier at time of endorsement
     uint256 timestamp;
+    bool    revoked;       // endorser can revoke if trust was misplaced
 }
 mapping(address => uint256) public agentTrustScore;
 mapping(address => uint256) public agentEndorsementCount;
-event EndorsementCreated(address indexed endorser, address indexed endorsed, uint256 agreementId, string capability, uint256 weight);
+event EndorsementCreated(...);
+event EndorsementRevoked(uint256 endorsementId, address endorser, address endorsed);
+// View: getTimeWeightedTrustScore(agent) → time-discounted score
 ```
 
 ### 3. Network Growth Milestones (Collective Incentives)

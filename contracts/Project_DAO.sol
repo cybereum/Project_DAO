@@ -2842,15 +2842,21 @@ contract Project_DAO {
      * @dev Distribute referral rewards from collected fees. Called after every
      *      fee collection for agents that have referrers. Rewards are credited
      *      to referrer escrow balances (keeping value in the protocol).
+     *
+     *      Rewards flow regardless of whether the referrer is still registered —
+     *      the referral relationship was earned by bringing the agent in and is
+     *      permanent. Deregistered referrers accumulate rewards in their escrow
+     *      and can reclaim them if they rejoin.
+     *
      * @param _agent The agent whose transaction generated the fee.
      * @param _feeAmount The total protocol fee collected.
      */
     function _distributeReferralRewards(address _agent, uint256 _feeAmount) internal {
         if (_feeAmount == 0) return;
 
-        // Tier 1: direct referrer
+        // Tier 1: direct referrer (rewards persist even if referrer deregistered)
         address tier1 = agentReferrer[_agent];
-        if (tier1 != address(0) && agents[tier1].registered) {
+        if (tier1 != address(0)) {
             uint256 reward1 = (_feeAmount * referralRewardBps) / FEE_BPS_DENOMINATOR;
             if (reward1 > 0) {
                 agents[tier1].nativeEscrowBalance += reward1;
@@ -2860,7 +2866,7 @@ contract Project_DAO {
 
             // Tier 2: referrer's referrer
             address tier2 = agentReferrer[tier1];
-            if (tier2 != address(0) && agents[tier2].registered) {
+            if (tier2 != address(0)) {
                 uint256 reward2 = (_feeAmount * referralTier2Bps) / FEE_BPS_DENOMINATOR;
                 if (reward2 > 0) {
                     agents[tier2].nativeEscrowBalance += reward2;
@@ -2869,6 +2875,33 @@ contract Project_DAO {
                 }
             }
         }
+    }
+
+    /**
+     * @notice Withdraw accumulated referral earnings. Unlike normal escrow
+     *         withdrawals, this works even for deregistered agents — referral
+     *         rewards are earned permanently by bringing agents into the network.
+     *         Only withdraws the referral earnings portion; other escrow stays.
+     */
+    function withdrawReferralEarnings() external whenNotPaused nonReentrant {
+        uint256 earnings = agentReferralEarnings[msg.sender];
+        require(earnings > 0, "No referral earnings to withdraw.");
+        // Cap at actual escrow balance (in case of partial withdrawals via other paths)
+        uint256 available = agents[msg.sender].nativeEscrowBalance;
+        uint256 amount = earnings < available ? earnings : available;
+        require(amount > 0, "No escrow balance available.");
+
+        agentReferralEarnings[msg.sender] -= amount;
+        agents[msg.sender].nativeEscrowBalance -= amount;
+
+        uint256 exitFee = _collectExitFee(amount, "withdraw_referral_earnings");
+        uint256 net = amount - exitFee;
+        require(net > 0, "Amount too small after exit fee.");
+
+        (bool ok,) = payable(msg.sender).call{value: net}("");
+        require(ok, "Referral earnings withdrawal failed.");
+
+        emit AgentNativeEscrowWithdrawn(msg.sender, net);
     }
 
     /// @notice Get referral stats for an agent.
@@ -2892,18 +2925,24 @@ contract Project_DAO {
         string  capability;    // which skill is endorsed (e.g. "data-oracle")
         uint256 weight;        // endorser's reputation tier at time (1-4)
         uint256 timestamp;
+        bool    revoked;       // true if endorser revoked this endorsement
     }
 
     uint256 public currentEndorsementId = 1;
     mapping(uint256 => Endorsement) public endorsements;
-    /// @notice Cumulative trust score per agent (sum of endorsement weights).
+    /// @notice Cumulative trust score per agent (sum of active endorsement weights).
     mapping(address => uint256) public agentTrustScore;
-    /// @notice Number of endorsements received per agent.
+    /// @notice Number of active (non-revoked) endorsements received per agent.
     mapping(address => uint256) public agentEndorsementCount;
     /// @notice Prevent duplicate endorsements: keccak256(endorser, endorsed, agreementId) => true.
     mapping(bytes32 => bool) public endorsementExists;
     /// @notice Per-agent list of endorsement IDs received.
     mapping(address => uint256[]) private _agentEndorsementIds;
+
+    /// @notice Time-weighting constants for trust score view.
+    ///         Endorsements lose weight over time: 100% (< 180d), 50% (180-365d), 25% (> 365d).
+    uint256 public constant TRUST_FULL_WEIGHT_PERIOD = 180 days;
+    uint256 public constant TRUST_HALF_WEIGHT_PERIOD = 365 days;
 
     event EndorsementCreated(
         uint256 indexed endorsementId,
@@ -2912,6 +2951,12 @@ contract Project_DAO {
         uint256 agreementId,
         string capability,
         uint256 weight
+    );
+
+    event EndorsementRevoked(
+        uint256 indexed endorsementId,
+        address indexed endorser,
+        address indexed endorsed
     );
 
     /**
@@ -2952,7 +2997,8 @@ contract Project_DAO {
             agreementId: _agreementId,
             capability: _capability,
             weight: weight,
-            timestamp: block.timestamp
+            timestamp: block.timestamp,
+            revoked: false
         });
 
         agentTrustScore[_endorsed] += weight;
@@ -2988,11 +3034,75 @@ contract Project_DAO {
     /// @notice Get a single endorsement by ID.
     function getEndorsement(uint256 _endorsementId) external view returns (
         uint256 id, address endorser, address endorsed, uint256 agreementId,
-        string memory capability, uint256 weight, uint256 timestamp
+        string memory capability, uint256 weight, uint256 timestamp, bool revoked
     ) {
         Endorsement storage e = endorsements[_endorsementId];
         require(e.id > 0, "Endorsement not found.");
-        return (e.id, e.endorser, e.endorsed, e.agreementId, e.capability, e.weight, e.timestamp);
+        return (e.id, e.endorser, e.endorsed, e.agreementId, e.capability, e.weight, e.timestamp, e.revoked);
+    }
+
+    /**
+     * @notice Revoke a previously given endorsement. Only the original endorser
+     *         can revoke. The endorsed agent's trust score is reduced by the
+     *         endorsement weight. The endorsement record stays on-chain for
+     *         audit trail but is marked as revoked.
+     * @param _endorsementId The endorsement to revoke.
+     */
+    function revokeEndorsement(uint256 _endorsementId) external onlyRegisteredAgent whenNotPaused nonReentrant {
+        Endorsement storage e = endorsements[_endorsementId];
+        require(e.id > 0, "Endorsement not found.");
+        require(e.endorser == msg.sender, "Only the endorser can revoke.");
+        require(!e.revoked, "Endorsement already revoked.");
+
+        e.revoked = true;
+
+        // Subtract weight from endorsed agent's trust score
+        if (agentTrustScore[e.endorsed] >= e.weight) {
+            agentTrustScore[e.endorsed] -= e.weight;
+        } else {
+            agentTrustScore[e.endorsed] = 0;
+        }
+        agentEndorsementCount[e.endorsed]--;
+
+        emit EndorsementRevoked(_endorsementId, msg.sender, e.endorsed);
+    }
+
+    /**
+     * @notice Compute a time-weighted trust score for an agent. Recent
+     *         endorsements carry full weight; older ones are discounted.
+     *         - < 180 days old: 100% weight
+     *         - 180-365 days old: 50% weight
+     *         - > 365 days old: 25% weight
+     *         Revoked endorsements are excluded entirely.
+     *
+     *         This is a view function (no state change) — the raw
+     *         agentTrustScore is kept for cheap writes; this view gives
+     *         a more accurate signal for discovery and ranking.
+     *
+     * @param _agent The agent to score.
+     * @return weightedScore The time-weighted trust score.
+     * @return activeEndorsements Number of non-revoked endorsements.
+     */
+    function getTimeWeightedTrustScore(address _agent) external view returns (
+        uint256 weightedScore,
+        uint256 activeEndorsements
+    ) {
+        uint256[] storage ids = _agentEndorsementIds[_agent];
+        for (uint256 i = 0; i < ids.length; i++) {
+            Endorsement storage e = endorsements[ids[i]];
+            if (e.revoked) continue;
+
+            activeEndorsements++;
+            uint256 age = block.timestamp - e.timestamp;
+
+            if (age < TRUST_FULL_WEIGHT_PERIOD) {
+                weightedScore += e.weight;             // 100%
+            } else if (age < TRUST_HALF_WEIGHT_PERIOD) {
+                weightedScore += e.weight / 2;         // 50%
+            } else {
+                weightedScore += e.weight / 4;         // 25%
+            }
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

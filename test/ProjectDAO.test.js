@@ -4114,9 +4114,58 @@ describe("Referral Rewards", () => {
       );
     });
   });
+
+  describe("referral rewards after deregistration", () => {
+    it("deregistered referrer still accumulates rewards", async () => {
+      const { dao, alice, bob } = await deploy();
+      await dao.connect(alice).stakeAndJoin("ipfs://a", { value: ethers.parseEther("0.1") });
+      await dao.connect(bob).stakeAndJoinWithReferral("ipfs://b", alice.address, { value: ethers.parseEther("0.1") });
+
+      // Alice leaves the DAO (deregisters)
+      await dao.connect(alice).leaveDAO();
+      expect((await dao.getAgentProfile(alice.address)).registered).to.equal(false);
+
+      // Bob still generates commerce — Alice should still earn referral rewards
+      await dao.connect(bob).depositNativeToEscrow({ value: ethers.parseEther("1") });
+
+      const stats = await dao.getAgentReferralStats(alice.address);
+      expect(stats.referralEarnings).to.be.gt(0n);
+      // Earnings sit in Alice's escrow even though she's deregistered
+      const profile = await dao.getAgentProfile(alice.address);
+      expect(profile.nativeEscrowBalance).to.be.gt(0n);
+    });
+
+    it("deregistered referrer can withdraw referral earnings", async () => {
+      const { dao, alice, bob } = await deploy();
+      await dao.connect(alice).stakeAndJoin("ipfs://a", { value: ethers.parseEther("0.1") });
+      await dao.connect(bob).stakeAndJoinWithReferral("ipfs://b", alice.address, { value: ethers.parseEther("0.1") });
+
+      // Alice leaves
+      await dao.connect(alice).leaveDAO();
+
+      // Bob generates commerce
+      await dao.connect(bob).depositNativeToEscrow({ value: ethers.parseEther("1") });
+
+      const earningsBefore = (await dao.getAgentReferralStats(alice.address)).referralEarnings;
+      expect(earningsBefore).to.be.gt(0n);
+
+      // Alice can withdraw even though deregistered
+      await dao.connect(alice).withdrawReferralEarnings();
+
+      const earningsAfter = (await dao.getAgentReferralStats(alice.address)).referralEarnings;
+      expect(earningsAfter).to.equal(0n);
+    });
+
+    it("withdrawReferralEarnings reverts with no earnings", async () => {
+      const { dao, alice } = await deploy();
+      await expect(
+        dao.connect(alice).withdrawReferralEarnings()
+      ).to.be.revertedWith("No referral earnings to withdraw.");
+    });
+  });
 });
 
-// ════════════════════���═════════════════════════════���════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
 // ─── NETWORK EFFECT 2: Trust Graph (Endorsements) ───────────────────────────
 // ═══════��══════════════════════════════════════════════════��════════════════════
 
@@ -4277,11 +4326,100 @@ describe("Trust Graph (Endorsements)", () => {
     expect(e.endorsed).to.equal(bob.address);
     expect(e.capability).to.equal("data-oracle");
     expect(e.agreementId).to.equal(BigInt(agreementId));
+    expect(e.revoked).to.equal(false);
   });
 
   it("reverts getEndorsement for non-existent ID", async () => {
     const { dao } = await deploy();
     await expect(dao.getEndorsement(999)).to.be.revertedWith("Endorsement not found.");
+  });
+
+  describe("endorsement revocation", () => {
+    it("endorser can revoke their endorsement", async () => {
+      const { dao, alice, bob } = await deploy();
+      await memberAgent(dao, alice);
+      await memberAgent(dao, bob);
+      const agreementId = await completeAgreement(dao, alice, bob);
+      await dao.connect(alice).endorseAgent(agreementId, bob.address, "data-oracle");
+
+      const trustBefore = await dao.getAgentTrustScore(bob.address);
+      expect(trustBefore.endorsementCount).to.equal(1n);
+
+      await expect(
+        dao.connect(alice).revokeEndorsement(1)
+      ).to.emit(dao, "EndorsementRevoked").withArgs(1, alice.address, bob.address);
+
+      // Trust score should decrease
+      const trustAfter = await dao.getAgentTrustScore(bob.address);
+      expect(trustAfter.endorsementCount).to.equal(0n);
+      expect(trustAfter.trustScore).to.equal(0n);
+
+      // Endorsement record should be marked revoked
+      const e = await dao.getEndorsement(1);
+      expect(e.revoked).to.equal(true);
+    });
+
+    it("reverts if non-endorser tries to revoke", async () => {
+      const { dao, alice, bob } = await deploy();
+      await memberAgent(dao, alice);
+      await memberAgent(dao, bob);
+      const agreementId = await completeAgreement(dao, alice, bob);
+      await dao.connect(alice).endorseAgent(agreementId, bob.address, "data-oracle");
+
+      await expect(
+        dao.connect(bob).revokeEndorsement(1)
+      ).to.be.revertedWith("Only the endorser can revoke.");
+    });
+
+    it("reverts if already revoked", async () => {
+      const { dao, alice, bob } = await deploy();
+      await memberAgent(dao, alice);
+      await memberAgent(dao, bob);
+      const agreementId = await completeAgreement(dao, alice, bob);
+      await dao.connect(alice).endorseAgent(agreementId, bob.address, "data-oracle");
+      await dao.connect(alice).revokeEndorsement(1);
+
+      await expect(
+        dao.connect(alice).revokeEndorsement(1)
+      ).to.be.revertedWith("Endorsement already revoked.");
+    });
+
+    it("reverts for non-existent endorsement", async () => {
+      const { dao, alice } = await deploy();
+      await memberAgent(dao, alice);
+      await expect(
+        dao.connect(alice).revokeEndorsement(999)
+      ).to.be.revertedWith("Endorsement not found.");
+    });
+  });
+
+  describe("time-weighted trust score", () => {
+    it("returns full weight for recent endorsements", async () => {
+      const { dao, alice, bob } = await deploy();
+      await memberAgent(dao, alice);
+      await memberAgent(dao, bob);
+      const agreementId = await completeAgreement(dao, alice, bob);
+      await dao.connect(alice).endorseAgent(agreementId, bob.address, "data-oracle");
+
+      const raw = await dao.getAgentTrustScore(bob.address);
+      const weighted = await dao.getTimeWeightedTrustScore(bob.address);
+      // Recent endorsement should have full weight
+      expect(weighted.weightedScore).to.equal(raw.trustScore);
+      expect(weighted.activeEndorsements).to.equal(1n);
+    });
+
+    it("excludes revoked endorsements from weighted score", async () => {
+      const { dao, alice, bob } = await deploy();
+      await memberAgent(dao, alice);
+      await memberAgent(dao, bob);
+      const agreementId = await completeAgreement(dao, alice, bob);
+      await dao.connect(alice).endorseAgent(agreementId, bob.address, "data-oracle");
+      await dao.connect(alice).revokeEndorsement(1);
+
+      const weighted = await dao.getTimeWeightedTrustScore(bob.address);
+      expect(weighted.weightedScore).to.equal(0n);
+      expect(weighted.activeEndorsements).to.equal(0n);
+    });
   });
 });
 
