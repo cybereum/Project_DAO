@@ -135,4 +135,24 @@ export const PROJECT_DAO_ABI = [
   'event PaymentStreamCreated(uint256 indexed streamId, address indexed payer, address indexed recipient, uint256 ratePerSecond, uint256 totalDeposit, uint256 startTime, uint256 stopTime)',
   'event PaymentStreamWithdrawn(uint256 indexed streamId, address indexed recipient, uint256 amount)',
   'event PaymentStreamCancelled(uint256 indexed streamId, address indexed cancelledBy, uint256 recipientAmount, uint256 payerRefund)',
+
+  // ─── Network Effect: Referral Rewards ─────────────────────────────────
+  'function stakeAndJoinWithReferral(string calldata metadataURI, address _referrer) external payable',
+  'function getAgentReferralStats(address _agent) external view returns (address referrer, uint256 referralCount, uint256 referralEarnings)',
+  'function referralRewardBps() external view returns (uint256)',
+  'function referralTier2Bps() external view returns (uint256)',
+  'event ReferralRecorded(address indexed agent, address indexed referrer)',
+  'event ReferralRewardPaid(address indexed referrer, address indexed source, uint256 amount, uint8 tier)',
+
+  // ─── Network Effect: Trust Graph (Endorsements) ───────────────────────
+  'function endorseAgent(uint256 _agreementId, address _endorsed, string calldata _capability) external',
+  'function getAgentTrustScore(address _agent) external view returns (uint256 trustScore, uint256 endorsementCount)',
+  'function getAgentEndorsements(address _agent, uint256 offset, uint256 limit) external view returns (uint256[] endorsementIds, uint256 total)',
+  'function getEndorsement(uint256 _endorsementId) external view returns (uint256 id, address endorser, address endorsed, uint256 agreementId, string capability, uint256 weight, uint256 timestamp)',
+  'event EndorsementCreated(uint256 indexed endorsementId, address indexed endorser, address indexed endorsed, uint256 agreementId, string capability, uint256 weight)',
+
+  // ─── Network Effect: Network Growth Milestones ────────────────────────
+  'function getNetworkStats() external view returns (uint256 totalAgents, uint256 totalMembers, uint256 currentMilestone, uint256 nextMilestone, uint256 agentsUntilNextMilestone, uint256 totalVolume, uint256 totalFees)',
+  'function lastNetworkMilestone() external view returns (uint256)',
+  'event NetworkMilestoneReached(uint256 agentCount, uint256 milestone, string benefit)',
 ];
