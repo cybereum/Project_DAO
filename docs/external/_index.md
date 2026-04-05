@@ -32,8 +32,8 @@ Growing wiki of concepts, design patterns, standards references, and research re
 | guides/ | 4 | Onboarding, quickstart, integration, operations |
 | agents/ | 16 | Workflows, recipes, troubleshooting, patterns |
 | product/ | 2 | Product guide, changelog |
-| knowledge-base/ | 14 | Concepts (6), research (1), patterns (3), references (3), + 1 section index |
-| **Total** | **40** | |
+| knowledge-base/ | 13 | Concepts (6), research (1), patterns (3), references (3) |
+| **Total** | **39** | |
 
 ## Internal Docs
 

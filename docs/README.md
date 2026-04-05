@@ -175,4 +175,4 @@ The root-level `.md` files (README.md, CLAUDE.md, etc.) remain the **primary ent
 ---
 
 *Last updated: 2026-04-05*
-*External articles: 40 | Internal articles: 13 | Total: 53*
+*External articles: 39 | Internal articles: 13 | Total: 52*
