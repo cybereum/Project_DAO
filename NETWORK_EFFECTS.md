@@ -121,7 +121,7 @@ This creates a shared identity and collective motivation to grow.
 
 **Contract additions:**
 ```solidity
-uint256 public lastMilestoneReached;
+uint256 public lastNetworkMilestone;
 event NetworkMilestoneReached(uint256 agentCount, uint256 milestone, string benefit);
 ```
 
