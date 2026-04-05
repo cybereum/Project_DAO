@@ -982,8 +982,10 @@ export function useAppState() {
       setReputationLeaderboard([]);
       setMyReputation(null);
       setReputationError('');
+      setReputationLoading(false);
       return;
     }
+    clearDataLoadError();
     setReputationLoading(true);
     setReputationError('');
     try {
@@ -1018,7 +1020,7 @@ export function useAppState() {
       console.error('loadReputation failed:', err);
     }
     finally { setReputationLoading(false); }
-  }, [getDaoReadContract, walletAddress]);
+  }, [getDaoReadContract, walletAddress, clearDataLoadError]);
 
   // ─── Commerce Blackhole state ─────────────────────────────────────────────
   const [commerceMetrics, setCommerceMetrics] = useState(null);
@@ -1035,6 +1037,7 @@ export function useAppState() {
       setCommerceLoading(false);
       return;
     }
+    clearDataLoadError();
     setCommerceLoading(true);
     setCommerceError('');
     try {
@@ -1066,7 +1069,7 @@ export function useAppState() {
       console.error('loadCommerceMetrics failed:', err);
     }
     finally { setCommerceLoading(false); }
-  }, [getDaoReadContract, walletAddress]);
+  }, [getDaoReadContract, walletAddress, clearDataLoadError]);
 
   // ─── Feature Kit state ────────────────────────────────────────────────────
   const [featureKits, setFeatureKits] = useState([]);

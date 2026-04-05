@@ -37,7 +37,6 @@ function FeeRail({ label, bps, description }) {
 
 export default function CommerceBlackhole() {
   const {
-    txPending,
     getDaoWriteContract,
     commerceMetrics: metrics, agentCommerceMetrics: agentMetrics,
     commerceLoading: loading, commerceError, loadCommerceMetrics,
@@ -48,6 +47,7 @@ export default function CommerceBlackhole() {
   const [batchAmounts, setBatchAmounts] = useState('');
   const [batchMemos, setBatchMemos] = useState('');
   const [batchStatus, setBatchStatus] = useState('');
+  const [batchPending, setBatchPending] = useState(false);
 
   useEffect(() => { loadCommerceMetrics(); }, [loadCommerceMetrics]);
 
@@ -55,6 +55,7 @@ export default function CommerceBlackhole() {
     const contract = await getDaoWriteContract();
     if (!contract) return;
     try {
+      setBatchPending(true);
       setBatchStatus('Processing batch transfer...');
       const recipients = batchRecipients.split('\n').map(s => s.trim()).filter(Boolean);
       const amounts = batchAmounts.split('\n').map(s => s.trim()).filter(Boolean).map(s => parseEther(s));
@@ -75,6 +76,8 @@ export default function CommerceBlackhole() {
       loadCommerceMetrics();
     } catch (e) {
       setBatchStatus(`Error: ${e.reason || e.message}`);
+    } finally {
+      setBatchPending(false);
     }
   };
 
@@ -276,10 +279,10 @@ export default function CommerceBlackhole() {
             </div>
             <button
               onClick={handleBatchTransfer}
-              disabled={txPending}
+              disabled={batchPending}
               className="px-6 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-medium flex items-center gap-2 transition"
             >
-              {txPending ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
+              {batchPending ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
               Execute Batch Transfer
             </button>
             {batchStatus && (
