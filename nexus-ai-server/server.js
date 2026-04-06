@@ -19,8 +19,8 @@ import express from 'express';
 import cors from 'cors';
 import fs from 'fs/promises';
 import path from 'path';
-import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import { normaliseWalletAddress, secureKeyMatch } from './lib/security.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -99,14 +99,6 @@ app.use('/api/', rateLimit);
 const API_KEY = process.env.NEXUS_AI_API_KEY;
 const ALLOW_QUERY_API_KEY = process.env.NEXUS_AI_ALLOW_QUERY_API_KEY === 'true';
 
-function secureKeyMatch(provided, expected) {
-  if (!provided || !expected) return false;
-  const providedBuf = Buffer.from(String(provided));
-  const expectedBuf = Buffer.from(String(expected));
-  if (providedBuf.length !== expectedBuf.length) return false;
-  return crypto.timingSafeEqual(providedBuf, expectedBuf);
-}
-
 function apiAuth(req, res, next) {
   if (!API_KEY) return next(); // Skip auth if no key configured (dev mode)
   const provided = req.headers['x-api-key'] || (ALLOW_QUERY_API_KEY ? req.query.apiKey : undefined);
@@ -121,11 +113,6 @@ app.use('/api/', apiAuth);
 // ── AI usage tracking: generous free tier + escrow-based premium ──
 const FREE_TIER_DAILY_LIMIT = 5;
 const usageMap = new Map(); // wallet -> { date, count }
-
-function normaliseWalletAddress(value) {
-  const wallet = String(value || '').toLowerCase().trim();
-  return /^0x[a-f0-9]{40}$/.test(wallet) ? wallet : '';
-}
 
 function checkFreeTier(key) {
   if (!key) return { allowed: false, remaining: 0 }; // no identifier = denied
