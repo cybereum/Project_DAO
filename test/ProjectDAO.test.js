@@ -5617,6 +5617,7 @@ describe("EIP-7825 deploy-gas guardrail", () => {
       },
     });
     const deployTx = await DAO.getDeployTransaction();
+    deployTx.from = await DAO.runner.getAddress();
     const estimated = await ethers.provider.estimateGas(deployTx);
 
     // Log the actual number for future reference in CI output.
