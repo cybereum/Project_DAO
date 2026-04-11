@@ -227,7 +227,7 @@ Each extracted library's `Store` struct is embedded in `Project_DAO` via a priva
 - Contributors adding fields to library `Store` structs MUST decrement `__gap`'s length by the number of slots their new fields occupy — otherwise they corrupt storage on redeploy.
 
 ### PKI Envelopes: Confidentiality ≠ Non-Repudiation
-The unsigned `attachEncryptedAgreementPayload` / `attachEncryptedPaymentRequestPayload` paths provide confidentiality and integrity-against-tampering (via the on-chain `contentHash`), but **not** non-repudiation — a party can attach whatever `contentHash` they like. For legally-binding agreement on the plaintext, callers MUST use the EIP-712 signed variants (`attachEncryptedAgreementPayloadSigned` / `attachEncryptedPaymentRequestPayloadSigned`), which require signatures from every party over `(id, contentHash)` before the envelope is stored. The stored envelope's `hasSignatures` flag lets readers distinguish the two paths.
+The unsigned `attachEncryptedAgreementPayload` / `attachEncryptedPaymentRequestPayload` paths provide confidentiality and integrity-against-tampering (via the on-chain `contentHash`), but **not** non-repudiation — a party can attach whatever `contentHash` they like. For legally-binding agreement on the plaintext, callers MUST use the EIP-712 signed variants (`attachEncryptedAgreementPayloadSigned` / `attachEncryptedPaymentRequestPayloadSigned`), which require signatures from every address in the expected signer set supplied for verification over `(id, contentHash)` before the envelope is stored. The stored envelope's `hasSignatures` flag lets readers distinguish the two paths.
 
 ### Single Owner
 The contract uses a single owner address with broad powers. There is no:
