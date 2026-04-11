@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+import {PKILib} from "./PKILib.sol";
+
 interface IERC20 {
     function transferFrom(address from, address to, uint256 value) external returns (bool);
     function transfer(address to, uint256 value) external returns (bool);
@@ -11,6 +13,9 @@ interface IERC721Lite {
 }
 
 contract Project_DAO {
+    using PKILib for PKILib.PubKeyRegistry;
+    using PKILib for PKILib.EnvelopeStore;
+
     // ─── Custom Errors (gas-efficient reverts) ───────────────────────────────
     error Unauthorized();
     error NotMember();
@@ -3215,66 +3220,36 @@ contract Project_DAO {
     // ─── PKI: Agent Public Key Registry + Encrypted Artifact Envelopes ─────
     // ═══════════════════════════════════════════════════════════════════════════
     //
-    // The on-chain public key registry lets registered agents publish an
-    // encryption public key (e.g. a compressed secp256k1 point, or an
-    // application-specific x25519 key) keyed to their account address.
-    // Other agents can then look up this key and encrypt payloads that only
-    // the holder of the matching private key can decrypt — classic PKI, but
-    // discoverable on-chain with no external key-distribution infrastructure.
+    // Storage + authorization live here; validation and mutation is delegated
+    // to the external PKILib library (linked at deploy time) so the main
+    // contract's deployed bytecode stays lean. All events are re-declared here
+    // so they appear in this contract's ABI for SDK/clients — PKILib emits
+    // them under this contract's address via DELEGATECALL.
     //
-    // Two "envelope" facilities are built on top of the registry:
-    //   - Encrypted service agreement payloads: the client (or any party)
-    //     attaches per-party ciphertexts plus a shared integrity hash.
-    //     Only the parties of the agreement can read the envelope, and each
-    //     party only ever sees the ciphertext encrypted for their key.
-    //   - Encrypted payment request payloads: the requester attaches one
-    //     ciphertext for themselves and one for the payer, plus the shared
-    //     hash. Only those two addresses can read the envelope.
+    // Two facilities:
+    //   - Encrypted service agreement payloads: any party (client / provider
+    //     / arbiter) attaches per-party ciphertexts plus a shared integrity
+    //     hash. Only parties can read; each caller only ever sees the
+    //     ciphertext encrypted for their own key.
+    //   - Encrypted payment request payloads: only the requester attaches;
+    //     reads are restricted to requester and payer.
     //
-    // The contract never handles plaintext — encryption and decryption
-    // happen off-chain using the published public keys. On-chain storage is
-    // limited to opaque ciphertexts, the integrity hash, and per-envelope
-    // metadata (who set it, when).
-    //
-    // Integrity: every encrypted envelope carries a contentHash (keccak256
-    // of the agreed plaintext). After decryption, each party rehashes and
-    // checks it matches — this detects tampering or mismatched ciphertexts.
+    // Both facilities also expose a signed variant (EIP-712) where every
+    // party must sign the (id, contentHash) pair before the envelope is
+    // stored — providing explicit, on-chain-verifiable non-repudiation in
+    // addition to confidentiality and tamper-detection.
 
-    /// @notice Minimum accepted agent public key length (bytes).
-    ///         32 bytes accommodates x25519 / ed25519-style keys.
-    uint256 public constant MIN_AGENT_PUBLIC_KEY_BYTES = 32;
-    /// @notice Maximum accepted agent public key length (bytes).
-    ///         256 bytes is generous headroom for exotic KEM keys while
-    ///         bounding worst-case storage cost.
-    uint256 public constant MAX_AGENT_PUBLIC_KEY_BYTES = 256;
-    /// @notice Maximum accepted ciphertext length per party (bytes).
-    ///         Keeps SSTORE costs bounded. Larger payloads should be stored
-    ///         off-chain (e.g. IPFS) with the CID encrypted into the envelope.
-    uint256 public constant MAX_ENCRYPTED_PAYLOAD_BYTES = 8192;
+    // Length bounds are constants on the library; re-exposed here for ABI.
+    function MIN_AGENT_PUBLIC_KEY_BYTES() external pure returns (uint256) { return PKILib.MIN_KEY_BYTES; }
+    function MAX_AGENT_PUBLIC_KEY_BYTES() external pure returns (uint256) { return PKILib.MAX_KEY_BYTES; }
+    function MAX_ENCRYPTED_PAYLOAD_BYTES() external pure returns (uint256) { return PKILib.MAX_CIPHERTEXT_BYTES; }
 
-    /// @dev Published public key per agent. bytes(0) means "not published".
-    mapping(address => bytes) private _agentPublicKeys;
-    /// @notice Timestamp of the most recent publish/revoke for an agent key.
-    mapping(address => uint256) public agentPublicKeyUpdatedAt;
+    // ─── Storage (owned by PKILib via struct pointers) ─────────────────────
+    PKILib.PubKeyRegistry private _pkiPubKeys;
+    PKILib.EnvelopeStore private _pkiAgreementEnvelopes;
+    PKILib.EnvelopeStore private _pkiPaymentRequestEnvelopes;
 
-    /// @dev Envelope header metadata for an encrypted artifact.
-    struct EncryptedEnvelope {
-        bytes32 contentHash;   // keccak256 of the plaintext both parties agreed
-        uint256 updatedAt;     // Block timestamp when envelope was last written
-        address setBy;         // Agent who attached the envelope
-        bool    exists;        // True once an envelope has been stored
-    }
-
-    /// @dev Per-service-agreement envelope header.
-    mapping(uint256 => EncryptedEnvelope) private _agreementEnvelope;
-    /// @dev Per-service-agreement per-party ciphertext.
-    mapping(uint256 => mapping(address => string)) private _agreementCiphertextFor;
-
-    /// @dev Per-payment-request envelope header.
-    mapping(uint256 => EncryptedEnvelope) private _paymentRequestEnvelope;
-    /// @dev Per-payment-request per-party ciphertext.
-    mapping(uint256 => mapping(address => string)) private _paymentRequestCiphertextFor;
-
+    // ─── Events (re-declared for ABI; emitted from PKILib via delegatecall) ──
     event AgentPublicKeyPublished(address indexed agent, bytes publicKey, uint256 updatedAt);
     event AgentPublicKeyRevoked(address indexed agent, uint256 revokedAt);
     event AgreementEncryptedPayloadAttached(
@@ -3282,61 +3257,40 @@ contract Project_DAO {
         address indexed setBy,
         bytes32 contentHash,
         uint256 recipientCount,
-        uint256 updatedAt
+        uint256 updatedAt,
+        bool signed
     );
     event PaymentRequestEncryptedPayloadAttached(
         uint256 indexed requestId,
         address indexed setBy,
         bytes32 contentHash,
-        uint256 updatedAt
+        uint256 updatedAt,
+        bool signed
     );
 
-    /**
-     * @notice Publish (or rotate) this agent's encryption public key.
-     *         Other agents use this key to encrypt payloads aimed at the
-     *         caller. Calling again with a new key rotates it.
-     * @param _publicKey Raw public key bytes. Scheme is not interpreted on
-     *                   chain — store whatever your off-chain crypto uses
-     *                   (e.g. secp256k1 compressed, x25519, ed25519-X25519).
-     */
+    // ─── Public key registry wrappers ──────────────────────────────────────
+
     function publishAgentPublicKey(bytes calldata _publicKey) external onlyRegisteredAgent whenNotPaused {
-        uint256 len = _publicKey.length;
-        require(len >= MIN_AGENT_PUBLIC_KEY_BYTES, "Public key too short.");
-        require(len <= MAX_AGENT_PUBLIC_KEY_BYTES, "Public key too long.");
-        _agentPublicKeys[msg.sender] = _publicKey;
-        agentPublicKeyUpdatedAt[msg.sender] = block.timestamp;
-        emit AgentPublicKeyPublished(msg.sender, _publicKey, block.timestamp);
+        _pkiPubKeys.publishKey(_publicKey);
     }
 
-    /**
-     * @notice Revoke the caller's previously published public key.
-     *         After revocation, other agents should stop encrypting to it.
-     *         Existing stored ciphertexts are NOT deleted — revocation is
-     *         forward-looking only.
-     */
     function revokeAgentPublicKey() external onlyRegisteredAgent whenNotPaused {
-        require(_agentPublicKeys[msg.sender].length > 0, "No public key published.");
-        delete _agentPublicKeys[msg.sender];
-        agentPublicKeyUpdatedAt[msg.sender] = block.timestamp;
-        emit AgentPublicKeyRevoked(msg.sender, block.timestamp);
+        _pkiPubKeys.revokeKey();
     }
 
-    /**
-     * @notice Read an agent's published public key.
-     * @param _agent The agent address to look up.
-     * @return publicKey  Raw public key bytes (empty if not published/revoked).
-     * @return updatedAt  Timestamp of the last publish or revoke.
-     */
     function getAgentPublicKey(address _agent) external view returns (bytes memory publicKey, uint256 updatedAt) {
-        return (_agentPublicKeys[_agent], agentPublicKeyUpdatedAt[_agent]);
+        return _pkiPubKeys.getKey(_agent);
     }
 
-    /**
-     * @notice Shorthand check for whether an agent has a current public key.
-     */
     function hasAgentPublicKey(address _agent) external view returns (bool) {
-        return _agentPublicKeys[_agent].length > 0;
+        return _pkiPubKeys.hasKey(_agent);
     }
+
+    function agentPublicKeyUpdatedAt(address _agent) external view returns (uint256) {
+        return _pkiPubKeys.updatedAt[_agent];
+    }
+
+    // ─── Agreement envelope wrappers ───────────────────────────────────────
 
     /// @dev True if `who` is a party to service agreement `id`.
     function _isAgreementParty(uint256 _agreementId, address who) internal view returns (bool) {
@@ -3345,26 +3299,19 @@ contract Project_DAO {
         return who == a.client || who == a.provider || (a.arbiter != address(0) && who == a.arbiter);
     }
 
+    /// @dev Require every recipient in `_recipients` to be a party to the
+    ///      agreement. The rest of the recipient-level validation (pubkey
+    ///      published, ciphertext length) happens inside PKILib.
+    function _requireAllPartiesInAgreement(uint256 _agreementId, address[] calldata _recipients) internal view {
+        for (uint256 i = 0; i < _recipients.length; i++) {
+            require(_isAgreementParty(_agreementId, _recipients[i]), "Recipient not a party to the agreement.");
+        }
+    }
+
     /**
-     * @notice Attach an encrypted payload to a service agreement so that
-     *         only its parties can read the sensitive terms.
-     *
-     *         The caller (who must be a party to the agreement) supplies
-     *         one ciphertext per recipient. Each recipient must also be a
-     *         party to the agreement — you cannot attach ciphertexts aimed
-     *         at outsiders. Recipients must have a published public key.
-     *
-     *         Re-calling this function overwrites the envelope (e.g. to
-     *         renegotiate terms). The latest writer is recorded in `setBy`.
-     *
-     * @param _agreementId  The service agreement ID.
-     * @param _recipients   Addresses that get a ciphertext entry (must be
-     *                      parties to the agreement).
-     * @param _ciphertexts  Opaque ciphertext per recipient, same length as
-     *                      _recipients. Each item must fit in
-     *                      MAX_ENCRYPTED_PAYLOAD_BYTES.
-     * @param _contentHash  keccak256 of the shared plaintext (used by each
-     *                      party to verify integrity post-decryption).
+     * @notice Attach an encrypted payload (unsigned) to a service agreement.
+     *         Only parties to the agreement may attach; each recipient must
+     *         also be a party and must have a published public key.
      */
     function attachEncryptedAgreementPayload(
         uint256 _agreementId,
@@ -3372,67 +3319,82 @@ contract Project_DAO {
         string[] calldata _ciphertexts,
         bytes32 _contentHash
     ) external onlyRegisteredAgent whenNotPaused {
-        ServiceAgreement storage a = serviceAgreements[_agreementId];
-        require(a.id != 0, "Agreement not found.");
+        require(serviceAgreements[_agreementId].id != 0, "Agreement not found.");
         require(_isAgreementParty(_agreementId, msg.sender), "Only parties can attach encrypted payloads.");
-        require(_recipients.length == _ciphertexts.length, "Recipients/ciphertexts length mismatch.");
-        require(_recipients.length > 0, "At least one recipient required.");
-        require(_contentHash != bytes32(0), "Content hash required.");
-
-        for (uint256 i = 0; i < _recipients.length; i++) {
-            address r = _recipients[i];
-            require(_isAgreementParty(_agreementId, r), "Recipient not a party to the agreement.");
-            require(_agentPublicKeys[r].length > 0, "Recipient has no published public key.");
-            bytes calldata ct = bytes(_ciphertexts[i]);
-            require(ct.length > 0, "Ciphertext must be non-empty.");
-            require(ct.length <= MAX_ENCRYPTED_PAYLOAD_BYTES, "Ciphertext exceeds max length.");
-            _agreementCiphertextFor[_agreementId][r] = _ciphertexts[i];
-        }
-
-        _agreementEnvelope[_agreementId] = EncryptedEnvelope({
-            contentHash: _contentHash,
-            updatedAt:   block.timestamp,
-            setBy:       msg.sender,
-            exists:      true
-        });
-
-        emit AgreementEncryptedPayloadAttached(_agreementId, msg.sender, _contentHash, _recipients.length, block.timestamp);
+        _requireAllPartiesInAgreement(_agreementId, _recipients);
+        PKILib.attachAgreementEnvelope(
+            _pkiAgreementEnvelopes,
+            _pkiPubKeys,
+            _agreementId,
+            _recipients,
+            _ciphertexts,
+            _contentHash
+        );
     }
 
     /**
-     * @notice Read the caller's own ciphertext from a service agreement
-     *         envelope. Only parties to the agreement may call this, and
-     *         each caller only ever receives the ciphertext that was
-     *         encrypted for their own address.
+     * @notice Attach an encrypted payload to a service agreement with
+     *         EIP-712 signatures from every expected signer over the
+     *         (agreementId, contentHash) pair. Provides non-repudiation:
+     *         any observer can later re-verify that the parties actually
+     *         agreed to the plaintext hash.
      *
-     * @param _agreementId  The service agreement ID.
-     * @return contentHash         The shared integrity hash of the plaintext.
-     * @return ciphertextForCaller The ciphertext encrypted for msg.sender.
-     * @return updatedAt           When the envelope was last written.
-     * @return setBy               Address that attached the envelope.
+     * @param _expectedSigners Addresses whose signatures are required. The
+     *                         caller supplies this list; every address in
+     *                         it must be a party to the agreement. Clients
+     *                         typically pass [client, provider] or
+     *                         [client, provider, arbiter].
+     * @param _signatures      65-byte EIP-712 signatures, positional with
+     *                         _expectedSigners.
+     */
+    function attachEncryptedAgreementPayloadSigned(
+        uint256 _agreementId,
+        address[] calldata _recipients,
+        string[] calldata _ciphertexts,
+        bytes32 _contentHash,
+        address[] calldata _expectedSigners,
+        bytes[] calldata _signatures
+    ) external onlyRegisteredAgent whenNotPaused {
+        require(serviceAgreements[_agreementId].id != 0, "Agreement not found.");
+        require(_isAgreementParty(_agreementId, msg.sender), "Only parties can attach encrypted payloads.");
+        _requireAllPartiesInAgreement(_agreementId, _recipients);
+        // Every expected signer must also be a party to the agreement.
+        for (uint256 i = 0; i < _expectedSigners.length; i++) {
+            require(_isAgreementParty(_agreementId, _expectedSigners[i]), "Signer not a party to the agreement.");
+        }
+        PKILib.attachAgreementEnvelopeSigned(
+            _pkiAgreementEnvelopes,
+            _pkiPubKeys,
+            _agreementId,
+            _recipients,
+            _ciphertexts,
+            _contentHash,
+            _expectedSigners,
+            _signatures
+        );
+    }
+
+    /**
+     * @notice Read the caller's own ciphertext from a service agreement envelope.
+     *         Only parties may call; each caller only sees the ciphertext
+     *         encrypted for their own address.
      */
     function getEncryptedAgreementPayload(uint256 _agreementId) external view returns (
         bytes32 contentHash,
         string memory ciphertextForCaller,
         uint256 updatedAt,
-        address setBy
+        address setBy,
+        bool hasSignatures
     ) {
-        EncryptedEnvelope storage e = _agreementEnvelope[_agreementId];
-        require(e.exists, "No encrypted payload attached.");
         require(_isAgreementParty(_agreementId, msg.sender), "Only parties can read encrypted payloads.");
-        return (e.contentHash, _agreementCiphertextFor[_agreementId][msg.sender], e.updatedAt, e.setBy);
+        return _pkiAgreementEnvelopes.readEnvelope(_agreementId, msg.sender);
     }
 
+    // ─── Payment request envelope wrappers ─────────────────────────────────
+
     /**
-     * @notice Attach an encrypted payload to a payment request.
-     *         Only the original requester can attach (they authored the
-     *         plaintext description). One ciphertext is stored for the
-     *         requester, one for the payer. Both must have a published key.
-     *
-     * @param _requestId              The payment request ID.
-     * @param _ciphertextForRequester Opaque ciphertext encrypted for the requester's key.
-     * @param _ciphertextForPayer     Opaque ciphertext encrypted for the payer's key.
-     * @param _contentHash            keccak256 of the shared plaintext.
+     * @notice Attach an encrypted payload (unsigned) to a payment request.
+     *         Only the original requester can attach.
      */
     function attachEncryptedPaymentRequestPayload(
         uint256 _requestId,
@@ -3443,55 +3405,84 @@ contract Project_DAO {
         AgentPaymentRequest storage r = agentPaymentRequests[_requestId];
         require(r.id != 0, "Payment request does not exist.");
         require(r.requester == msg.sender, "Only the requester can attach encrypted payloads.");
-        require(_contentHash != bytes32(0), "Content hash required.");
-
-        bytes calldata reqCt = bytes(_ciphertextForRequester);
-        bytes calldata payCt = bytes(_ciphertextForPayer);
-        require(reqCt.length > 0 && payCt.length > 0, "Ciphertexts must be non-empty.");
-        require(
-            reqCt.length <= MAX_ENCRYPTED_PAYLOAD_BYTES && payCt.length <= MAX_ENCRYPTED_PAYLOAD_BYTES,
-            "Ciphertext exceeds max length."
+        PKILib.attachPaymentRequestEnvelope(
+            _pkiPaymentRequestEnvelopes,
+            _pkiPubKeys,
+            _requestId,
+            r.requester,
+            r.payer,
+            _ciphertextForRequester,
+            _ciphertextForPayer,
+            _contentHash
         );
-        require(_agentPublicKeys[r.requester].length > 0, "Requester has no published public key.");
-        require(_agentPublicKeys[r.payer].length > 0, "Payer has no published public key.");
-
-        _paymentRequestCiphertextFor[_requestId][r.requester] = _ciphertextForRequester;
-        _paymentRequestCiphertextFor[_requestId][r.payer] = _ciphertextForPayer;
-
-        _paymentRequestEnvelope[_requestId] = EncryptedEnvelope({
-            contentHash: _contentHash,
-            updatedAt:   block.timestamp,
-            setBy:       msg.sender,
-            exists:      true
-        });
-
-        emit PaymentRequestEncryptedPayloadAttached(_requestId, msg.sender, _contentHash, block.timestamp);
     }
 
     /**
-     * @notice Read the caller's own ciphertext from a payment request
-     *         envelope. Only the requester or payer may call this, and
-     *         each caller only receives the ciphertext encrypted for them.
+     * @notice Attach an encrypted payload to a payment request with EIP-712
+     *         signatures from BOTH the requester and the payer over the
+     *         (requestId, contentHash) pair. Non-repudiation guarantee.
      *
-     * @param _requestId The payment request ID.
-     * @return contentHash         Shared integrity hash of the plaintext.
-     * @return ciphertextForCaller Ciphertext encrypted for msg.sender.
-     * @return updatedAt           When the envelope was last written.
-     * @return setBy               Address that attached the envelope.
+     *         The requester is still the only one who can submit the
+     *         transaction — but they now must produce a valid payer signature
+     *         before the envelope can be stored.
+     */
+    function attachEncryptedPaymentRequestPayloadSigned(
+        uint256 _requestId,
+        string calldata _ciphertextForRequester,
+        string calldata _ciphertextForPayer,
+        bytes32 _contentHash,
+        bytes calldata _requesterSignature,
+        bytes calldata _payerSignature
+    ) external onlyRegisteredAgent whenNotPaused {
+        AgentPaymentRequest storage r = agentPaymentRequests[_requestId];
+        require(r.id != 0, "Payment request does not exist.");
+        require(r.requester == msg.sender, "Only the requester can attach encrypted payloads.");
+        PKILib.attachPaymentRequestEnvelopeSigned(
+            _pkiPaymentRequestEnvelopes,
+            _pkiPubKeys,
+            _requestId,
+            r.requester,
+            r.payer,
+            _ciphertextForRequester,
+            _ciphertextForPayer,
+            _contentHash,
+            _requesterSignature,
+            _payerSignature
+        );
+    }
+
+    /**
+     * @notice Read the caller's own ciphertext from a payment request envelope.
+     *         Only requester or payer may call.
      */
     function getEncryptedPaymentRequestPayload(uint256 _requestId) external view returns (
         bytes32 contentHash,
         string memory ciphertextForCaller,
         uint256 updatedAt,
-        address setBy
+        address setBy,
+        bool hasSignatures
     ) {
-        EncryptedEnvelope storage e = _paymentRequestEnvelope[_requestId];
-        require(e.exists, "No encrypted payload attached.");
         AgentPaymentRequest storage r = agentPaymentRequests[_requestId];
         require(
             msg.sender == r.requester || msg.sender == r.payer,
             "Only parties can read encrypted payloads."
         );
-        return (e.contentHash, _paymentRequestCiphertextFor[_requestId][msg.sender], e.updatedAt, e.setBy);
+        return _pkiPaymentRequestEnvelopes.readEnvelope(_requestId, msg.sender);
+    }
+
+    // ─── EIP-712 digest helpers ────────────────────────────────────────────
+
+    /// @notice Returns the EIP-712 digest that a party must sign to
+    ///         authorise an agreement envelope for `_agreementId` committing
+    ///         to `_contentHash`. Off-chain clients fetch this, sign it with
+    ///         the party's private key, and pass the signature to
+    ///         `attachEncryptedAgreementPayloadSigned`.
+    function agreementTermsDigest(uint256 _agreementId, bytes32 _contentHash) external view returns (bytes32) {
+        return PKILib.agreementDigest(_agreementId, _contentHash);
+    }
+
+    /// @notice Returns the EIP-712 digest for a payment request envelope.
+    function paymentRequestTermsDigest(uint256 _requestId, bytes32 _contentHash) external view returns (bytes32) {
+        return PKILib.paymentRequestDigest(_requestId, _contentHash);
     }
 }

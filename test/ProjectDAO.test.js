@@ -5,7 +5,13 @@ const { ethers } = require("hardhat");
 // Helper: deploy fresh contract + set treasury
 async function deploy() {
   const [owner, alice, bob, carol, treasury] = await ethers.getSigners();
-  const DAO = await ethers.getContractFactory("Project_DAO");
+  // Deploy the PKILib external library and link it into Project_DAO.
+  const PKILib = await ethers.getContractFactory("PKILib");
+  const pkiLib = await PKILib.deploy();
+  await pkiLib.waitForDeployment();
+  const DAO = await ethers.getContractFactory("Project_DAO", {
+    libraries: { PKILib: await pkiLib.getAddress() },
+  });
   const dao = await DAO.deploy();
   await dao.waitForDeployment();
   await dao.setCybereumTreasury(treasury.address);
@@ -4668,7 +4674,7 @@ describe("Encrypted service agreement envelopes", () => {
         hash
       )
     ).to.emit(dao, "AgreementEncryptedPayloadAttached")
-      .withArgs(1n, alice.address, hash, 3n, anyValue);
+      .withArgs(1n, alice.address, hash, 3n, anyValue, false);
   });
 
   it("each party reads only their own ciphertext", async () => {
@@ -4847,7 +4853,7 @@ describe("Encrypted payment request envelopes", () => {
         1, "ct-requester", "ct-payer", hash
       )
     ).to.emit(dao, "PaymentRequestEncryptedPayloadAttached")
-      .withArgs(1n, alice.address, hash, anyValue);
+      .withArgs(1n, alice.address, hash, anyValue, false);
   });
 
   it("requester and payer each read their own ciphertext", async () => {
@@ -4944,5 +4950,365 @@ describe("Encrypted payment request envelopes", () => {
     await expect(
       dao.connect(alice).attachEncryptedPaymentRequestPayload(1, "ct-r", "ct-p", hash)
     ).to.be.revertedWith("Contract is paused.");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── PKI: Signed Envelope Variants (EIP-712 non-repudiation) ─────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("Signed agreement envelopes (EIP-712)", () => {
+  const clientKey   = "0x02" + "11".repeat(32);
+  const providerKey = "0x02" + "22".repeat(32);
+  const arbiterKey  = "0x02" + "33".repeat(32);
+
+  async function setup() {
+    const { dao, owner, alice, bob, carol, treasury } = await deploy();
+    await memberAgent(dao, alice); // client
+    await memberAgent(dao, bob);   // provider
+    await memberAgent(dao, carol); // arbiter
+    await dao.connect(alice).publishAgentPublicKey(clientKey);
+    await dao.connect(bob).publishAgentPublicKey(providerKey);
+    await dao.connect(carol).publishAgentPublicKey(arbiterKey);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1.0") });
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(alice).createServiceAgreement(
+      bob.address, carol.address, ethers.parseEther("0.1"), deadline, "public terms"
+    );
+    const chainId = (await ethers.provider.getNetwork()).chainId;
+    const domain = {
+      name: "Project_DAO",
+      version: "1",
+      chainId,
+      verifyingContract: await dao.getAddress(),
+    };
+    const types = {
+      AgreementTerms: [
+        { name: "agreementId", type: "uint256" },
+        { name: "contentHash", type: "bytes32" },
+      ],
+    };
+    return { dao, owner, alice, bob, carol, treasury, domain, types };
+  }
+
+  it("accepts an attach signed by every party", async () => {
+    const { dao, alice, bob, carol, domain, types } = await setup();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("signed terms"));
+    const value = { agreementId: 1n, contentHash: hash };
+    const sigAlice = await alice.signTypedData(domain, types, value);
+    const sigBob   = await bob.signTypedData(domain, types, value);
+    const sigCarol = await carol.signTypedData(domain, types, value);
+
+    await expect(
+      dao.connect(alice).attachEncryptedAgreementPayloadSigned(
+        1,
+        [alice.address, bob.address, carol.address],
+        ["ct-a", "ct-b", "ct-c"],
+        hash,
+        [alice.address, bob.address, carol.address],
+        [sigAlice, sigBob, sigCarol]
+      )
+    ).to.emit(dao, "AgreementEncryptedPayloadAttached")
+      .withArgs(1n, alice.address, hash, 3n, anyValue, true);
+
+    // The envelope is flagged as signed.
+    const forAlice = await dao.connect(alice).getEncryptedAgreementPayload(1);
+    expect(forAlice.hasSignatures).to.be.true;
+    expect(forAlice.contentHash).to.equal(hash);
+  });
+
+  it("reverts if a signature is from the wrong party", async () => {
+    const { dao, alice, bob, carol, domain, types } = await setup();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("signed"));
+    const value = { agreementId: 1n, contentHash: hash };
+    const sigAlice = await alice.signTypedData(domain, types, value);
+    // carol signs in bob's slot
+    const sigCarolAsBob = await carol.signTypedData(domain, types, value);
+
+    await expect(
+      dao.connect(alice).attachEncryptedAgreementPayloadSigned(
+        1,
+        [alice.address, bob.address],
+        ["ct-a", "ct-b"],
+        hash,
+        [alice.address, bob.address],
+        [sigAlice, sigCarolAsBob]
+      )
+    ).to.be.revertedWith("Invalid party signature.");
+  });
+
+  it("reverts if a signature is over the wrong contentHash", async () => {
+    const { dao, alice, bob, domain, types } = await setup();
+    const realHash = ethers.keccak256(ethers.toUtf8Bytes("real"));
+    const attackHash = ethers.keccak256(ethers.toUtf8Bytes("attack"));
+    // Both parties signed the REAL hash
+    const sigAlice = await alice.signTypedData(domain, types, { agreementId: 1n, contentHash: realHash });
+    const sigBob   = await bob.signTypedData(domain, types, { agreementId: 1n, contentHash: realHash });
+
+    // Caller tries to submit with a DIFFERENT hash
+    await expect(
+      dao.connect(alice).attachEncryptedAgreementPayloadSigned(
+        1,
+        [alice.address, bob.address],
+        ["ct-a", "ct-b"],
+        attackHash,
+        [alice.address, bob.address],
+        [sigAlice, sigBob]
+      )
+    ).to.be.revertedWith("Invalid party signature.");
+  });
+
+  it("reverts if a signature is over a different agreement id", async () => {
+    const { dao, alice, bob, domain, types } = await setup();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    const sigAlice = await alice.signTypedData(domain, types, { agreementId: 99n, contentHash: hash });
+    const sigBob = await bob.signTypedData(domain, types, { agreementId: 1n, contentHash: hash });
+    await expect(
+      dao.connect(alice).attachEncryptedAgreementPayloadSigned(
+        1,
+        [alice.address, bob.address],
+        ["ct-a", "ct-b"],
+        hash,
+        [alice.address, bob.address],
+        [sigAlice, sigBob]
+      )
+    ).to.be.revertedWith("Invalid party signature.");
+  });
+
+  it("reverts if an expected signer isn't a party to the agreement", async () => {
+    const { dao, alice, bob, domain, types } = await setup();
+    const [, , , , stranger] = await ethers.getSigners();
+    await memberAgent(dao, stranger);
+    await dao.connect(stranger).publishAgentPublicKey("0x02" + "77".repeat(32));
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    const sigAlice = await alice.signTypedData(domain, types, { agreementId: 1n, contentHash: hash });
+    const sigStranger = await stranger.signTypedData(domain, types, { agreementId: 1n, contentHash: hash });
+    await expect(
+      dao.connect(alice).attachEncryptedAgreementPayloadSigned(
+        1,
+        [alice.address, bob.address],
+        ["ct-a", "ct-b"],
+        hash,
+        [alice.address, stranger.address],
+        [sigAlice, sigStranger]
+      )
+    ).to.be.revertedWith("Signer not a party to the agreement.");
+  });
+
+  it("reverts on signers/signatures length mismatch", async () => {
+    const { dao, alice, bob, domain, types } = await setup();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    const sigAlice = await alice.signTypedData(domain, types, { agreementId: 1n, contentHash: hash });
+    await expect(
+      dao.connect(alice).attachEncryptedAgreementPayloadSigned(
+        1,
+        [alice.address, bob.address],
+        ["ct-a", "ct-b"],
+        hash,
+        [alice.address, bob.address],
+        [sigAlice] // missing bob's sig
+      )
+    ).to.be.revertedWith("Signers/signatures length mismatch.");
+  });
+
+  it("agreementTermsDigest is deterministic and matches signTypedData digest", async () => {
+    const { dao, alice, domain, types } = await setup();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    const onchainDigest = await dao.agreementTermsDigest(1, hash);
+    const offchainDigest = ethers.TypedDataEncoder.hash(domain, types, { agreementId: 1n, contentHash: hash });
+    expect(onchainDigest).to.equal(offchainDigest);
+  });
+
+  it("unsigned attach records hasSignatures=false", async () => {
+    const { dao, alice, bob, carol } = await setup();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("unsigned"));
+    await dao.connect(alice).attachEncryptedAgreementPayload(
+      1, [alice.address, bob.address, carol.address], ["a", "b", "c"], hash
+    );
+    const r = await dao.connect(alice).getEncryptedAgreementPayload(1);
+    expect(r.hasSignatures).to.be.false;
+  });
+});
+
+describe("Signed payment request envelopes (EIP-712)", () => {
+  const requesterKey = "0x02" + "aa".repeat(32);
+  const payerKey     = "0x02" + "bb".repeat(32);
+
+  async function setup() {
+    const { dao, owner, alice } = await deploy();
+    // alice = requester, owner = payer
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    await dao.publishAgentPublicKey(payerKey);              // owner/payer
+    await dao.connect(alice).publishAgentPublicKey(requesterKey);
+    await dao.connect(alice).createAgentPaymentRequest(
+      owner.address, ethers.ZeroAddress, ethers.parseEther("0.1"), true, "public"
+    );
+    const chainId = (await ethers.provider.getNetwork()).chainId;
+    const domain = {
+      name: "Project_DAO",
+      version: "1",
+      chainId,
+      verifyingContract: await dao.getAddress(),
+    };
+    const types = {
+      PaymentRequestTerms: [
+        { name: "requestId", type: "uint256" },
+        { name: "contentHash", type: "bytes32" },
+      ],
+    };
+    return { dao, owner, alice, domain, types };
+  }
+
+  it("accepts both-party signed attach", async () => {
+    const { dao, owner, alice, domain, types } = await setup();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("signed invoice"));
+    const sigRequester = await alice.signTypedData(domain, types, { requestId: 1n, contentHash: hash });
+    const sigPayer = await owner.signTypedData(domain, types, { requestId: 1n, contentHash: hash });
+
+    await expect(
+      dao.connect(alice).attachEncryptedPaymentRequestPayloadSigned(
+        1, "ct-r", "ct-p", hash, sigRequester, sigPayer
+      )
+    ).to.emit(dao, "PaymentRequestEncryptedPayloadAttached")
+      .withArgs(1n, alice.address, hash, anyValue, true);
+
+    const r = await dao.connect(alice).getEncryptedPaymentRequestPayload(1);
+    expect(r.hasSignatures).to.be.true;
+  });
+
+  it("reverts if the requester signature is forged", async () => {
+    const { dao, owner, alice, domain, types } = await setup();
+    const [, , stranger] = await ethers.getSigners();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    const badSig = await stranger.signTypedData(domain, types, { requestId: 1n, contentHash: hash });
+    const goodPayerSig = await owner.signTypedData(domain, types, { requestId: 1n, contentHash: hash });
+    await expect(
+      dao.connect(alice).attachEncryptedPaymentRequestPayloadSigned(
+        1, "ct-r", "ct-p", hash, badSig, goodPayerSig
+      )
+    ).to.be.revertedWith("Invalid requester signature.");
+  });
+
+  it("reverts if the payer signature is forged", async () => {
+    const { dao, owner, alice, domain, types } = await setup();
+    const [, , stranger] = await ethers.getSigners();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    const goodReqSig = await alice.signTypedData(domain, types, { requestId: 1n, contentHash: hash });
+    const badPayerSig = await stranger.signTypedData(domain, types, { requestId: 1n, contentHash: hash });
+    await expect(
+      dao.connect(alice).attachEncryptedPaymentRequestPayloadSigned(
+        1, "ct-r", "ct-p", hash, goodReqSig, badPayerSig
+      )
+    ).to.be.revertedWith("Invalid payer signature.");
+  });
+
+  it("paymentRequestTermsDigest matches off-chain TypedDataEncoder", async () => {
+    const { dao, domain, types } = await setup();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    const onchainDigest = await dao.paymentRequestTermsDigest(1, hash);
+    const offchainDigest = ethers.TypedDataEncoder.hash(domain, types, { requestId: 1n, contentHash: hash });
+    expect(onchainDigest).to.equal(offchainDigest);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── PKI: Partial Re-Attach Footgun Documentation ────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// This suite documents (and locks in) the known-but-intentional behaviour
+// that re-attaching an envelope with a subset of recipients:
+//   - Updates the envelope header (contentHash, updatedAt, setBy)
+//   - Writes new ciphertexts for the recipients passed this call
+//   - Does NOT clear ciphertexts for recipients not passed this call
+//
+// Consequence: if the new contentHash differs from the previous one, the
+// parties whose ciphertexts were not rewritten will observe a stale
+// ciphertext paired with a new hash — their post-decryption integrity check
+// will FAIL. The invariant that protects them is "callers should re-attach
+// with ALL parties whenever the contentHash changes".
+//
+// These tests exist to assert that behaviour so it is not accidentally
+// altered in the future without updating the docs.
+
+describe("Partial re-attach footgun (documented behaviour)", () => {
+  const keyA = "0x02" + "11".repeat(32);
+  const keyB = "0x02" + "22".repeat(32);
+  const keyC = "0x02" + "33".repeat(32);
+
+  async function setup() {
+    const { dao, owner, alice, bob, carol, treasury } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    await memberAgent(dao, carol);
+    await dao.connect(alice).publishAgentPublicKey(keyA);
+    await dao.connect(bob).publishAgentPublicKey(keyB);
+    await dao.connect(carol).publishAgentPublicKey(keyC);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1.0") });
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(alice).createServiceAgreement(
+      bob.address, carol.address, ethers.parseEther("0.1"), deadline, "public"
+    );
+    return { dao, alice, bob, carol };
+  }
+
+  it("partial re-attach leaves stale ciphertexts paired with a new hash", async () => {
+    const { dao, alice, bob, carol } = await setup();
+    const h1 = ethers.keccak256(ethers.toUtf8Bytes("terms v1"));
+    const h2 = ethers.keccak256(ethers.toUtf8Bytes("terms v2"));
+
+    // v1: full attach to all 3 parties with hash h1
+    await dao.connect(alice).attachEncryptedAgreementPayload(
+      1, [alice.address, bob.address, carol.address], ["a1", "b1", "c1"], h1
+    );
+
+    // v2: partial re-attach with new hash h2 but only alice's ciphertext
+    await dao.connect(alice).attachEncryptedAgreementPayload(
+      1, [alice.address], ["a2"], h2
+    );
+
+    // Envelope header reflects v2
+    const forAlice = await dao.connect(alice).getEncryptedAgreementPayload(1);
+    expect(forAlice.contentHash).to.equal(h2);
+    expect(forAlice.ciphertextForCaller).to.equal("a2");
+
+    // Bob sees the NEW hash but his OLD (stale) ciphertext — footgun.
+    const forBob = await dao.connect(bob).getEncryptedAgreementPayload(1);
+    expect(forBob.contentHash).to.equal(h2);
+    expect(forBob.ciphertextForCaller).to.equal("b1");
+
+    // Carol likewise.
+    const forCarol = await dao.connect(carol).getEncryptedAgreementPayload(1);
+    expect(forCarol.contentHash).to.equal(h2);
+    expect(forCarol.ciphertextForCaller).to.equal("c1");
+  });
+
+  it("partial re-attach with SAME hash is safe (same plaintext, new/updated keys)", async () => {
+    const { dao, alice, bob, carol } = await setup();
+    const h = ethers.keccak256(ethers.toUtf8Bytes("stable terms"));
+
+    // v1: full attach
+    await dao.connect(alice).attachEncryptedAgreementPayload(
+      1, [alice.address, bob.address, carol.address], ["a1", "b1", "c1"], h
+    );
+
+    // v2: partial re-attach with SAME hash, rewriting only bob's ciphertext
+    // (e.g. bob rotated his key and needs a fresh ciphertext re-encrypted to
+    //  his new pubkey). Other parties' ciphertexts stay valid because the
+    //  hash hasn't changed.
+    await dao.connect(alice).attachEncryptedAgreementPayload(
+      1, [bob.address], ["b2"], h
+    );
+
+    const forAlice = await dao.connect(alice).getEncryptedAgreementPayload(1);
+    const forBob = await dao.connect(bob).getEncryptedAgreementPayload(1);
+    const forCarol = await dao.connect(carol).getEncryptedAgreementPayload(1);
+
+    expect(forAlice.contentHash).to.equal(h);
+    expect(forBob.contentHash).to.equal(h);
+    expect(forCarol.contentHash).to.equal(h);
+    expect(forAlice.ciphertextForCaller).to.equal("a1");
+    expect(forBob.ciphertextForCaller).to.equal("b2");
+    expect(forCarol.ciphertextForCaller).to.equal("c1");
   });
 });

@@ -48,7 +48,18 @@ async function main() {
 
   // Deploy contract
   console.log("\n=== Deploying Contract ===");
-  const DAO = await ethers.getContractFactory("Project_DAO");
+  // Deploy the PKILib library first and link it into Project_DAO. The
+  // library holds the PKI registry / envelope / EIP-712 logic so the main
+  // contract's bytecode stays leaner.
+  const PKILib = await ethers.getContractFactory("PKILib");
+  const pkiLib = await PKILib.deploy();
+  await pkiLib.waitForDeployment();
+  const pkiLibAddress = await pkiLib.getAddress();
+  console.log("PKILib deployed to:", pkiLibAddress);
+
+  const DAO = await ethers.getContractFactory("Project_DAO", {
+    libraries: { PKILib: pkiLibAddress },
+  });
   const dao = await DAO.deploy();
   await dao.waitForDeployment();
   const address = await dao.getAddress();

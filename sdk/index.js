@@ -1410,7 +1410,7 @@ export class AgentClient {
    * then verify by rehashing and comparing to `contentHash`.
    *
    * @param {number|bigint} agreementId
-   * @returns {Promise<{contentHash: string, ciphertextForCaller: string, updatedAt: bigint, setBy: string}>}
+   * @returns {Promise<{contentHash: string, ciphertextForCaller: string, updatedAt: bigint, setBy: string, hasSignatures: boolean}>}
    */
   async getEncryptedAgreementPayload(agreementId) {
     const r = await this.contract.getEncryptedAgreementPayload(agreementId);
@@ -1419,7 +1419,72 @@ export class AgentClient {
       ciphertextForCaller: r.ciphertextForCaller,
       updatedAt: r.updatedAt,
       setBy: r.setBy,
+      hasSignatures: r.hasSignatures,
     };
+  }
+
+  /**
+   * Attach an encrypted service agreement payload with EIP-712 signatures
+   * from every party. Provides non-repudiation on top of the confidentiality
+   * + integrity properties of the unsigned variant — observers can later
+   * re-verify the signatures against the stored contentHash.
+   *
+   * The caller (msg.sender) submits the transaction but every address in
+   * `expectedSigners` must have produced a valid signature over the
+   * (agreementId, contentHash) pair. Signatures are positional —
+   * `signatures[i]` must recover to `expectedSigners[i]`.
+   *
+   * Use `agreementTermsDigest(agreementId, contentHash)` to fetch the exact
+   * digest each party must sign, or `signAgreementTerms()` on the signing
+   * party's SDK instance.
+   *
+   * @param {number|bigint} agreementId
+   * @param {Object|Array} payloadMap              { [address]: ciphertext }
+   * @param {string} contentHash                   32-byte hex
+   * @param {string[]} expectedSigners             Party addresses whose signatures are required
+   * @param {string[]} signatures                  65-byte hex signatures, positional with expectedSigners
+   */
+  async attachEncryptedAgreementPayloadSigned(agreementId, payloadMap, contentHash, expectedSigners, signatures) {
+    this._validateContentHash(contentHash);
+    if (!Array.isArray(expectedSigners) || !Array.isArray(signatures)) {
+      throw new Error('expectedSigners and signatures must be arrays');
+    }
+    if (expectedSigners.length === 0) throw new Error('At least one signer required');
+    if (expectedSigners.length !== signatures.length) {
+      throw new Error('expectedSigners and signatures must have the same length');
+    }
+    const normalizedSigners = expectedSigners.map(a => this._validateAddress(a, 'signer'));
+    const normalizedSigs = signatures.map((s, i) => {
+      if (typeof s !== 'string' || !/^0x[0-9a-fA-F]{130}$/.test(s)) {
+        throw new Error(`signature[${i}] must be a 65-byte hex string (0x + 130 hex chars)`);
+      }
+      return s;
+    });
+
+    let entries;
+    if (Array.isArray(payloadMap)) {
+      entries = payloadMap.map(({ address, ciphertext }) => [address, ciphertext]);
+    } else if (payloadMap && typeof payloadMap === 'object') {
+      entries = Object.entries(payloadMap);
+    } else {
+      throw new Error('payloadMap must be an object or array of {address, ciphertext}');
+    }
+    if (entries.length === 0) throw new Error('payloadMap must contain at least one entry');
+
+    const recipients = [];
+    const ciphertexts = [];
+    for (const [addr, ct] of entries) {
+      recipients.push(this._validateAddress(addr, 'recipient'));
+      this._validateCiphertext(ct, `ciphertext for ${addr}`);
+      ciphertexts.push(ct);
+    }
+
+    const tx = await this._write(() =>
+      this.contract.attachEncryptedAgreementPayloadSigned(
+        agreementId, recipients, ciphertexts, contentHash, normalizedSigners, normalizedSigs
+      )
+    );
+    return this._waitForTx(tx);
   }
 
   /**
@@ -1454,7 +1519,7 @@ export class AgentClient {
    * ciphertext encrypted for them.
    *
    * @param {number|bigint} requestId
-   * @returns {Promise<{contentHash: string, ciphertextForCaller: string, updatedAt: bigint, setBy: string}>}
+   * @returns {Promise<{contentHash: string, ciphertextForCaller: string, updatedAt: bigint, setBy: string, hasSignatures: boolean}>}
    */
   async getEncryptedPaymentRequestPayload(requestId) {
     const r = await this.contract.getEncryptedPaymentRequestPayload(requestId);
@@ -1463,7 +1528,123 @@ export class AgentClient {
       ciphertextForCaller: r.ciphertextForCaller,
       updatedAt: r.updatedAt,
       setBy: r.setBy,
+      hasSignatures: r.hasSignatures,
     };
+  }
+
+  /**
+   * Attach an encrypted payment request payload with EIP-712 signatures
+   * from both the requester and the payer. The caller (msg.sender) must be
+   * the requester, but the envelope is only accepted once both parties
+   * have signed the (requestId, contentHash) pair.
+   */
+  async attachEncryptedPaymentRequestPayloadSigned(requestId, ciphertextForRequester, ciphertextForPayer, contentHash, requesterSignature, payerSignature) {
+    this._validateCiphertext(ciphertextForRequester, 'ciphertextForRequester');
+    this._validateCiphertext(ciphertextForPayer, 'ciphertextForPayer');
+    this._validateContentHash(contentHash);
+    this._validateSignature(requesterSignature, 'requesterSignature');
+    this._validateSignature(payerSignature, 'payerSignature');
+    const tx = await this._write(() =>
+      this.contract.attachEncryptedPaymentRequestPayloadSigned(
+        requestId,
+        ciphertextForRequester,
+        ciphertextForPayer,
+        contentHash,
+        requesterSignature,
+        payerSignature
+      )
+    );
+    return this._waitForTx(tx);
+  }
+
+  /**
+   * @private
+   * Validate a 65-byte hex ECDSA signature.
+   */
+  _validateSignature(sig, label = 'signature') {
+    if (typeof sig !== 'string' || !/^0x[0-9a-fA-F]{130}$/.test(sig)) {
+      throw new Error(`${label} must be a 65-byte hex string (0x + 130 hex chars)`);
+    }
+  }
+
+  /**
+   * Fetch the EIP-712 digest a party must sign to authorise an agreement
+   * envelope. Agents typically call this, sign the result with their
+   * private key (via `signAgreementTerms`), then pass the signature to the
+   * party that will submit the envelope.
+   */
+  async agreementTermsDigest(agreementId, contentHash) {
+    this._validateContentHash(contentHash);
+    return this.contract.agreementTermsDigest(agreementId, contentHash);
+  }
+
+  /**
+   * Fetch the EIP-712 digest for a payment request envelope.
+   */
+  async paymentRequestTermsDigest(requestId, contentHash) {
+    this._validateContentHash(contentHash);
+    return this.contract.paymentRequestTermsDigest(requestId, contentHash);
+  }
+
+  /**
+   * Sign the EIP-712 AgreementTerms struct locally — matches the digest
+   * the contract would return from `agreementTermsDigest`. Produces a
+   * 65-byte hex signature suitable for
+   * `attachEncryptedAgreementPayloadSigned`.
+   *
+   * Uses the wallet's signing key and the main contract's address as the
+   * EIP-712 domain verifyingContract, so the signature is only valid for
+   * this chain + this contract.
+   *
+   * @param {number|bigint} agreementId
+   * @param {string} contentHash 0x-prefixed 32-byte hex
+   * @returns {Promise<string>} 65-byte hex signature
+   */
+  async signAgreementTerms(agreementId, contentHash) {
+    this._validateContentHash(contentHash);
+    const domain = await this._eip712Domain();
+    const types = {
+      AgreementTerms: [
+        { name: 'agreementId', type: 'uint256' },
+        { name: 'contentHash', type: 'bytes32' },
+      ],
+    };
+    const value = { agreementId: BigInt(agreementId), contentHash };
+    return this.wallet.signTypedData(domain, types, value);
+  }
+
+  /**
+   * Sign the EIP-712 PaymentRequestTerms struct locally.
+   */
+  async signPaymentRequestTerms(requestId, contentHash) {
+    this._validateContentHash(contentHash);
+    const domain = await this._eip712Domain();
+    const types = {
+      PaymentRequestTerms: [
+        { name: 'requestId', type: 'uint256' },
+        { name: 'contentHash', type: 'bytes32' },
+      ],
+    };
+    const value = { requestId: BigInt(requestId), contentHash };
+    return this.wallet.signTypedData(domain, types, value);
+  }
+
+  /**
+   * @private
+   * Build the EIP-712 domain used by the Project_DAO contract.
+   * Cached after the first call.
+   */
+  async _eip712Domain() {
+    if (this._cachedDomain) return this._cachedDomain;
+    const network = await this.provider.getNetwork();
+    const contractAddress = await this.contract.getAddress();
+    this._cachedDomain = {
+      name: 'Project_DAO',
+      version: '1',
+      chainId: Number(network.chainId),
+      verifyingContract: contractAddress,
+    };
+    return this._cachedDomain;
   }
 
   /** Stop all event listeners. */
