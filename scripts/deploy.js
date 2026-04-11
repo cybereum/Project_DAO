@@ -142,18 +142,65 @@ async function main() {
   // Verify contract on Etherscan (non-local only)
   if (!isLocalNetwork) {
     console.log("\n=== Contract Verification ===");
+
+    // Helper: tolerate "already verified" responses from Etherscan.
+    const alreadyVerified = (err) => {
+      const m = err?.message || "";
+      return (
+        m.includes("Already Verified") ||
+        m.includes("already verified") ||
+        m.includes("Contract source code already verified")
+      );
+    };
+
+    // 1. Verify each library individually. Each library has its own
+    //    deployed address and its own source file, so they need their
+    //    own verify calls before the main contract can successfully
+    //    verify against them.
+    for (const [libName, libAddress] of Object.entries(linkedLibraries)) {
+      try {
+        console.log(`Verifying ${libName} at ${libAddress}...`);
+        await hre.run("verify:verify", {
+          address: libAddress,
+          constructorArguments: [],
+        });
+        console.log(`  ${libName} verified.`);
+      } catch (verifyErr) {
+        if (alreadyVerified(verifyErr)) {
+          console.log(`  ${libName} already verified.`);
+        } else {
+          console.warn(`  ${libName} verification failed (non-fatal):`, verifyErr.message);
+          console.warn(`  Run manually: npx hardhat verify --network <network> ${libAddress}`);
+        }
+      }
+    }
+
+    // 2. Verify Project_DAO with the SAME linked libraries mapping.
+    //    Etherscan needs this because the deployed bytecode embeds the
+    //    library addresses where placeholders used to be — without
+    //    passing `libraries`, the verifier compiles the source without
+    //    linking and the resulting bytecode won't match.
     try {
       await hre.run("verify:verify", {
         address,
         constructorArguments: [],
+        libraries: linkedLibraries,
       });
-      console.log("Contract verified on block explorer.");
+      console.log("Project_DAO verified on block explorer.");
     } catch (verifyErr) {
-      if (verifyErr.message?.includes("Already Verified") || verifyErr.message?.includes("already verified") || verifyErr.message?.includes("Contract source code already verified")) {
-        console.log("Contract already verified.");
+      if (alreadyVerified(verifyErr)) {
+        console.log("Project_DAO already verified.");
       } else {
-        console.warn("Verification failed (non-fatal):", verifyErr.message);
-        console.warn("Run manually: npx hardhat verify --network <network>", address);
+        console.warn("Project_DAO verification failed (non-fatal):", verifyErr.message);
+        // Emit the manual recovery command with --libraries so the
+        // operator can re-run by hand without digging up the library
+        // addresses again.
+        const libsArg = Object.entries(linkedLibraries)
+          .map(([k, v]) => `${k}:${v}`)
+          .join(",");
+        console.warn(
+          `Run manually: npx hardhat verify --network <network> --libraries ${libsArg} ${address}`
+        );
       }
     }
   }

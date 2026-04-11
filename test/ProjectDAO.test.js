@@ -1,12 +1,19 @@
 const { expect } = require("chai");
 const { anyValue } = require("@nomicfoundation/hardhat-chai-matchers/withArgs");
+const { loadFixture } = require("@nomicfoundation/hardhat-network-helpers");
 const { ethers } = require("hardhat");
 const crypto = require("node:crypto");
 
-// Helper: deploy fresh contract + set treasury
-async function deploy() {
+// The four external libraries linked into Project_DAO are stateless —
+// they only contain code, no per-deployment state. Deploying them fresh
+// on every call to deploy() would mean ~1,640 redundant transactions
+// across this suite. Instead we wrap the whole bootstrap in a loadFixture
+// so Hardhat deploys-and-snapshots once and reverts to that snapshot at
+// the start of every subsequent test. Net effect: the libraries and the
+// linked Project_DAO factory are reused across all 300+ tests that call
+// deploy(), cutting a lot of CI time.
+async function _deployFixture() {
   const [owner, alice, bob, carol, treasury] = await ethers.getSigners();
-  // Deploy the external libraries and link them into Project_DAO.
   const PKILib = await ethers.getContractFactory("PKILib");
   const pkiLib = await PKILib.deploy();
   await pkiLib.waitForDeployment();
@@ -35,6 +42,13 @@ async function deploy() {
   await dao.initialize();
   await dao.setCybereumTreasury(treasury.address);
   return { dao, owner, alice, bob, carol, treasury };
+}
+
+// Public helper used by every test. Delegates to loadFixture so the
+// expensive library deployment + Project_DAO creation happens exactly
+// once across the whole run; each test starts from a fresh snapshot.
+async function deploy() {
+  return loadFixture(_deployFixture);
 }
 
 // Helper: add member + register as agent
