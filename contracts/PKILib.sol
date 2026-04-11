@@ -205,9 +205,12 @@ library PKILib {
      *         Each address in `expectedSigners` must have produced one of
      *         the EIP-712 signatures in `signatures` over the agreement's
      *         (agreementId, contentHash) pair — establishing explicit,
-     *         on-chain-verifiable agreement to the plaintext hash by all
-     *         parties. Signatures are positional: signatures[i] must
-     *         recover to expectedSigners[i].
+     *         on-chain-verifiable agreement to the plaintext hash by the
+     *         addresses listed in `expectedSigners`. Signatures are
+     *         positional: signatures[i] must recover to
+     *         expectedSigners[i]. If full-party agreement is required,
+     *         callers must ensure `expectedSigners` matches the complete
+     *         set of parties at the wrapper level.
      */
     function attachAgreementEnvelopeSigned(
         EnvelopeStore storage store,
