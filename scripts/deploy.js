@@ -11,6 +11,8 @@
 
 const hre = require("hardhat");
 const { ethers } = hre;
+const fs = require("fs");
+const path = require("path");
 
 async function main() {
   const [deployer] = await ethers.getSigners();
@@ -205,20 +207,72 @@ async function main() {
     }
   }
 
-  console.log("\n=== Deployment Summary ===");
-  console.log(JSON.stringify({
+  const summary = {
     chainId,
     contractAddress: address,
+    libraries: linkedLibraries,
     owner: finalOwner,
     treasury: finalTreasury,
     feeBps: Number(finalFeeBps),
     assetTransferFlatFeeWei: finalAssetFee.toString(),
     deployedAt: new Date().toISOString(),
-  }, null, 2));
+    deployer: deployer.address,
+    transactionHash: dao.deploymentTransaction()?.hash || null,
+    codeSize,
+  };
+
+  console.log("\n=== Deployment Summary ===");
+  console.log(JSON.stringify(summary, null, 2));
+
+  // Persist a deployment artifact so operators have an auditable record of
+  // every deploy without relying on scrollback. One file per (chain, address)
+  // pair — stable, grep-friendly filename.
+  try {
+    const artifactDir = path.resolve(__dirname, "..", "deployments");
+    fs.mkdirSync(artifactDir, { recursive: true });
+    const artifactPath = path.join(artifactDir, `${chainId}-${address}.json`);
+    fs.writeFileSync(artifactPath, JSON.stringify(summary, null, 2) + "\n");
+    console.log(`Deployment artifact saved to ${path.relative(process.cwd(), artifactPath)}`);
+
+    // Also write a `latest-<chainId>.json` pointer for tooling that just
+    // wants "the most recent deploy on chain X" without enumerating files.
+    const latestPath = path.join(artifactDir, `latest-${chainId}.json`);
+    fs.writeFileSync(latestPath, JSON.stringify(summary, null, 2) + "\n");
+    console.log(`Latest pointer updated at ${path.relative(process.cwd(), latestPath)}`);
+  } catch (artifactErr) {
+    console.warn("WARNING: failed to write deployment artifact:", artifactErr.message);
+  }
+
+  // Best-effort: update the canonical SDK deployment registry so autonomous
+  // agents can auto-discover the new contract via `AgentClient.discover()`
+  // on the next SDK publish. Only updates the address/status fields —
+  // explorer URL and RPC hints are preserved from the existing entry.
+  if (!isLocalNetwork) {
+    try {
+      const registryPath = path.resolve(__dirname, "..", "sdk", "deployments.json");
+      if (fs.existsSync(registryPath)) {
+        const registry = JSON.parse(fs.readFileSync(registryPath, "utf8"));
+        registry._updated = new Date().toISOString().split("T")[0];
+        registry.networks ||= {};
+        const existing = registry.networks[String(chainId)] || {};
+        registry.networks[String(chainId)] = {
+          ...existing,
+          contractAddress: address,
+          status: "deployed",
+        };
+        fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2) + "\n");
+        console.log(`SDK deployment registry updated for chain ${chainId}.`);
+      } else {
+        console.warn("WARNING: sdk/deployments.json not found; skipping registry update.");
+      }
+    } catch (registryErr) {
+      console.warn("WARNING: failed to update SDK deployment registry:", registryErr.message);
+    }
+  }
 
   console.log("\nNext steps:");
   console.log(`  1. Set VITE_PROJECT_DAO_ADDRESS=${address} in nexus-app/.env`);
-  console.log(`  2. Update sdk/deployments.json with the contract address for chain ${chainId}`);
+  console.log(`  2. Commit the updated sdk/deployments.json (auto-written above for non-local networks)`);
   console.log("  3. Add members with addMember() or let agents self-onboard via stakeAndJoin()");
   console.log("  4. Agents can auto-discover using AgentClient.discover({ chainId })");
 }

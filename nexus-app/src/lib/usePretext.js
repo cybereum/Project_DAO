@@ -86,6 +86,12 @@ export function useTextHeight(text, font, lineHeight, options) {
   }, [prepared, lineHeight, options?.fallbackWidth]);
 
   useEffect(() => {
+    // Measurement hooks intentionally call a setState-ing function on
+    // mount and on every container resize. The state only changes when
+    // the *result* changes (each setter is idempotent / guarded), so
+    // this does not cascade. Disabling the rule for this file-wide
+    // pattern rather than one line at a time.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     measure();
     const el = ref.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
@@ -126,6 +132,12 @@ export function useTextLines(text, font, lineHeight, options) {
   }, [prepared, lineHeight, options?.fallbackWidth]);
 
   useEffect(() => {
+    // Measurement hooks intentionally call a setState-ing function on
+    // mount and on every container resize. The state only changes when
+    // the *result* changes (each setter is idempotent / guarded), so
+    // this does not cascade. Disabling the rule for this file-wide
+    // pattern rather than one line at a time.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     measure();
     const el = ref.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
@@ -167,6 +179,12 @@ export function useRichInlineLayout(specs, lineHeight, options) {
   }, [items, lineHeight, options?.fallbackWidth]);
 
   useEffect(() => {
+    // Measurement hooks intentionally call a setState-ing function on
+    // mount and on every container resize. The state only changes when
+    // the *result* changes (each setter is idempotent / guarded), so
+    // this does not cascade. Disabling the rule for this file-wide
+    // pattern rather than one line at a time.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     measure();
     const el = ref.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
@@ -208,6 +226,12 @@ export function useAccordionHeight(text, font, lineHeight, options) {
   }, [prepared, lineHeight, options?.containerWidth, options?.paddingY]);
 
   useEffect(() => {
+    // Measurement hooks intentionally call a setState-ing function on
+    // mount and on every container resize. The state only changes when
+    // the *result* changes (each setter is idempotent / guarded), so
+    // this does not cascade. Disabling the rule for this file-wide
+    // pattern rather than one line at a time.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     measure();
     const el = ref.current;
     if (!el || typeof ResizeObserver === 'undefined') return;

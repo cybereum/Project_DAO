@@ -62,4 +62,41 @@ module.exports = {
     cache: "./cache",
     artifacts: "./artifacts",
   },
+  // Etherscan / Basescan verification. `@nomicfoundation/hardhat-verify`
+  // ships with hardhat-toolbox, so the deploy script can call
+  // `hre.run("verify:verify", ...)` once an API key is provided via
+  // BASESCAN_API_KEY / ETHERSCAN_API_KEY. The empty strings are safe
+  // defaults — verification is skipped on local networks and falls back
+  // to a warning on live networks when the key is missing.
+  etherscan: {
+    apiKey: {
+      mainnet: process.env.ETHERSCAN_API_KEY || "",
+      sepolia: process.env.ETHERSCAN_API_KEY || "",
+      base: process.env.BASESCAN_API_KEY || "",
+      baseSepolia: process.env.BASESCAN_API_KEY || "",
+    },
+    customChains: [
+      {
+        network: "base",
+        chainId: 8453,
+        urls: {
+          apiURL: "https://api.basescan.org/api",
+          browserURL: "https://basescan.org",
+        },
+      },
+      {
+        network: "baseSepolia",
+        chainId: 84532,
+        urls: {
+          apiURL: "https://api-sepolia.basescan.org/api",
+          browserURL: "https://sepolia.basescan.org",
+        },
+      },
+    ],
+  },
+  sourcify: {
+    // Enabling Sourcify gives us a secondary verification path (decentralised,
+    // metadata-based) alongside Etherscan.
+    enabled: true,
+  },
 };

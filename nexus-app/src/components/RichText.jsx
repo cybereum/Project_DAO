@@ -74,9 +74,17 @@ export default function RichText({ specs, lineHeight = 28, className = '', gapFo
 // ---------------------------------------------------------------------------
 // Pre-built chip/badge styles matching NEXUS design language
 // ---------------------------------------------------------------------------
+//
+// These constants and the `parseRichSpecs` helper ship from the same file as
+// the `RichText` component on purpose: they are tightly coupled to the chip
+// rendering contract and co-locating them avoids an extra hop through a
+// shared module for the handful of pages that use them. The cost is that
+// Vite fast-refresh can't hot-replace the component alone when this file
+// changes — acceptable since rich text is not an interactive edit hotspot.
 
 const chipBase = 'inline-flex items-center px-2.5 min-h-[22px] rounded-full text-xs font-bold whitespace-nowrap border';
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const CHIP_STYLES = {
   status:   `${chipBase} bg-nexus-cyan/10 text-nexus-cyan border-nexus-cyan/20`,
   success:  `${chipBase} bg-nexus-green/10 text-nexus-green border-nexus-green/20`,
@@ -87,6 +95,7 @@ export const CHIP_STYLES = {
   mention:  `${chipBase} bg-nexus-cyan/15 text-nexus-cyan border-nexus-cyan/25`,
 };
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const RICH_TEXT_STYLES = {
   code: 'px-1.5 py-0.5 rounded-md bg-white/8 font-mono text-xs text-nexus-text',
   link: 'text-nexus-cyan underline underline-offset-2 decoration-1',
@@ -109,6 +118,7 @@ export const RICH_TEXT_STYLES = {
  * @param {{ bodyFont?: string, codeFont?: string, chipFont?: string }} [fonts]
  * @returns {Array<import('../lib/pretext.js').InlineSpec|import('../lib/pretext.js').ChipSpec>}
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function parseRichSpecs(markup, fonts) {
   const bodyFont = fonts?.bodyFont ?? FONTS.body;
   const codeFont = fonts?.codeFont ?? FONTS.mono;

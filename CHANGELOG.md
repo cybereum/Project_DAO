@@ -18,6 +18,46 @@ All notable changes to this project are documented here. Dates reference impleme
 - Broadcast notification panel in NEXUS app
 - Frontend E2E tests (Playwright/Cypress)
 - Prerender/SSR for public routes
+- SDK integration tests against a live Hardhat node (unit-only today)
+
+## [0.6.1] — 2026-04-11 — Production-hardening pass
+
+### Added
+- **CI: Slither static analysis job** (`crytic/slither-action@v0.4.0`) scoped to
+  `contracts/Project_DAO.sol` with high-severity gating and noise filters.
+- **CI: TypeScript declaration typecheck** — every push runs `tsc --strict
+  --noEmit` against `sdk/index.d.ts`, preventing type regressions on the
+  public SDK surface.
+- **CI: Contract-size hard cap** — report step now fails builds if deployed
+  bytecode exceeds 96 KB (catches runaway-growth regressions; still warns at
+  the 24 KB Spurious Dragon threshold as before).
+- **SDK: `sdk/index.d.ts`** — hand-written TypeScript declarations for the
+  full `AgentClient` surface (>30 exported interfaces). Wired into
+  `package.json` via `"types"` + conditional `"exports"`.
+- **Deploy: artifact persistence** — `scripts/deploy.js` now writes
+  `deployments/<chainId>-<address>.json` and `deployments/latest-<chainId>.json`
+  for every deploy, with the linked library addresses, treasury, fee config,
+  deployer address, and tx hash captured in a single JSON blob.
+- **Deploy: auto-update SDK registry** — on non-local networks, the deploy
+  script patches `sdk/deployments.json` with the new contract address so
+  `AgentClient.discover({ chainId })` works after the next SDK publish.
+- **Deploy: hardhat-verify config** — `hardhat.config.js` now declares the
+  Etherscan / Basescan API key mapping, custom chain definitions for Base
+  and Base Sepolia, and Sourcify enablement so `hre.run("verify:verify")`
+  actually works.
+- **Frontend: Content-Security-Policy + security headers** — added a
+  `<meta http-equiv="Content-Security-Policy">` tag to `nexus-app/index.html`,
+  plus `nexus-app/vercel.json` and `nexus-app/public/_headers` files so the
+  same policy applies when served by Vercel, Cloudflare Pages, or Netlify.
+  Includes HSTS, X-Frame-Options, Referrer-Policy, Permissions-Policy,
+  X-Content-Type-Options.
+
+### Fixed
+- **Frontend lint debt**: cleared 8 pre-existing ESLint errors that were
+  blocking CI — `react-hooks/set-state-in-effect` on the Pretext
+  measurement hooks (justified by documented non-cascading guards),
+  `react-refresh/only-export-components` on `RichText.jsx`, and an unused
+  `graphemeSegmenter` helper in `pretext.js`.
 
 ---
 

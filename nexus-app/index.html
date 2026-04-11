@@ -4,6 +4,32 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
+    <!--
+      Content Security Policy
+      ──────────────────────────────────────────────────────────────────
+      This meta-level policy is a fallback. For production, configure the
+      same directives as HTTP response headers (Vercel / Cloudflare / Nginx)
+      — HTTP headers take precedence over meta tags and cover the initial
+      document response too. See nexus-app/vercel.json for the canonical
+      header set.
+
+      - default-src 'self' : everything must come from the same origin unless
+        a more specific directive allows otherwise.
+      - script-src 'self' : no third-party JS, no eval, no inline JS.
+        JSON-LD `<script type="application/ld+json">` blocks are data
+        islands (not executable) and are unaffected by script-src.
+      - style-src allows 'unsafe-inline' because Tailwind 4 and framer-motion
+        inject runtime inline styles. This is a common accepted trade-off.
+      - connect-src allows the Alchemy/Infura/Base/Ethereum RPC endpoints
+        ethers.js talks to at runtime, plus the IPFS gateways used for
+        agent metadata.
+      - frame-ancestors 'none' : the site cannot be embedded in any iframe
+        (clickjacking protection, stronger than X-Frame-Options: DENY).
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https: wss:; upgrade-insecure-requests" />
+    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+
     <!-- Primary Meta Tags -->
     <title>NEXUS Protocol | Decentralized Governance for Every City, Community & Cause</title>
     <meta name="title" content="NEXUS Protocol | Decentralized Governance for Every City, Community & Cause" />

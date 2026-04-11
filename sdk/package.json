@@ -3,12 +3,17 @@
   "version": "0.1.0",
   "description": "Standalone SDK for AI agents to interact with Project_DAO on-chain. Register, escrow, transfer, settle — no browser required.",
   "main": "index.js",
+  "types": "./index.d.ts",
   "type": "module",
   "scripts": {
     "test": "node --test test/*.test.js"
   },
   "exports": {
-    ".": "./index.js",
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js",
+      "default": "./index.js"
+    },
     "./abi": "./abi.js",
     "./deployments": "./deployments.json",
     "./pretext": "./pretext.js",
@@ -23,5 +28,5 @@
     "ethers": "^6.16.0"
   },
   "peerDependencies": {},
-  "files": ["index.js", "abi.js", "deployments.js", "deployments.json", "pretext.js", "constants.js"]
+  "files": ["index.js", "index.d.ts", "abi.js", "deployments.js", "deployments.json", "pretext.js", "constants.js"]
 }

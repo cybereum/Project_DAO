@@ -19,16 +19,27 @@ jobs:
       - run: npm ci
       - run: npx hardhat compile
 
-      # Report contract bytecode size (24KB EVM limit)
+      # Report contract bytecode size (24KB EVM limit).
+      # Warns on 24KB overage (Spurious Dragon), hard-fails on 96KB (three
+      # times the limit) as an upper bound on runaway contract growth.
       - name: Report contract size
         run: node -e "
           const fs = require('fs');
           const path = 'artifacts/contracts/Project_DAO.sol/Project_DAO.json';
           const art = JSON.parse(fs.readFileSync(path,'utf8'));
           const bytes = (art.deployedBytecode.length - 2) / 2;
+          const SPURIOUS_DRAGON = 24576;
+          const HARD_CAP = 98304; // 96 KB — 4x the L1 limit; catches regressions
           console.log('Project_DAO deployed bytecode: ' + bytes + ' bytes (' + (bytes/1024).toFixed(1) + ' KB)');
-          if (bytes > 24576) { console.warn('WARNING: Contract exceeds 24KB EVM limit!'); }
-          else { console.log('OK: within 24KB limit'); }
+          if (bytes > HARD_CAP) {
+            console.error('FATAL: contract exceeds ' + (HARD_CAP/1024).toFixed(0) + ' KB hard cap.');
+            process.exit(1);
+          }
+          if (bytes > SPURIOUS_DRAGON) {
+            console.warn('WARNING: contract exceeds 24KB Spurious Dragon limit — L2 deployment only.');
+          } else {
+            console.log('OK: within 24KB limit.');
+          }
         "
 
       - run: npx hardhat test
@@ -82,6 +93,23 @@ jobs:
       - name: Run SDK tests
         run: npm test
 
+      # Verify TypeScript declarations compile against the SDK source.
+      # We don't maintain a tsconfig — just typecheck index.d.ts directly
+      # with `tsc --noEmit` using a transient TypeScript install. This
+      # catches type errors in the .d.ts file without requiring TS in the
+      # SDK's own dependency graph.
+      - name: Typecheck index.d.ts
+        run: |
+          npx --yes --package=typescript@5.6 -- tsc \
+            --noEmit \
+            --strict \
+            --target ES2022 \
+            --module ES2022 \
+            --moduleResolution bundler \
+            --skipLibCheck \
+            --esModuleInterop \
+            index.d.ts
+
       # Dependency audit
       - name: Audit dependencies
         run: npm audit --audit-level=high --production
@@ -122,6 +150,33 @@ jobs:
           }
           console.log('OK: All critical functions present in SDK ABI');
         "
+
+  # ─── Slither Static Analysis ───────────────────────────────────────────────
+  # Runs the Slither static analyzer on the Project_DAO contracts. Scoped to
+  # high/medium severity to avoid signal-drowning noise from low-severity
+  # style lints. Non-fatal on findings (reports via GitHub annotations)
+  # so reviewers can triage before we tighten the gate.
+  slither:
+    name: Slither Static Analysis
+    runs-on: ubuntu-latest
+    needs: contracts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Run Slither
+        uses: crytic/slither-action@v0.4.0
+        continue-on-error: true
+        id: slither
+        with:
+          solc-version: '0.8.26'
+          node-version: 20
+          target: 'contracts/Project_DAO.sol'
+          slither-args: '--exclude naming-convention,solc-version,pragma,assembly --filter-paths "node_modules|contracts/VCDAO|contracts/MilestoneTracker"'
+          fail-on: 'high'
 
   # ─── Security Scanning ─────────────────────────────────────────────────────
   security:

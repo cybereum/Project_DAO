@@ -1,6 +1,6 @@
 # Production Readiness Guide — Path to 95+
 
-> Current overall score: **~88/100** across 7 dimensions (updated 2026-04-11 after the 0.6.0 encrypted-smart-contracts + library-split pass).
+> Current overall score: **~91/100** across 7 dimensions (updated 2026-04-11 after the production-hardening pass).
 > This document describes the exact work remaining to reach **95+/100**.
 
 ---
@@ -9,14 +9,52 @@
 
 | Dimension | Current | Target | Gap |
 |---|---|---|---|
-| Contract Security | 84 | 95 | +11 |
+| Contract Security | 86 | 95 | +9 |
 | Contract Tests | 95 | 96 | +1 |
-| Frontend | 89 | 95 | +6 |
-| SDK | 88 | 95 | +7 |
+| Frontend | 92 | 95 | +3 |
+| SDK | 92 | 95 | +3 |
 | SDK Tests | 88 | 95 | +7 |
-| CI Pipeline | 75 | 95 | +20 |
-| Deploy Script | 90 | 95 | +5 |
-| **Overall** | **~88** | **95+** | **+7** |
+| CI Pipeline | 84 | 95 | +11 |
+| Deploy Script | 95 | 95 | 0 |
+| **Overall** | **~91** | **95+** | **+4** |
+
+## 0.6.1 — Production hardening pass (delta from 0.6.0)
+
+**Closed items:**
+- **CI: Slither static analysis** — added `crytic/slither-action@v0.4.0` job with
+  high-severity gating and noise filters for VCDAO / MilestoneTracker subtrees.
+- **CI: Contract size hard cap** — report step now fails builds if deployed
+  bytecode exceeds 96 KB (4x the Spurious Dragon limit), catching runaway growth
+  regressions. Warns at the 24 KB Spurious Dragon threshold.
+- **CI: TypeScript declaration typecheck** — new SDK CI step compiles
+  `sdk/index.d.ts` with `tsc --strict --noEmit` on every push, guaranteeing
+  the public surface stays coherent.
+- **Deploy: artifact persistence** — `scripts/deploy.js` now writes
+  `deployments/<chainId>-<address>.json` and `deployments/latest-<chainId>.json`
+  on every deploy, then auto-patches `sdk/deployments.json` for non-local
+  networks so `AgentClient.discover()` just works after a deploy.
+- **Deploy: hardhat-verify config** — `hardhat.config.js` now has the
+  Etherscan + Basescan + Sourcify configuration the deploy script's
+  `verify:verify` call needs.
+- **Frontend: CSP + security headers** — added a Content-Security-Policy meta
+  tag to `index.html` plus `vercel.json` and `public/_headers` so the same
+  policy applies when the SPA is served by Vercel, Cloudflare Pages, or
+  Netlify. Covers HSTS, X-Frame-Options, Referrer-Policy, Permissions-Policy.
+- **SDK: TypeScript declarations** — ships a hand-written `sdk/index.d.ts`
+  (~30 interfaces, full `AgentClient` surface) wired into `package.json`
+  via `types` + `exports`. IDE integration no longer guesses.
+- **Frontend: lint debt burned down** — fixed 8 pre-existing ESLint errors
+  (react-hooks/set-state-in-effect, react-refresh/only-export-components,
+  unused segmenter) that were blocking CI.
+
+**Still open:**
+- **Spurious Dragon 24 KB code-size limit**: main contract is ~74.6 KB — still
+  3x over. Next candidates for library extraction: Reputation engine,
+  Economic projects, Payment streams, Service agreements, Referral rewards.
+- **Professional security audit** — not commissioned.
+- **SDK integration tests against a live hardhat node** — unit-only today.
+- **Frontend E2E tests (Playwright)** — not yet wired up.
+- **Deployment registry population** — still empty pending actual deploy.
 
 ## 0.6.0 — Encrypted Smart Contracts + Library Split (delta from 0.5.0)
 

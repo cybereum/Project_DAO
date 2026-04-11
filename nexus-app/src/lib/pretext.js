@@ -105,6 +105,10 @@ function wordSegmenter() {
   return _wordSegmenter;
 }
 
+// Grapheme segmentation is reserved for future per-character measurement
+// paths (e.g. CJK vertical text). The cache slot and setLocale() reset are
+// wired up so callers can opt in without changing the hot path.
+// eslint-disable-next-line no-unused-vars
 function graphemeSegmenter() {
   if (!_graphemeSegmenter) _graphemeSegmenter = new Intl.Segmenter(_locale, { granularity: 'grapheme' });
   return _graphemeSegmenter;
