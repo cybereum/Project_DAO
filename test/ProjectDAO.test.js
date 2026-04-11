@@ -5,12 +5,26 @@ const { ethers } = require("hardhat");
 // Helper: deploy fresh contract + set treasury
 async function deploy() {
   const [owner, alice, bob, carol, treasury] = await ethers.getSigners();
-  // Deploy the PKILib external library and link it into Project_DAO.
+  // Deploy the external libraries and link them into Project_DAO.
   const PKILib = await ethers.getContractFactory("PKILib");
   const pkiLib = await PKILib.deploy();
   await pkiLib.waitForDeployment();
+  const TrustLib = await ethers.getContractFactory("TrustLib");
+  const trustLib = await TrustLib.deploy();
+  await trustLib.waitForDeployment();
+  const FeatureKitLib = await ethers.getContractFactory("FeatureKitLib");
+  const fkLib = await FeatureKitLib.deploy();
+  await fkLib.waitForDeployment();
+  const MessagingLib = await ethers.getContractFactory("MessagingLib");
+  const msgLib = await MessagingLib.deploy();
+  await msgLib.waitForDeployment();
   const DAO = await ethers.getContractFactory("Project_DAO", {
-    libraries: { PKILib: await pkiLib.getAddress() },
+    libraries: {
+      PKILib: await pkiLib.getAddress(),
+      TrustLib: await trustLib.getAddress(),
+      FeatureKitLib: await fkLib.getAddress(),
+      MessagingLib: await msgLib.getAddress(),
+    },
   });
   const dao = await DAO.deploy();
   await dao.waitForDeployment();

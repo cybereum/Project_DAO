@@ -48,17 +48,23 @@ async function main() {
 
   // Deploy contract
   console.log("\n=== Deploying Contract ===");
-  // Deploy the PKILib library first and link it into Project_DAO. The
-  // library holds the PKI registry / envelope / EIP-712 logic so the main
-  // contract's bytecode stays leaner.
-  const PKILib = await ethers.getContractFactory("PKILib");
-  const pkiLib = await PKILib.deploy();
-  await pkiLib.waitForDeployment();
-  const pkiLibAddress = await pkiLib.getAddress();
-  console.log("PKILib deployed to:", pkiLibAddress);
+  // Deploy all external libraries first and link them into Project_DAO.
+  // Breaking the contract into subsystem libraries (PKI, Trust, FeatureKit,
+  // Messaging) is how we keep the main contract's deployed bytecode small
+  // enough to fit under the Osaka/Fusaka per-transaction gas cap.
+  const libArtifacts = ["PKILib", "TrustLib", "FeatureKitLib", "MessagingLib"];
+  const linkedLibraries = {};
+  for (const name of libArtifacts) {
+    const Lib = await ethers.getContractFactory(name);
+    const lib = await Lib.deploy();
+    await lib.waitForDeployment();
+    const libAddress = await lib.getAddress();
+    linkedLibraries[name] = libAddress;
+    console.log(`${name} deployed to:`, libAddress);
+  }
 
   const DAO = await ethers.getContractFactory("Project_DAO", {
-    libraries: { PKILib: pkiLibAddress },
+    libraries: linkedLibraries,
   });
   const dao = await DAO.deploy();
   await dao.waitForDeployment();

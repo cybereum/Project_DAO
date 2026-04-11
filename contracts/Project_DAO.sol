@@ -2,6 +2,9 @@
 pragma solidity ^0.8.0;
 
 import {PKILib} from "./PKILib.sol";
+import {TrustLib} from "./TrustLib.sol";
+import {FeatureKitLib} from "./FeatureKitLib.sol";
+import {MessagingLib} from "./MessagingLib.sol";
 
 interface IERC20 {
     function transferFrom(address from, address to, uint256 value) external returns (bool);
@@ -15,6 +18,9 @@ interface IERC721Lite {
 contract Project_DAO {
     using PKILib for PKILib.PubKeyRegistry;
     using PKILib for PKILib.EnvelopeStore;
+    using TrustLib for TrustLib.Store;
+    using FeatureKitLib for FeatureKitLib.Store;
+    using MessagingLib for MessagingLib.Store;
 
     // ─── Custom Errors (gas-efficient reverts) ───────────────────────────────
     error Unauthorized();
@@ -1406,25 +1412,13 @@ contract Project_DAO {
     }
 
     // ─── Secure Agent Direct Messaging ──────────────────────────────────────
+    //
+    // Storage + validation + mutation live in MessagingLib. The main
+    // contract wrapper handles authorization, the per-message fee deduction
+    // (escrow decrement + treasury transfer), and volume recording, then
+    // forwards to the library for state mutation and event emission.
 
-    struct DirectMessage {
-        uint256 id;
-        address sender;
-        address recipient;
-        bytes32 contentHash;      // keccak256 of the plaintext — proves integrity
-        string  encryptedContent; // Encrypted payload (e.g. ECIES with recipient pubkey, or IPFS CID to encrypted blob)
-        uint256 timestamp;
-        bool    readByRecipient;
-    }
-
-    uint256 public currentDirectMessageId = 1;
-    mapping(uint256 => DirectMessage) private directMessages;
-
-    /// @notice Index of message IDs per conversation pair (sorted key = min(a,b), max(a,b))
-    mapping(bytes32 => uint256[]) private _conversationIndex;
-
-    /// @notice Inbox: message IDs received by each agent.
-    mapping(address => uint256[]) private _inbox;
+    MessagingLib.Store private _msgStore;
 
     event DirectMessageSent(
         uint256 indexed messageId,
@@ -1433,42 +1427,26 @@ contract Project_DAO {
         bytes32 contentHash,
         uint256 timestamp
     );
-
     event DirectMessageRead(
         uint256 indexed messageId,
         address indexed recipient
     );
 
-    /**
-     * @notice Compute the deterministic conversation key for two agents.
-     *         Ensures (A,B) and (B,A) map to the same thread.
-     */
-    function _conversationKey(address a, address b) internal pure returns (bytes32) {
-        return a < b
-            ? keccak256(abi.encodePacked(a, b))
-            : keccak256(abi.encodePacked(b, a));
+    /// @notice Next direct-message ID. Returns 1 before any messages exist
+    ///         (matching the pre-extraction initializer).
+    function currentDirectMessageId() external view returns (uint256) {
+        uint256 v = _msgStore.currentDirectMessageId;
+        return v == 0 ? 1 : v;
     }
 
-    /**
-     * @notice Send an encrypted direct message to another registered agent.
-     * @param _to               Recipient agent address.
-     * @param _encryptedContent Encrypted message payload (off-chain encryption via
-     *                          ECIES / x25519 / app-level scheme). Can be an IPFS CID
-     *                          pointing to a larger encrypted blob.
-     * @param _contentHash      keccak256 hash of the plaintext (lets the recipient
-     *                          verify integrity after decryption).
-     */
     function sendDirectMessage(
         address _to,
         string calldata _encryptedContent,
         bytes32 _contentHash
     ) external onlyRegisteredAgent whenNotPaused nonReentrant {
         require(agents[_to].registered, "Recipient must be a registered agent.");
-        require(_to != msg.sender, "Cannot message self.");
-        require(bytes(_encryptedContent).length > 0, "Message content required.");
-        require(_contentHash != bytes32(0), "Content hash required.");
 
-        // Commerce Blackhole: messaging fee from sender's escrow (reputation discount applies)
+        // Commerce Blackhole: messaging fee (reputation discount applied).
         if (messagingFeeWei > 0) {
             uint256 actualMsgFee = _getMessagingFeeForAgent(msg.sender);
             require(agents[msg.sender].nativeEscrowBalance >= actualMsgFee, "Insufficient escrow for messaging fee.");
@@ -1481,45 +1459,13 @@ contract Project_DAO {
             emit CybereumFeePaid(msg.sender, address(0), actualMsgFee, "messaging_fee");
         }
 
-        uint256 id = currentDirectMessageId++;
-        directMessages[id] = DirectMessage({
-            id:               id,
-            sender:           msg.sender,
-            recipient:        _to,
-            contentHash:      _contentHash,
-            encryptedContent: _encryptedContent,
-            timestamp:        block.timestamp,
-            readByRecipient:  false
-        });
-
-        bytes32 convKey = _conversationKey(msg.sender, _to);
-        _conversationIndex[convKey].push(id);
-        _inbox[_to].push(id);
-
-        emit DirectMessageSent(id, msg.sender, _to, _contentHash, block.timestamp);
+        _msgStore.sendMessage(msg.sender, _to, _encryptedContent, _contentHash);
     }
 
-    /**
-     * @notice Mark a message as read. Only the recipient can call this.
-     * @param _messageId  ID of the message to mark as read.
-     */
     function markMessageRead(uint256 _messageId) external onlyRegisteredAgent whenNotPaused {
-        DirectMessage storage m = directMessages[_messageId];
-        require(m.id != 0, "Message not found.");
-        require(m.recipient == msg.sender, "Only recipient can mark as read.");
-
-        // Only update state and emit event on the first transition to "read"
-        if (m.readByRecipient) {
-            return;
-        }
-        m.readByRecipient = true;
-        emit DirectMessageRead(_messageId, msg.sender);
+        _msgStore.markRead(_messageId, msg.sender);
     }
 
-    /**
-     * @notice Retrieve a direct message by ID. Only sender or recipient may read.
-     * @param _messageId  The message ID.
-     */
     function getDirectMessage(uint256 _messageId) external view returns (
         uint256 id,
         address sender,
@@ -1529,156 +1475,84 @@ contract Project_DAO {
         uint256 timestamp,
         bool readByRecipient
     ) {
-        DirectMessage storage m = directMessages[_messageId];
-        require(m.id != 0, "Message not found.");
-        require(
-            msg.sender == m.sender || msg.sender == m.recipient,
-            "Only sender or recipient can read this message."
-        );
-        return (m.id, m.sender, m.recipient, m.contentHash, m.encryptedContent, m.timestamp, m.readByRecipient);
+        return _msgStore.readMessage(_messageId, msg.sender);
     }
 
-    /**
-     * @notice Get the full conversation thread between two agents (paginated).
-     *         Either party in the conversation can call this.
-     * @param _otherAgent  The other agent in the conversation.
-     * @param offset       0-based starting index.
-     * @param limit        Max messages to return.
-     */
     function getConversation(
         address _otherAgent,
         uint256 offset,
         uint256 limit
     ) external view returns (uint256[] memory messageIds, uint256 total) {
-        require(
-            agents[msg.sender].registered,
-            "Caller must be a registered agent."
-        );
-        bytes32 convKey = _conversationKey(msg.sender, _otherAgent);
-        uint256[] storage allIds = _conversationIndex[convKey];
-        total = allIds.length;
-        if (offset >= total) return (new uint256[](0), total);
-        uint256 end = offset + limit;
-        if (end > total) end = total;
-        messageIds = new uint256[](end - offset);
-        for (uint256 i = 0; i < messageIds.length; i++) {
-            messageIds[i] = allIds[offset + i];
-        }
+        require(agents[msg.sender].registered, "Caller must be a registered agent.");
+        return _msgStore.conversation(msg.sender, _otherAgent, offset, limit);
     }
 
-    /**
-     * @notice Get the caller's inbox — IDs of all messages received (paginated).
-     * @param offset  0-based starting index.
-     * @param limit   Max message IDs to return.
-     */
     function getInbox(
         uint256 offset,
         uint256 limit
     ) external view returns (uint256[] memory messageIds, uint256 total) {
-        uint256[] storage allIds = _inbox[msg.sender];
-        total = allIds.length;
-        if (offset >= total) return (new uint256[](0), total);
-        uint256 end = offset + limit;
-        if (end > total) end = total;
-        messageIds = new uint256[](end - offset);
-        for (uint256 i = 0; i < messageIds.length; i++) {
-            messageIds[i] = allIds[offset + i];
-        }
+        return _msgStore.getInbox(msg.sender, offset, limit);
     }
 
     // ─── Feature Kit Pipeline ────────────────────────────────────────────────
+    //
+    // Storage + mutation live in FeatureKitLib. The main contract exposes
+    // thin authorization wrappers. Events are re-declared above for ABI
+    // visibility; the library emits them via delegatecall.
 
-    struct FeatureKit {
-        uint256 id;
-        address submitter;
-        uint8   priority;      // 0=low, 1=medium, 2=high, 3=critical
-        uint8   status;        // 0=pending, 1=validated, 2=queued, 3=rejected, 4=implemented
-        string  metadataURI;   // IPFS CID → { title, description, rationale, codeSketch, effort }
-        uint256 voteCount;
-        uint256 submittedAt;
+    FeatureKitLib.Store private _featureKitStore;
+
+    /// @notice Next feature-kit ID. Returns 1 before any kit is created
+    ///         (matching the pre-extraction initializer).
+    function currentFeatureKitId() external view returns (uint256) {
+        uint256 v = _featureKitStore.currentFeatureKitId;
+        return v == 0 ? 1 : v;
     }
 
-    mapping(uint256 => FeatureKit) public featureKits;
-    mapping(uint256 => mapping(address => bool)) public featureKitVoted;
-    uint256 public currentFeatureKitId = 1;
+    /// @notice Lookup a feature kit by ID (struct fields unpacked).
+    function featureKits(uint256 kitId) external view returns (
+        uint256 id,
+        address submitter,
+        uint8 priority,
+        uint8 status,
+        string memory metadataURI,
+        uint256 voteCount,
+        uint256 submittedAt
+    ) {
+        FeatureKitLib.FeatureKit storage k = _featureKitStore.featureKits[kitId];
+        return (k.id, k.submitter, k.priority, k.status, k.metadataURI, k.voteCount, k.submittedAt);
+    }
 
-    /**
-     * @notice Submit a feature request as a registered agent.
-     * @param metadataURI  IPFS URI pointing to structured feature-kit JSON.
-     * @param priority     0=low, 1=medium, 2=high, 3=critical.
-     */
+    /// @notice Whether `voter` has already upvoted `kitId`.
+    function featureKitVoted(uint256 kitId, address voter) external view returns (bool) {
+        return _featureKitStore.featureKitVoted[kitId][voter];
+    }
+
     function submitFeatureKit(
         string calldata metadataURI,
         uint8 priority
     ) external onlyRegisteredAgent whenNotPaused {
-        require(bytes(metadataURI).length > 0, "metadataURI required.");
-        require(priority <= 3, "Invalid priority.");
-
-        uint256 id = currentFeatureKitId++;
-        featureKits[id] = FeatureKit({
-            id:          id,
-            submitter:   msg.sender,
-            priority:    priority,
-            status:      0,
-            metadataURI: metadataURI,
-            voteCount:   0,
-            submittedAt: block.timestamp
-        });
-
-        emit FeatureKitSubmitted(id, msg.sender, priority, metadataURI, block.timestamp);
+        _featureKitStore.submit(msg.sender, metadataURI, priority);
     }
 
-    /**
-     * @notice Upvote a pending or validated feature kit. Members vote once.
-     * @param kitId  ID of the feature kit to upvote.
-     */
     function upvoteFeatureKit(uint256 kitId) external onlyMember whenNotPaused {
-        require(kitId > 0 && kitId < currentFeatureKitId, "Invalid kit ID.");
-        require(!featureKitVoted[kitId][msg.sender], "Already voted.");
-        FeatureKit storage kit = featureKits[kitId];
-        require(kit.status == 0 || kit.status == 1, "Kit not open for voting.");
-
-        featureKitVoted[kitId][msg.sender] = true;
-        kit.voteCount++;
-
-        emit FeatureKitUpvoted(kitId, msg.sender, kit.voteCount);
+        _featureKitStore.upvote(kitId, msg.sender);
     }
 
-    /**
-     * @notice Change the status of a feature kit (owner / governance).
-     * @param kitId    ID of the feature kit.
-     * @param newStatus 0=pending,1=validated,2=queued,3=rejected,4=implemented.
-     * @param reason   Short human-readable reason stored in the event.
-     */
     function setFeatureKitStatus(
         uint256 kitId,
         uint8 newStatus,
         string calldata reason
     ) external onlyOwner whenNotPaused {
-        require(kitId > 0 && kitId < currentFeatureKitId, "Invalid kit ID.");
-        require(newStatus <= 4, "Invalid status.");
-        featureKits[kitId].status = newStatus;
-        emit FeatureKitStatusChanged(kitId, newStatus, reason);
+        _featureKitStore.setStatus(kitId, newStatus, reason);
     }
 
-    /**
-     * @notice Return all feature kits (paginated).
-     * @param offset  Starting index (0-based).
-     * @param limit   Maximum kits to return.
-     */
     function getFeatureKits(uint256 offset, uint256 limit)
         external
         view
-        returns (FeatureKit[] memory page, uint256 total)
+        returns (FeatureKitLib.FeatureKit[] memory page, uint256 total)
     {
-        total = currentFeatureKitId - 1;
-        if (offset >= total) return (new FeatureKit[](0), total);
-        uint256 end = offset + limit;
-        if (end > total) end = total;
-        page = new FeatureKit[](end - offset);
-        for (uint256 i = 0; i < page.length; i++) {
-            page[i] = featureKits[offset + i + 1];
-        }
+        return _featureKitStore.getPage(offset, limit);
     }
 
     // ─── Open Onboarding (Stake to Join) ─────────────────────────────────────
@@ -2945,33 +2819,13 @@ contract Project_DAO {
     // ═══════════════════════════════════════════════════════════════════════════
     // ─── NETWORK EFFECT 2: Trust Graph (Cross-Agent Endorsements) ──────────
     // ═══════════════════════════════════════════════════════════════════════════
+    //
+    // Storage + validation + mutation live in TrustLib. This section holds
+    // a single TrustLib.Store and thin authorization wrappers. Events are
+    // re-declared here for ABI visibility; TrustLib emits them via
+    // delegatecall under this contract's address.
 
-    struct Endorsement {
-        uint256 id;
-        address endorser;
-        address endorsed;
-        uint256 agreementId;   // the completed service agreement
-        string  capability;    // which skill is endorsed (e.g. "data-oracle")
-        uint256 weight;        // endorser's reputation tier at time (1-4)
-        uint256 timestamp;
-        bool    revoked;       // true if endorser revoked this endorsement
-    }
-
-    uint256 public currentEndorsementId = 1;
-    mapping(uint256 => Endorsement) public endorsements;
-    /// @notice Cumulative trust score per agent (sum of active endorsement weights).
-    mapping(address => uint256) public agentTrustScore;
-    /// @notice Number of active (non-revoked) endorsements received per agent.
-    mapping(address => uint256) public agentEndorsementCount;
-    /// @notice Prevent duplicate endorsements: keccak256(endorser, endorsed, agreementId) => true.
-    mapping(bytes32 => bool) public endorsementExists;
-    /// @notice Per-agent list of endorsement IDs received.
-    mapping(address => uint256[]) private _agentEndorsementIds;
-
-    /// @notice Time-weighting constants for trust score view.
-    ///         Endorsements lose weight over time: 100% (< 180d), 50% (180-365d), 25% (> 365d).
-    uint256 public constant TRUST_FULL_WEIGHT_PERIOD = 180 days;
-    uint256 public constant TRUST_HALF_WEIGHT_PERIOD = 365 days;
+    TrustLib.Store private _trustStore;
 
     event EndorsementCreated(
         uint256 indexed endorsementId,
@@ -2981,21 +2835,19 @@ contract Project_DAO {
         string capability,
         uint256 weight
     );
-
     event EndorsementRevoked(
         uint256 indexed endorsementId,
         address indexed endorser,
         address indexed endorsed
     );
 
-    /**
-     * @notice Endorse another agent after a completed service agreement.
-     *         Only parties to a completed agreement can endorse each other.
-     *         The endorsement weight equals the endorser's reputation tier (1-4).
-     * @param _agreementId  The completed service agreement ID.
-     * @param _endorsed     The agent being endorsed (must be the other party).
-     * @param _capability   The capability being endorsed (e.g. "data-oracle").
-     */
+    /// @notice Next endorsement ID that will be assigned. Returns 1 before
+    ///         any endorsements exist (matching the pre-extraction initializer).
+    function currentEndorsementId() external view returns (uint256) {
+        uint256 v = _trustStore.currentEndorsementId;
+        return v == 0 ? 1 : v;
+    }
+
     function endorseAgent(
         uint256 _agreementId,
         address _endorsed,
@@ -3009,131 +2861,39 @@ contract Project_DAO {
             (msg.sender == a.provider && _endorsed == a.client),
             "Can only endorse the other party in the agreement."
         );
-        require(bytes(_capability).length > 0 && bytes(_capability).length <= MAX_CAPABILITY_LENGTH, "Invalid capability length.");
-
-        bytes32 dedupKey = keccak256(abi.encodePacked(msg.sender, _endorsed, _agreementId));
-        require(!endorsementExists[dedupKey], "Already endorsed for this agreement.");
-        endorsementExists[dedupKey] = true;
-
-        // Weight = endorser's reputation tier + 1 (so Bronze=1, Silver=2, Gold=3, Platinum=4)
         uint256 weight = _getReputationTier(agentReputation[msg.sender]) + 1;
-
-        uint256 id = currentEndorsementId++;
-        endorsements[id] = Endorsement({
-            id: id,
-            endorser: msg.sender,
-            endorsed: _endorsed,
-            agreementId: _agreementId,
-            capability: _capability,
-            weight: weight,
-            timestamp: block.timestamp,
-            revoked: false
-        });
-
-        agentTrustScore[_endorsed] += weight;
-        agentEndorsementCount[_endorsed]++;
-        _agentEndorsementIds[_endorsed].push(id);
-
-        emit EndorsementCreated(id, msg.sender, _endorsed, _agreementId, _capability, weight);
+        _trustStore.createEndorsement(_agreementId, msg.sender, _endorsed, weight, _capability);
     }
 
-    /// @notice Get trust stats for an agent.
     function getAgentTrustScore(address _agent) external view returns (
         uint256 trustScore,
         uint256 endorsementCount
     ) {
-        return (agentTrustScore[_agent], agentEndorsementCount[_agent]);
+        return _trustStore.getTrustScore(_agent);
     }
 
-    /// @notice Get paginated endorsement IDs received by an agent.
     function getAgentEndorsements(address _agent, uint256 offset, uint256 limit)
         external view returns (uint256[] memory endorsementIds, uint256 total)
     {
-        uint256[] storage allIds = _agentEndorsementIds[_agent];
-        total = allIds.length;
-        if (offset >= total) return (new uint256[](0), total);
-        uint256 end = offset + limit;
-        if (end > total) end = total;
-        endorsementIds = new uint256[](end - offset);
-        for (uint256 i = 0; i < endorsementIds.length; i++) {
-            endorsementIds[i] = allIds[offset + i];
-        }
+        return _trustStore.getAgentEndorsements(_agent, offset, limit);
     }
 
-    /// @notice Get a single endorsement by ID.
     function getEndorsement(uint256 _endorsementId) external view returns (
         uint256 id, address endorser, address endorsed, uint256 agreementId,
         string memory capability, uint256 weight, uint256 timestamp, bool revoked
     ) {
-        Endorsement storage e = endorsements[_endorsementId];
-        require(e.id > 0, "Endorsement not found.");
-        return (e.id, e.endorser, e.endorsed, e.agreementId, e.capability, e.weight, e.timestamp, e.revoked);
+        return _trustStore.getEndorsement(_endorsementId);
     }
 
-    /**
-     * @notice Revoke a previously given endorsement. Only the original endorser
-     *         can revoke. The endorsed agent's trust score is reduced by the
-     *         endorsement weight. The endorsement record stays on-chain for
-     *         audit trail but is marked as revoked.
-     * @param _endorsementId The endorsement to revoke.
-     */
     function revokeEndorsement(uint256 _endorsementId) external onlyRegisteredAgent whenNotPaused nonReentrant {
-        Endorsement storage e = endorsements[_endorsementId];
-        require(e.id > 0, "Endorsement not found.");
-        require(e.endorser == msg.sender, "Only the endorser can revoke.");
-        require(!e.revoked, "Endorsement already revoked.");
-
-        e.revoked = true;
-
-        // Subtract weight from endorsed agent's trust score (safe subtraction)
-        if (agentTrustScore[e.endorsed] >= e.weight) {
-            agentTrustScore[e.endorsed] -= e.weight;
-        } else {
-            agentTrustScore[e.endorsed] = 0;
-        }
-        if (agentEndorsementCount[e.endorsed] > 0) {
-            agentEndorsementCount[e.endorsed]--;
-        }
-
-        emit EndorsementRevoked(_endorsementId, msg.sender, e.endorsed);
+        _trustStore.revokeEndorsement(_endorsementId, msg.sender);
     }
 
-    /**
-     * @notice Compute a time-weighted trust score for an agent. Recent
-     *         endorsements carry full weight; older ones are discounted.
-     *         - < 180 days old: 100% weight
-     *         - 180-365 days old: 50% weight
-     *         - > 365 days old: 25% weight
-     *         Revoked endorsements are excluded entirely.
-     *
-     *         This is a view function (no state change) — the raw
-     *         agentTrustScore is kept for cheap writes; this view gives
-     *         a more accurate signal for discovery and ranking.
-     *
-     * @param _agent The agent to score.
-     * @return weightedScore The time-weighted trust score.
-     * @return activeEndorsements Number of non-revoked endorsements.
-     */
     function getTimeWeightedTrustScore(address _agent) external view returns (
         uint256 weightedScore,
         uint256 activeEndorsements
     ) {
-        uint256[] storage ids = _agentEndorsementIds[_agent];
-        for (uint256 i = 0; i < ids.length; i++) {
-            Endorsement storage e = endorsements[ids[i]];
-            if (e.revoked) continue;
-
-            activeEndorsements++;
-            uint256 age = block.timestamp - e.timestamp;
-
-            if (age < TRUST_FULL_WEIGHT_PERIOD) {
-                weightedScore += e.weight;             // 100%
-            } else if (age < TRUST_HALF_WEIGHT_PERIOD) {
-                weightedScore += e.weight / 2;         // 50%
-            } else {
-                weightedScore += e.weight / 4;         // 25%
-            }
-        }
+        return _trustStore.getTimeWeightedTrustScore(_agent);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

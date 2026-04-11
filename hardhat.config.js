@@ -17,7 +17,12 @@ module.exports = {
   solidity: {
     version: "0.8.26",
     settings: {
-      optimizer: { enabled: true, runs: 200 },  // runs=200 balances deploy cost vs runtime gas efficiency
+      // runs=200 balances deploy cost vs runtime gas efficiency. We tried
+      // runs=1 and found it produced LARGER bytecode here (viaIR's
+      // deploy-size optimizer behaves non-monotonically on this contract),
+      // so we stay at 200. viaIR is required — the legacy pipeline fails
+      // with "stack too deep" on several of the larger functions.
+      optimizer: { enabled: true, runs: 200 },
       viaIR: true,
     },
   },
