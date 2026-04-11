@@ -1,6 +1,7 @@
 const { expect } = require("chai");
 const { anyValue } = require("@nomicfoundation/hardhat-chai-matchers/withArgs");
 const { ethers } = require("hardhat");
+const crypto = require("node:crypto");
 
 // Helper: deploy fresh contract + set treasury
 async function deploy() {
@@ -28,6 +29,10 @@ async function deploy() {
   });
   const dao = await DAO.deploy();
   await dao.waitForDeployment();
+  // Constructor only sets owner; the rest of the bootstrap runs in a
+  // separate initialize() tx so the deploy transaction fits under the
+  // EIP-7825 / Osaka per-tx gas cap.
+  await dao.initialize();
   await dao.setCybereumTreasury(treasury.address);
   return { dao, owner, alice, bob, carol, treasury };
 }
@@ -5227,25 +5232,27 @@ describe("Signed payment request envelopes (EIP-712)", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// ─── PKI: Partial Re-Attach Footgun Documentation ────────────────────────────
+// ─── PKI: Re-attach semantics ────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
 //
-// This suite documents (and locks in) the known-but-intentional behaviour
-// that re-attaching an envelope with a subset of recipients:
-//   - Updates the envelope header (contentHash, updatedAt, setBy)
-//   - Writes new ciphertexts for the recipients passed this call
-//   - Does NOT clear ciphertexts for recipients not passed this call
+// The contract distinguishes two kinds of re-attach:
 //
-// Consequence: if the new contentHash differs from the previous one, the
-// parties whose ciphertexts were not rewritten will observe a stale
-// ciphertext paired with a new hash — their post-decryption integrity check
-// will FAIL. The invariant that protects them is "callers should re-attach
-// with ALL parties whenever the contentHash changes".
+//   1. Re-attach with a DIFFERENT contentHash: the plaintext has changed,
+//      so the envelope's integrity hash is now inconsistent with every
+//      previously-stored ciphertext. The library atomically clears ALL
+//      old ciphertexts before writing the new ones, so a party whose
+//      address isn't in the new recipients list sees an empty ciphertext
+//      (not a stale one paired with the new hash). This closes the
+//      partial re-attach footgun that earlier revisions of this suite
+//      documented as "known behaviour".
 //
-// These tests exist to assert that behaviour so it is not accidentally
-// altered in the future without updating the docs.
+//   2. Re-attach with the SAME contentHash: the plaintext is unchanged,
+//      so old ciphertexts still decrypt to it. Old ciphertexts are
+//      preserved; only the recipients named in this call are rewritten.
+//      This is the legitimate "party X rotated their key — refresh only
+//      X's ciphertext" flow.
 
-describe("Partial re-attach footgun (documented behaviour)", () => {
+describe("Agreement envelope re-attach semantics", () => {
   const keyA = "0x02" + "11".repeat(32);
   const keyB = "0x02" + "22".repeat(32);
   const keyC = "0x02" + "33".repeat(32);
@@ -5266,50 +5273,48 @@ describe("Partial re-attach footgun (documented behaviour)", () => {
     return { dao, alice, bob, carol };
   }
 
-  it("partial re-attach leaves stale ciphertexts paired with a new hash", async () => {
+  it("partial re-attach with a NEW hash clears every stale ciphertext", async () => {
     const { dao, alice, bob, carol } = await setup();
     const h1 = ethers.keccak256(ethers.toUtf8Bytes("terms v1"));
     const h2 = ethers.keccak256(ethers.toUtf8Bytes("terms v2"));
 
-    // v1: full attach to all 3 parties with hash h1
     await dao.connect(alice).attachEncryptedAgreementPayload(
       1, [alice.address, bob.address, carol.address], ["a1", "b1", "c1"], h1
     );
 
-    // v2: partial re-attach with new hash h2 but only alice's ciphertext
+    // Caller rewrites only alice's slot, but with a DIFFERENT hash — the
+    // library must clear bob's and carol's old ciphertexts first.
     await dao.connect(alice).attachEncryptedAgreementPayload(
       1, [alice.address], ["a2"], h2
     );
 
-    // Envelope header reflects v2
     const forAlice = await dao.connect(alice).getEncryptedAgreementPayload(1);
     expect(forAlice.contentHash).to.equal(h2);
     expect(forAlice.ciphertextForCaller).to.equal("a2");
 
-    // Bob sees the NEW hash but his OLD (stale) ciphertext — footgun.
+    // Bob and carol see the new hash AND an empty ciphertext — they are
+    // safe, because the envelope no longer claims to have a ciphertext for
+    // them that is consistent with h2.
     const forBob = await dao.connect(bob).getEncryptedAgreementPayload(1);
     expect(forBob.contentHash).to.equal(h2);
-    expect(forBob.ciphertextForCaller).to.equal("b1");
+    expect(forBob.ciphertextForCaller).to.equal("");
 
-    // Carol likewise.
     const forCarol = await dao.connect(carol).getEncryptedAgreementPayload(1);
     expect(forCarol.contentHash).to.equal(h2);
-    expect(forCarol.ciphertextForCaller).to.equal("c1");
+    expect(forCarol.ciphertextForCaller).to.equal("");
   });
 
-  it("partial re-attach with SAME hash is safe (same plaintext, new/updated keys)", async () => {
+  it("partial re-attach with the SAME hash preserves other parties' ciphertexts", async () => {
     const { dao, alice, bob, carol } = await setup();
     const h = ethers.keccak256(ethers.toUtf8Bytes("stable terms"));
 
-    // v1: full attach
     await dao.connect(alice).attachEncryptedAgreementPayload(
       1, [alice.address, bob.address, carol.address], ["a1", "b1", "c1"], h
     );
 
-    // v2: partial re-attach with SAME hash, rewriting only bob's ciphertext
-    // (e.g. bob rotated his key and needs a fresh ciphertext re-encrypted to
-    //  his new pubkey). Other parties' ciphertexts stay valid because the
-    //  hash hasn't changed.
+    // Bob rotated his encryption key, so alice re-attaches only for bob
+    // with the same hash. alice's and carol's ciphertexts MUST stay — they
+    // still encrypt the same plaintext.
     await dao.connect(alice).attachEncryptedAgreementPayload(
       1, [bob.address], ["b2"], h
     );
@@ -5324,5 +5329,459 @@ describe("Partial re-attach footgun (documented behaviour)", () => {
     expect(forAlice.ciphertextForCaller).to.equal("a1");
     expect(forBob.ciphertextForCaller).to.equal("b2");
     expect(forCarol.ciphertextForCaller).to.equal("c1");
+  });
+
+  it("full re-attach with a NEW hash overwrites every ciphertext cleanly", async () => {
+    const { dao, alice, bob, carol } = await setup();
+    const h1 = ethers.keccak256(ethers.toUtf8Bytes("v1"));
+    const h2 = ethers.keccak256(ethers.toUtf8Bytes("v2"));
+
+    await dao.connect(alice).attachEncryptedAgreementPayload(
+      1, [alice.address, bob.address, carol.address], ["a1", "b1", "c1"], h1
+    );
+    await dao.connect(alice).attachEncryptedAgreementPayload(
+      1, [alice.address, bob.address, carol.address], ["a2", "b2", "c2"], h2
+    );
+
+    const forAlice = await dao.connect(alice).getEncryptedAgreementPayload(1);
+    const forBob = await dao.connect(bob).getEncryptedAgreementPayload(1);
+    const forCarol = await dao.connect(carol).getEncryptedAgreementPayload(1);
+    expect(forAlice.contentHash).to.equal(h2);
+    expect(forBob.contentHash).to.equal(h2);
+    expect(forCarol.contentHash).to.equal(h2);
+    expect(forAlice.ciphertextForCaller).to.equal("a2");
+    expect(forBob.ciphertextForCaller).to.equal("b2");
+    expect(forCarol.ciphertextForCaller).to.equal("c2");
+  });
+
+  it("adding a new party via same-hash re-attach leaves others intact", async () => {
+    const { dao, alice, bob, carol } = await setup();
+    const h = ethers.keccak256(ethers.toUtf8Bytes("terms"));
+
+    // First attach only alice + bob — carol is not yet included.
+    await dao.connect(alice).attachEncryptedAgreementPayload(
+      1, [alice.address, bob.address], ["a1", "b1"], h
+    );
+
+    // Later attach only carol with the same hash — she joins the envelope
+    // without disturbing alice or bob.
+    await dao.connect(alice).attachEncryptedAgreementPayload(
+      1, [carol.address], ["c1"], h
+    );
+
+    expect((await dao.connect(alice).getEncryptedAgreementPayload(1)).ciphertextForCaller).to.equal("a1");
+    expect((await dao.connect(bob).getEncryptedAgreementPayload(1)).ciphertextForCaller).to.equal("b1");
+    expect((await dao.connect(carol).getEncryptedAgreementPayload(1)).ciphertextForCaller).to.equal("c1");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── PKI: End-to-end real-cipher round-trip ─────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// The rest of the PKI tests store opaque string literals and assert they
+// round-trip through the contract. This suite goes further: it does a real
+// ECIES encrypt/decrypt round-trip against actual secp256k1 keypairs and
+// verifies the contract-stored `contentHash` survives end-to-end.
+//
+// ECIES construction (stdlib only — no new deps):
+//   1. Sender generates an ephemeral secp256k1 keypair (ek_sk, ek_pk).
+//   2. Shared secret = ECDH(ek_sk, recipient_pk)     (32 bytes X coord)
+//   3. Key material  = SHA-512(shared_secret)        (AES key || MAC key)
+//   4. AES-256-GCM encrypts the plaintext under a random 12-byte IV.
+//   5. Ciphertext bytes = ek_pk (33) || iv (12) || ct || tag (16)
+//   6. Published as a 0x-prefixed hex string for on-chain storage.
+// Decryption reverses steps 1-5 using the recipient's private key.
+//
+// This is the same construction an agent would use in production with a
+// library like `eciesjs`; writing it out here verifies that the SDK's
+// `deriveSecp256k1PublicKey` helper produces a key the standard scheme
+// actually accepts, and that the ciphertext byte length fits the on-chain
+// length limit.
+
+// Generate a fresh secp256k1 keypair (compressed pubkey, hex).
+function genKeypair() {
+  const ecdh = crypto.createECDH("secp256k1");
+  ecdh.generateKeys();
+  return {
+    privateKey: "0x" + ecdh.getPrivateKey("hex"),
+    publicKey:  "0x" + ecdh.getPublicKey("hex", "compressed"), // 33 bytes
+  };
+}
+
+function eciesEncrypt(recipientPubKeyHex, plaintext) {
+  const recipientPub = Buffer.from(recipientPubKeyHex.replace(/^0x/, ""), "hex");
+  const ephemeral = crypto.createECDH("secp256k1");
+  ephemeral.generateKeys();
+  const ephPub = ephemeral.getPublicKey(null, "compressed"); // 33 bytes
+  const shared = ephemeral.computeSecret(recipientPub);      // 32-byte X coord
+  const keyMaterial = crypto.createHash("sha512").update(shared).digest();
+  const aesKey = keyMaterial.subarray(0, 32);
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", aesKey, iv);
+  const ct = Buffer.concat([cipher.update(Buffer.from(plaintext, "utf8")), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return "0x" + Buffer.concat([ephPub, iv, ct, tag]).toString("hex");
+}
+
+function eciesDecrypt(recipientPrivKeyHex, ciphertextHex) {
+  const buf = Buffer.from(ciphertextHex.replace(/^0x/, ""), "hex");
+  const ephPub = buf.subarray(0, 33);
+  const iv = buf.subarray(33, 45);
+  const tag = buf.subarray(buf.length - 16);
+  const ct = buf.subarray(45, buf.length - 16);
+  const recipient = crypto.createECDH("secp256k1");
+  recipient.setPrivateKey(Buffer.from(recipientPrivKeyHex.replace(/^0x/, ""), "hex"));
+  const shared = recipient.computeSecret(ephPub);
+  const keyMaterial = crypto.createHash("sha512").update(shared).digest();
+  const aesKey = keyMaterial.subarray(0, 32);
+  const decipher = crypto.createDecipheriv("aes-256-gcm", aesKey, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(ct), decipher.final()]).toString("utf8");
+}
+
+describe("PKI end-to-end ECIES round-trip", () => {
+  async function setupTwoFundedAgents() {
+    const { dao, owner, treasury } = await deploy();
+
+    // Make two fresh wallets bound to the local provider and fund them
+    // from the deployer so they can pay for their own txs.
+    const aliceWallet = ethers.Wallet.createRandom().connect(ethers.provider);
+    const bobWallet = ethers.Wallet.createRandom().connect(ethers.provider);
+    await owner.sendTransaction({ to: aliceWallet.address, value: ethers.parseEther("2") });
+    await owner.sendTransaction({ to: bobWallet.address, value: ethers.parseEther("2") });
+
+    // Self-onboard via stakeAndJoin so member + agent state is set.
+    await dao.connect(aliceWallet).stakeAndJoin("ipfs://alice", { value: ethers.parseEther("0.01") });
+    await dao.connect(bobWallet).stakeAndJoin("ipfs://bob", { value: ethers.parseEther("0.01") });
+
+    // Each party generates a fresh secp256k1 keypair for encryption and
+    // publishes the compressed public key on-chain.
+    const aliceKeys = genKeypair();
+    const bobKeys = genKeypair();
+    await dao.connect(aliceWallet).publishAgentPublicKey(aliceKeys.publicKey);
+    await dao.connect(bobWallet).publishAgentPublicKey(bobKeys.publicKey);
+
+    // Alice funds an escrow, opens a service agreement with bob.
+    await dao.connect(aliceWallet).depositNativeToEscrow({ value: ethers.parseEther("0.5") });
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(aliceWallet).createServiceAgreement(
+      bobWallet.address,
+      ethers.ZeroAddress,
+      ethers.parseEther("0.1"),
+      deadline,
+      "public terms"
+    );
+    return { dao, owner, treasury, aliceWallet, bobWallet, aliceKeys, bobKeys };
+  }
+
+  it("alice and bob each decrypt their own real ECIES ciphertext and verify the content hash", async () => {
+    const { dao, aliceWallet, bobWallet, aliceKeys, bobKeys } = await setupTwoFundedAgents();
+
+    // The actual sensitive terms — never stored in plaintext on-chain.
+    const plaintext = "Confidential: alice pays bob 0.1 ETH upon delivery of dataset-42.";
+    const contentHash = ethers.keccak256(ethers.toUtf8Bytes(plaintext));
+
+    // Alice (the client) encrypts the plaintext separately to each
+    // party's published public key.
+    const ctForAlice = eciesEncrypt(aliceKeys.publicKey, plaintext);
+    const ctForBob   = eciesEncrypt(bobKeys.publicKey, plaintext);
+
+    // Sanity: ciphertexts are hex, non-empty, below the 8 KB length limit.
+    expect(ctForAlice.startsWith("0x")).to.be.true;
+    expect(ctForBob.startsWith("0x")).to.be.true;
+    expect(ethers.toUtf8Bytes(ctForAlice).length).to.be.lessThan(8192);
+    expect(ethers.toUtf8Bytes(ctForBob).length).to.be.lessThan(8192);
+
+    await dao.connect(aliceWallet).attachEncryptedAgreementPayload(
+      1,
+      [aliceWallet.address, bobWallet.address],
+      [ctForAlice, ctForBob],
+      contentHash
+    );
+
+    // Alice reads her own ciphertext back and decrypts it.
+    const forAlice = await dao.connect(aliceWallet).getEncryptedAgreementPayload(1);
+    expect(forAlice.contentHash).to.equal(contentHash);
+    const aliceDecrypted = eciesDecrypt(aliceKeys.privateKey, forAlice.ciphertextForCaller);
+    expect(aliceDecrypted).to.equal(plaintext);
+    // Integrity check: recomputed hash matches the stored envelope hash.
+    expect(ethers.keccak256(ethers.toUtf8Bytes(aliceDecrypted))).to.equal(forAlice.contentHash);
+
+    // Bob reads his own ciphertext back and decrypts it.
+    const forBob = await dao.connect(bobWallet).getEncryptedAgreementPayload(1);
+    expect(forBob.contentHash).to.equal(contentHash);
+    const bobDecrypted = eciesDecrypt(bobKeys.privateKey, forBob.ciphertextForCaller);
+    expect(bobDecrypted).to.equal(plaintext);
+    expect(ethers.keccak256(ethers.toUtf8Bytes(bobDecrypted))).to.equal(forBob.contentHash);
+
+    // Alice cannot decrypt bob's ciphertext and vice versa.
+    expect(() => eciesDecrypt(aliceKeys.privateKey, forBob.ciphertextForCaller)).to.throw();
+    expect(() => eciesDecrypt(bobKeys.privateKey, forAlice.ciphertextForCaller)).to.throw();
+  });
+
+  it("tampered ciphertext fails AES-GCM authentication on decrypt", async () => {
+    const { dao, aliceWallet, bobWallet, aliceKeys, bobKeys } = await setupTwoFundedAgents();
+    const plaintext = "secret-42";
+    const contentHash = ethers.keccak256(ethers.toUtf8Bytes(plaintext));
+
+    const ctForAlice = eciesEncrypt(aliceKeys.publicKey, plaintext);
+    const ctForBob = eciesEncrypt(bobKeys.publicKey, plaintext);
+    await dao.connect(aliceWallet).attachEncryptedAgreementPayload(
+      1,
+      [aliceWallet.address, bobWallet.address],
+      [ctForAlice, ctForBob],
+      contentHash
+    );
+
+    // Flip one byte of bob's on-chain ciphertext — can't do this directly
+    // against the contract (storage is immutable to non-parties), so we
+    // simulate tampering at the application layer: take the retrieved
+    // string, flip a byte, attempt to decrypt. AES-GCM MUST reject it.
+    const forBob = await dao.connect(bobWallet).getEncryptedAgreementPayload(1);
+    const tampered = forBob.ciphertextForCaller.slice(0, -2) + "00"; // flip last hex byte
+    expect(() => eciesDecrypt(bobKeys.privateKey, tampered)).to.throw();
+  });
+
+  it("SDK deriveSecp256k1PublicKey produces a key compatible with ECIES decrypt", async () => {
+    // Cross-check the SDK helper against the raw Node crypto path.
+    const { AgentClient } = await import("../sdk/index.js");
+    const wallet = ethers.Wallet.createRandom();
+    const derivedPub = AgentClient.deriveSecp256k1PublicKey(wallet.privateKey);
+    // Must be 33-byte compressed hex (0x + 66 hex chars).
+    expect(/^0x[0-9a-fA-F]{66}$/.test(derivedPub)).to.be.true;
+    // Round-trip: encrypt to derivedPub, decrypt with the wallet's privateKey.
+    const pt = "sdk-derived key round-trip";
+    const ct = eciesEncrypt(derivedPub, pt);
+    const back = eciesDecrypt(wallet.privateKey, ct);
+    expect(back).to.equal(pt);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── EIP-7825 / Osaka deploy-gas guardrail ───────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Newer Ethereum hardforks (Osaka / Fusaka) enforce EIP-7825: a single
+// transaction can consume at most 16,777,216 gas (2^24). Deploying
+// Project_DAO including creation + init code must fit under this cap or
+// the contract becomes undeployable on any chain that enables Fusaka.
+//
+// This test measures the ACTUAL deploy-transaction gas — not a guess from
+// bytecode size — using estimateGas against the locally-forked chain. If
+// the number creeps above the cap in a future change, CI catches it here
+// before it breaks production deployment.
+
+describe("EIP-7825 deploy-gas guardrail", () => {
+  const FUSAKA_TX_GAS_LIMIT = 16_777_216n;
+
+  it("Project_DAO creation gas stays under the Fusaka per-tx cap", async () => {
+    // Deploy the 4 linked libraries, then estimate the full main-contract
+    // creation transaction (constructor execution + code-deposit fee).
+    const PKILib = await ethers.getContractFactory("PKILib");
+    const pkiLib = await PKILib.deploy();
+    await pkiLib.waitForDeployment();
+
+    const TrustLib = await ethers.getContractFactory("TrustLib");
+    const trustLib = await TrustLib.deploy();
+    await trustLib.waitForDeployment();
+
+    const FeatureKitLib = await ethers.getContractFactory("FeatureKitLib");
+    const fkLib = await FeatureKitLib.deploy();
+    await fkLib.waitForDeployment();
+
+    const MessagingLib = await ethers.getContractFactory("MessagingLib");
+    const msgLib = await MessagingLib.deploy();
+    await msgLib.waitForDeployment();
+
+    const DAO = await ethers.getContractFactory("Project_DAO", {
+      libraries: {
+        PKILib:        await pkiLib.getAddress(),
+        TrustLib:      await trustLib.getAddress(),
+        FeatureKitLib: await fkLib.getAddress(),
+        MessagingLib:  await msgLib.getAddress(),
+      },
+    });
+    const deployTx = await DAO.getDeployTransaction();
+    const estimated = await ethers.provider.estimateGas(deployTx);
+
+    // Log the actual number for future reference in CI output.
+    // Use process.stdout so it shows up even when tests are quiet.
+    process.stdout.write(
+      `\n    Project_DAO deploy gas: ${estimated.toString()} (cap ${FUSAKA_TX_GAS_LIMIT.toString()})\n`
+    );
+
+    expect(estimated).to.be.lessThan(FUSAKA_TX_GAS_LIMIT);
+  });
+
+  it("initialize() can only be called once", async () => {
+    const { dao } = await deploy();
+    // deploy() already called initialize() inside the helper; a second
+    // call must revert.
+    await expect(dao.initialize()).to.be.revertedWith("Already initialized.");
+  });
+
+  it("only the deployer / owner can call initialize()", async () => {
+    // Manual deploy path that skips the helper, so we control the caller.
+    const [deployer, stranger] = await ethers.getSigners();
+    const PKILib = await ethers.getContractFactory("PKILib");
+    const pkiLib = await PKILib.deploy();
+    await pkiLib.waitForDeployment();
+    const TrustLib = await ethers.getContractFactory("TrustLib");
+    const trustLib = await TrustLib.deploy();
+    await trustLib.waitForDeployment();
+    const FeatureKitLib = await ethers.getContractFactory("FeatureKitLib");
+    const fkLib = await FeatureKitLib.deploy();
+    await fkLib.waitForDeployment();
+    const MessagingLib = await ethers.getContractFactory("MessagingLib");
+    const msgLib = await MessagingLib.deploy();
+    await msgLib.waitForDeployment();
+    const DAO = await ethers.getContractFactory("Project_DAO", {
+      libraries: {
+        PKILib:        await pkiLib.getAddress(),
+        TrustLib:      await trustLib.getAddress(),
+        FeatureKitLib: await fkLib.getAddress(),
+        MessagingLib:  await msgLib.getAddress(),
+      },
+    });
+    const dao = await DAO.connect(deployer).deploy();
+    await dao.waitForDeployment();
+    // Stranger cannot steal initialization.
+    await expect(dao.connect(stranger).initialize()).to.be.revertedWith(
+      "Only the owner can initialize."
+    );
+    // Deployer can.
+    await dao.connect(deployer).initialize();
+    expect(await dao.initialized()).to.be.true;
+  });
+
+  it("initialize() seeds the expected default config", async () => {
+    const { dao } = await deploy();
+    expect(await dao.initialized()).to.be.true;
+    expect(await dao.cybereumFeeBps()).to.equal(5n);
+    expect(await dao.assetTransferFlatFeeWei()).to.equal(1_000_000_000_000n);
+    expect(await dao.aiServiceFeeWei()).to.equal(ethers.parseEther("0.0003"));
+    expect(await dao.messagingFeeWei()).to.equal(ethers.parseEther("0.0001"));
+    expect(await dao.exitFeeBps()).to.equal(3n);
+    expect(await dao.reputationDecayPerDay()).to.equal(2n);
+    expect(await dao.reputationDecayGracePeriod()).to.equal(7n * 24n * 60n * 60n);
+    expect(await dao.votingPeriod()).to.equal(7n * 24n * 60n * 60n);
+    expect(await dao.minimumVotingPower()).to.equal(10n);
+    expect(await dao.referralRewardBps()).to.equal(1000n);
+    expect(await dao.referralTier2Bps()).to.equal(300n);
+    // Counters all start at 1
+    expect(await dao.currentProposalDisputeId()).to.equal(1n);
+    expect(await dao.currentProgressId()).to.equal(1n);
+    expect(await dao.currentAgentPaymentRequestId()).to.equal(1n);
+    expect(await dao.currentProposalId()).to.equal(1n);
+    expect(await dao.currentMilestoneId()).to.equal(1n);
+    expect(await dao.currentTaskId()).to.equal(1n);
+    expect(await dao.currentBroadcastId()).to.equal(1n);
+    expect(await dao.currentProjectId()).to.equal(1n);
+    expect(await dao.currentServiceAgreementId()).to.equal(1n);
+    expect(await dao.currentPaymentStreamId()).to.equal(1n);
+  });
+
+  it("initialize() tx on its own also fits under the Fusaka cap", async () => {
+    // Moving post-deploy bootstrap into initialize() must not simply push
+    // the gas pressure into the second transaction. Verify the initialize
+    // call ALSO fits under the per-tx cap with plenty of headroom.
+    const PKILib = await ethers.getContractFactory("PKILib");
+    const pkiLib = await PKILib.deploy();
+    await pkiLib.waitForDeployment();
+    const TrustLib = await ethers.getContractFactory("TrustLib");
+    const trustLib = await TrustLib.deploy();
+    await trustLib.waitForDeployment();
+    const FeatureKitLib = await ethers.getContractFactory("FeatureKitLib");
+    const fkLib = await FeatureKitLib.deploy();
+    await fkLib.waitForDeployment();
+    const MessagingLib = await ethers.getContractFactory("MessagingLib");
+    const msgLib = await MessagingLib.deploy();
+    await msgLib.waitForDeployment();
+    const DAO = await ethers.getContractFactory("Project_DAO", {
+      libraries: {
+        PKILib:        await pkiLib.getAddress(),
+        TrustLib:      await trustLib.getAddress(),
+        FeatureKitLib: await fkLib.getAddress(),
+        MessagingLib:  await msgLib.getAddress(),
+      },
+    });
+    const dao = await DAO.deploy();
+    await dao.waitForDeployment();
+    // Estimate the initialize() call on the deployed contract.
+    const initGas = await dao.initialize.estimateGas();
+    process.stdout.write(
+      `    Project_DAO initialize() gas: ${initGas.toString()}\n`
+    );
+    expect(initGas).to.be.lessThan(FUSAKA_TX_GAS_LIMIT);
+    // initialize() does ~25 cold SSTOREs + the Owner role creation —
+    // should be well under 1 M gas.
+    expect(initGas).to.be.lessThan(1_000_000n);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── Backwards-compat shim getters (library-extracted subsystems) ────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// The TrustLib / FeatureKitLib / MessagingLib extractions moved several
+// former `public` mappings + counters into library Store structs. To keep
+// the external ABI compatible with the pre-extraction shape we added thin
+// shim getters on Project_DAO. These tests verify the shims return the
+// exact same shape and values you'd expect from the original auto-getters,
+// so SDK / frontend consumers don't silently break.
+
+describe("Library shim getter parity", () => {
+  it("currentFeatureKitId / featureKits / featureKitVoted shims", async () => {
+    const { dao, owner, alice } = await deploy();
+    // Before any submission the shim returns the initial "next ID" = 1.
+    expect(await dao.currentFeatureKitId()).to.equal(1n);
+
+    // Add the submitter as a member + agent so submitFeatureKit works.
+    await memberAgent(dao, alice);
+    await dao.connect(alice).submitFeatureKit("ipfs://kit-a", 2);
+
+    // After 1 submission the shim reflects the new counter state.
+    expect(await dao.currentFeatureKitId()).to.equal(2n);
+
+    // featureKits(id) shim returns the full struct tuple.
+    const kit = await dao.featureKits(1);
+    expect(kit.id).to.equal(1n);
+    expect(kit.submitter).to.equal(alice.address);
+    expect(kit.priority).to.equal(2);
+    expect(kit.status).to.equal(0);
+    expect(kit.metadataURI).to.equal("ipfs://kit-a");
+    expect(kit.voteCount).to.equal(0n);
+
+    // featureKitVoted(kitId, voter) shim defaults to false.
+    expect(await dao.featureKitVoted(1, owner.address)).to.be.false;
+
+    // After the owner votes, the shim reflects true + voteCount bumps.
+    await dao.upvoteFeatureKit(1);
+    expect(await dao.featureKitVoted(1, owner.address)).to.be.true;
+    const kit2 = await dao.featureKits(1);
+    expect(kit2.voteCount).to.equal(1n);
+  });
+
+  it("currentDirectMessageId shim returns 1 when no messages exist", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    // Before any message the shim returns the "next ID" default of 1.
+    expect(await dao.currentDirectMessageId()).to.equal(1n);
+
+    // Send one message and the shim advances.
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("hi"));
+    // Fund alice so she can pay the messaging fee from escrow.
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("0.01") });
+    await dao.connect(alice).sendDirectMessage(bob.address, "ct", hash);
+    expect(await dao.currentDirectMessageId()).to.equal(2n);
+  });
+
+  it("currentEndorsementId shim returns 1 when no endorsements exist", async () => {
+    const { dao } = await deploy();
+    expect(await dao.currentEndorsementId()).to.equal(1n);
+    // Full endorsement lifecycle is tested elsewhere; here we only verify
+    // the shim default matches the pre-extraction auto-getter default.
   });
 });

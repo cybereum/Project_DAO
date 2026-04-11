@@ -1,6 +1,6 @@
 # Production Readiness Guide — Path to 95+
 
-> Current overall score: **~87/100** across 7 dimensions.
+> Current overall score: **~88/100** across 7 dimensions (updated 2026-04-11 after the 0.6.0 encrypted-smart-contracts + library-split pass).
 > This document describes the exact work remaining to reach **95+/100**.
 
 ---
@@ -9,14 +9,36 @@
 
 | Dimension | Current | Target | Gap |
 |---|---|---|---|
-| Contract Security | 82 | 95 | +13 |
-| Contract Tests | 93 | 96 | +3 |
-| Frontend | 88 | 95 | +7 |
-| SDK | 85 | 95 | +10 |
-| SDK Tests | 80 | 95 | +15 |
+| Contract Security | 84 | 95 | +11 |
+| Contract Tests | 95 | 96 | +1 |
+| Frontend | 89 | 95 | +6 |
+| SDK | 88 | 95 | +7 |
+| SDK Tests | 88 | 95 | +7 |
 | CI Pipeline | 75 | 95 | +20 |
-| Deploy Script | 88 | 95 | +7 |
-| **Overall** | **~87** | **95+** | **+8** |
+| Deploy Script | 90 | 95 | +5 |
+| **Overall** | **~88** | **95+** | **+7** |
+
+## 0.6.0 — Encrypted Smart Contracts + Library Split (delta from 0.5.0)
+
+**Hard blocker resolved**:
+- **EIP-7825 (Fusaka) per-transaction deploy gas**: creation tx is now ~16.59 M gas, under the 16.78 M per-tx cap. Achieved by moving field-level initializers into a single-use `initialize()` function the deployer calls in a second transaction immediately after `CREATE`. CI guardrail test (`EIP-7825 deploy-gas guardrail`) enforces the cap going forward.
+
+**Hard blocker still open**:
+- **Spurious Dragon 24 KB code-size limit**: main contract is ~75,800 bytes, still ~3x over the limit. Cannot deploy to Ethereum mainnet or Base until more subsystems are extracted into libraries (Reputation engine, Economic projects, Payment streams, Service agreements, Referral rewards remain the large blocks) OR the contract is split into multiple deployed contracts composed at runtime.
+
+**Security improvements landed in 0.6.0**:
+- On-chain PKI: agent public key registry + per-party encrypted envelopes for service agreements and payment requests, with EIP-712 signed-attach variants for non-repudiation
+- `PKILib` uses OpenZeppelin's audited `ECDSA.recover` (custom signature math eliminated)
+- Partial re-attach footgun fixed: new-hash re-attach atomically clears stale ciphertexts; same-hash re-attach preserves existing ciphertexts for the legitimate "rotate one party's key" flow
+- `uint256[50] __gap;` reserves added to every library `Store` struct so future field additions don't shift unrelated state-variable layout
+- Library-shim backwards-compat getters verified by dedicated parity tests
+- Solidity pragma harmonized to `^0.8.26` across main contract and all libraries
+- Frontend ABI (`nexus-app/src/config/contract.js`) updated with all new PKI / Trust / FeatureKit / Messaging entries and re-validated as a valid ethers `Interface`
+- 35 new SDK unit tests cover the PKI validators, EIP-712 signing, and SDK ↔ ECIES interop
+
+**Test surface**: 432 contract tests + 160 SDK unit tests, all green.
+
+---
 
 ---
 

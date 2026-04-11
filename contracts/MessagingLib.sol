@@ -27,6 +27,8 @@ library MessagingLib {
         mapping(bytes32 => uint256[]) conversationIndex;
         // recipient => inbox message IDs
         mapping(address => uint256[]) inbox;
+        // Reserved for future fields — storage-gap pattern.
+        uint256[50] __gap;
     }
 
     event DirectMessageSent(

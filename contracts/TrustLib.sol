@@ -33,6 +33,10 @@ library TrustLib {
         mapping(address => uint256) agentEndorsementCount;
         mapping(bytes32 => bool) endorsementExists;
         mapping(address => uint256[]) agentEndorsementIds;
+        // Reserved for future fields so appending to this struct does not
+        // shift the layout of unrelated state variables in Project_DAO.
+        // See OpenZeppelin's storage-gap pattern for the rationale.
+        uint256[50] __gap;
     }
 
     uint256 internal constant TRUST_FULL_WEIGHT_PERIOD = 180 days;

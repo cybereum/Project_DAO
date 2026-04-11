@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.26;
 
 import {PKILib} from "./PKILib.sol";
 import {TrustLib} from "./TrustLib.sol";
@@ -141,11 +141,15 @@ contract Project_DAO {
     }
 
     mapping(uint256 => ProposalDispute) public proposalDisputes;
-    uint256 public currentProposalDisputeId = 1;
+    // Counters start at 0 on deploy and are bumped to 1 by initialize().
+    // This moves ~22 K gas per counter OUT of the deploy transaction so
+    // Project_DAO fits under the EIP-7825 / Osaka per-tx gas cap. The
+    // public-getter shape is unchanged.
+    uint256 public currentProposalDisputeId;
     mapping(uint256 => mapping(address => bool)) public proposalHasVoted;
     mapping(uint256 => mapping(address => bool)) public proposalMembersWhoCanVote;
     mapping(uint256 => Progress) public progressData;
-    uint256 public currentProgressId = 1;
+    uint256 public currentProgressId;
 
     address public owner;
     mapping(address => Member) public members;
@@ -153,15 +157,15 @@ contract Project_DAO {
     address[] public agentAddresses;  // Registry for agent discovery
     mapping(address => mapping(address => uint256)) public agentTokenEscrowBalances;
     mapping(uint256 => AgentPaymentRequest) public agentPaymentRequests;
-    uint256 public currentAgentPaymentRequestId = 1;
+    uint256 public currentAgentPaymentRequestId;
     Proposal[] public proposals;
-    uint256 public currentProposalId = 1;
-    uint256 public votingPeriod = 7 days;
-    uint256 public minimumVotingPower = 10;
+    uint256 public currentProposalId;
+    uint256 public votingPeriod;
+    uint256 public minimumVotingPower;
     Milestone[] public milestones;
-    uint256 public currentMilestoneId = 1;
+    uint256 public currentMilestoneId;
     Task[] public tasks;
-    uint256 public currentTaskId = 1;
+    uint256 public currentTaskId;
     Role[] roles;
     mapping(address => uint256) public memberRoles;
     address[] public memberAddresses;
@@ -172,16 +176,20 @@ contract Project_DAO {
     uint256 public constant FEE_BPS_DENOMINATOR = 10_000;
     /// @dev Minimum fee floor: 1 bps (0.01%). Fee can never be set to zero.
     uint256 public constant MIN_FEE_BPS = 1;
-    uint256 public cybereumFeeBps = 5;
-    uint256 public assetTransferFlatFeeWei = 1e12;
-    uint256 public aiServiceFeeWei = 0.0003 ether;
+    // Default fee parameters are seeded by initialize() so the cold SSTOREs
+    // happen outside the deploy transaction. Between deploy and initialize()
+    // these fields read as zero — the deploy script MUST call initialize()
+    // before any user traffic.
+    uint256 public cybereumFeeBps;
+    uint256 public assetTransferFlatFeeWei;
+    uint256 public aiServiceFeeWei;
     address public cybereumTreasury;
 
     // ─── Commerce Blackhole State ───────────────────────────────────────────
     /// @notice Fee charged per direct message sent (from sender's escrow).
-    uint256 public messagingFeeWei = 0.0001 ether;
+    uint256 public messagingFeeWei;
     /// @notice Exit fee in bps charged when value leaves the protocol (claims, refunds, leave).
-    uint256 public exitFeeBps = 3;
+    uint256 public exitFeeBps;
     /// @notice Total protocol commerce volume (all value movements, cumulative).
     uint256 public totalCommerceVolume;
     /// @notice Total fees ever collected by the protocol.
@@ -207,9 +215,10 @@ contract Project_DAO {
     uint256 public constant REP_TIER_GOLD = 500;
     uint256 public constant REP_TIER_PLATINUM = 750;
     /// @notice Decay rate: reputation points lost per day of inactivity (after 7-day grace).
-    uint256 public reputationDecayPerDay = 2;
+    /// @dev Seeded in initialize() to keep deploy-tx gas under the EIP-7825 cap.
+    uint256 public reputationDecayPerDay;
     /// @notice Grace period before decay kicks in (seconds).
-    uint256 public reputationDecayGracePeriod = 7 days;
+    uint256 public reputationDecayGracePeriod;
 
     event TaskCreated(uint256 id, string description, uint256 deadline, uint256 milestoneId, address assignedMember, string status);
     event TaskUpdated(uint256 id, string description, uint256 deadline, address assignedMember, string status);
@@ -293,15 +302,73 @@ contract Project_DAO {
     event ProposalDisputeResolved(uint256 indexed disputeId, bool inFavor);
     event OwnerChanged(address indexed previousOwner, address indexed newOwner);
 
+    /// @dev True once initialize() has run. Exposed for off-chain tooling.
+    bool public initialized;
+
+    /// @dev The deploy transaction only sets `owner` so the creation tx
+    ///      stays under the EIP-7825 per-tx gas cap on newer hardforks.
+    ///      ALL other state is seeded by initialize() in a second tx the
+    ///      deploy script runs immediately after creation.
     constructor() {
         owner = msg.sender;
+    }
+
+    /**
+     * @notice One-time post-deploy bootstrap. Must be called by the
+     *         contract owner in a second transaction right after the
+     *         constructor — the deploy script already does this. Until
+     *         this function has run, fee getters return zero, counters
+     *         are uninitialized, and member-gated functions will revert.
+     *
+     *         Moved out of the constructor purely for EIP-7825 (Fusaka)
+     *         compliance: the deploy tx's code-deposit alone already
+     *         consumes ~15.2M gas, leaving no budget for the ~600K of
+     *         cold SSTOREs the full bootstrap requires.
+     */
+    function initialize() external {
+        require(!initialized, "Already initialized.");
+        require(msg.sender == owner, "Only the owner can initialize.");
+        initialized = true;
+
+        // ── Member + admin setup ─────────────────────────────────────
         members[owner].isMember = true;
         members[owner].votingPower = 100;
         memberAddresses.push(owner);
         memberCount = 1;
         cybereumTreasury = owner;
 
-        // Create an "Owner" role and add it to the roles array
+        // ── Counter starting points (1-based IDs) ────────────────────
+        currentProposalDisputeId     = 1;
+        currentProgressId            = 1;
+        currentAgentPaymentRequestId = 1;
+        currentProposalId            = 1;
+        currentMilestoneId           = 1;
+        currentTaskId                = 1;
+        currentBroadcastId           = 1;
+        currentProjectId             = 1;
+        currentServiceAgreementId    = 1;
+        currentPaymentStreamId       = 1;
+
+        // ── Governance defaults ──────────────────────────────────────
+        votingPeriod       = 7 days;
+        minimumVotingPower = 10;
+
+        // ── Fee rail defaults ────────────────────────────────────────
+        cybereumFeeBps         = 5;
+        assetTransferFlatFeeWei = 1e12;
+        aiServiceFeeWei        = 0.0003 ether;
+        messagingFeeWei        = 0.0001 ether;
+        exitFeeBps             = 3;
+
+        // ── Reputation decay defaults ────────────────────────────────
+        reputationDecayPerDay      = 2;
+        reputationDecayGracePeriod = 7 days;
+
+        // ── Referral reward defaults ─────────────────────────────────
+        referralRewardBps = 1000;
+        referralTier2Bps  = 300;
+
+        // Create the "Owner" role (role ID 1) and hand it to the deployer.
         _createRole(bytes32("Owner"));
     }
 
@@ -1392,7 +1459,7 @@ contract Project_DAO {
 
     // ─── Agent Broadcast ──────────────────────────────────────────────────────
 
-    uint256 public currentBroadcastId = 1;
+    uint256 public currentBroadcastId;
 
     /**
      * @notice Broadcast a protocol message to all registered agents.
@@ -1674,7 +1741,7 @@ contract Project_DAO {
         uint256 funderCount;
     }
 
-    uint256 public currentProjectId = 1;
+    uint256 public currentProjectId;
     mapping(uint256 => EconomicProject)             public economicProjects;
     mapping(uint256 => address[])                   private _projectContributors;
     mapping(uint256 => mapping(address => uint256)) public projectContributorShares; // bps
@@ -2313,7 +2380,7 @@ contract Project_DAO {
     }
 
     mapping(uint256 => ServiceAgreement) public serviceAgreements;
-    uint256 public currentServiceAgreementId = 1;
+    uint256 public currentServiceAgreementId;
     /// @notice Tracks active agreements per agent (client + provider). Blocks leaveDAO when > 0.
     mapping(address => uint256) public activeAgreementCount;
 
@@ -2493,7 +2560,7 @@ contract Project_DAO {
     }
 
     mapping(uint256 => PaymentStream) public paymentStreams;
-    uint256 public currentPaymentStreamId = 1;
+    uint256 public currentPaymentStreamId;
     /// @notice Tracks active streams per agent (payer + recipient). Blocks leaveDAO when > 0.
     mapping(address => uint256) public activeStreamCount;
 
@@ -2654,10 +2721,11 @@ contract Project_DAO {
     mapping(address => uint256) public agentReferralEarnings;
     /// @notice Tier-1 referral reward: bps of protocol fee credited to direct referrer.
     ///         Default 1000 = 10% of fee. Max 2500 (25%).
-    uint256 public referralRewardBps = 1000;
+    /// @dev Seeded by initialize() for EIP-7825 deploy-gas compliance.
+    uint256 public referralRewardBps;
     /// @notice Tier-2 referral reward: bps of protocol fee credited to referrer's referrer.
     ///         Default 300 = 3% of fee. Max 1000 (10%).
-    uint256 public referralTier2Bps = 300;
+    uint256 public referralTier2Bps;
 
     event ReferralRecorded(address indexed agent, address indexed referrer);
     event ReferralRewardPaid(address indexed referrer, address indexed source, uint256 amount, uint8 tier);

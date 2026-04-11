@@ -9,8 +9,8 @@ All notable changes to this project are documented here. Dates reference impleme
 ## [Unreleased] — Next Steps
 
 ### Planned
-- Professional security audit
-- L2 deployment (Base/Arbitrum) — contract exceeds L1 size limit (40,329 bytes > 24,576)
+- Professional security audit (now covers a larger surface: on-chain PKI, EIP-712, 4 external libraries)
+- L2 deployment (Base/Arbitrum) — the main contract is still over the 24 KB Spurious Dragon limit even after four library extractions; the multi-library split needs to continue (Reputation engine, Economic projects, Payment streams, Service agreements, Referral rewards are the remaining large blocks) or the contract needs to be split into multiple deployed contracts composed at runtime
 - Event indexer/subgraph for protocol analytics (WS3)
 - Timelock/multisig on `setCybereumTreasury()` and `setCybereumFeeConfig()`
 - NexusAI rate limiting and suggestion history persistence
@@ -18,6 +18,50 @@ All notable changes to this project are documented here. Dates reference impleme
 - Broadcast notification panel in NEXUS app
 - Frontend E2E tests (Playwright/Cypress)
 - Prerender/SSR for public routes
+
+---
+
+## [0.6.0] — 2026-04-11 — Encrypted Smart Contracts + Library Split
+
+### Added — On-chain PKI for per-party contract contents
+- **Agent public key registry** (`publishAgentPublicKey` / `revokeAgentPublicKey` / `getAgentPublicKey` / `hasAgentPublicKey`): every registered agent can publish an encryption public key keyed to their address. Scheme-agnostic (32–256 bytes); compatible with secp256k1/ECIES, x25519, ed25519-X25519, and other KEMs.
+- **Encrypted service-agreement envelopes** (`attachEncryptedAgreementPayload` / `getEncryptedAgreementPayload`): any party (client, provider, arbiter) may attach per-party ciphertexts plus a shared keccak256 integrity hash. Reads are gated to parties; each caller only ever sees the ciphertext encrypted for their own address.
+- **Encrypted payment-request envelopes** (`attachEncryptedPaymentRequestPayload` / `getEncryptedPaymentRequestPayload`): the requester attaches one ciphertext for themselves and one for the payer; reads are restricted to those two addresses.
+- **EIP-712 signed attach variants** (`attachEncryptedAgreementPayloadSigned` / `attachEncryptedPaymentRequestPayloadSigned`): a variant of the attach path that requires EIP-712 signatures from every party over `(id, contentHash)` before the envelope is stored. Provides on-chain non-repudiation — any observer can later re-verify that the parties agreed to the plaintext hash.
+- **On-chain EIP-712 digest helpers** (`agreementTermsDigest`, `paymentRequestTermsDigest`): return the exact EIP-712 digest each party must sign.
+- **Partial re-attach safety**: if a caller re-attaches an agreement envelope with a DIFFERENT `contentHash`, all previously-stored ciphertexts are cleared automatically before the new ones are written. Same-hash re-attach preserves existing ciphertexts (supports "rotate one party's key" flows).
+- **SDK helpers** (`@cybereum/agent-sdk`): `publishPublicKey` / `revokePublicKey` / `getPublicKey` / `hasPublicKey`, `attachEncryptedAgreement*`, `attachEncryptedPaymentRequest*`, EIP-712 signers (`signAgreementTerms`, `signPaymentRequestTerms`), and a static `AgentClient.deriveSecp256k1PublicKey(privateKey)` helper returning the 33-byte compressed key ECIES libraries can encrypt to.
+
+### Changed — Multi-library architecture
+- **PKILib** (`contracts/PKILib.sol`) — external library holding the public key registry, envelope storage/validation, and EIP-712 verification. Linked into `Project_DAO` at deploy time. Uses OpenZeppelin's audited `ECDSA.recover` for signature recovery (replacing a custom malleability-checking implementation).
+- **TrustLib** (`contracts/TrustLib.sol`) — external library holding the trust-graph endorsement store, score accumulation, and time-weighted decay view.
+- **FeatureKitLib** (`contracts/FeatureKitLib.sol`) — external library holding the feature-kit submission, upvote, and status pipeline.
+- **MessagingLib** (`contracts/MessagingLib.sol`) — external library holding the encrypted direct-messaging store (send/read/mark-read/conversation/inbox). The main contract keeps the messaging fee collection (escrow decrement + treasury transfer) in its own `nonReentrant` wrapper.
+- Each `Store` struct exposed by the libraries carries a `uint256[50] __gap;` reserve so future field additions do not shift the layout of unrelated state variables in `Project_DAO`.
+
+### Changed — Deploy-time initialization (`initialize()`)
+- The constructor now only sets `owner = msg.sender`. All other bootstrap (counters, fee defaults, reputation decay constants, referral reward config, "Owner" role creation, member/admin wiring) moved to a one-time `initialize()` function the deployer MUST call immediately after the creation transaction.
+- **Why**: moving ~25 cold SSTOREs out of the deploy tx brings the creation gas down from ~17.1 M to ~16.59 M — under the 16,777,216 gas per-transaction cap enforced by the Osaka / Fusaka hardfork (EIP-7825).
+- **Deploy scripts updated**: `scripts/deploy.js` and the test helper now call `initialize()` right after `deploy()`. An `initialized()` public view and an `Already initialized.` guard enforce single-use; `initialize()` is `onlyOwner`.
+- A CI guardrail test (`EIP-7825 deploy-gas guardrail`) measures real deploy-tx gas via `estimateGas` and asserts it remains under the Fusaka cap, preventing silent regressions.
+
+### Changed — Hardhat network config
+- Test network pinned to `hardfork: "prague"` (matches current Base / Ethereum mainnet) and `gas` / `blockGasLimit` set to 60 M so the full contract deploys during `npx hardhat test`. Hardhat 2.28+ defaults `gas` to the Fusaka 16.78 M cap even outside the Fusaka fork, which was below the contract's creation cost.
+- Solidity compiler pragma harmonized to `^0.8.26` across the main contract and all libraries.
+
+### Added — Tests (432 contract tests + 160 SDK unit tests, all green)
+- 33 contract tests for the unsigned PKI paths (registry, envelope access control, tamper/length/hash validation, pause interaction).
+- 14 contract tests for the EIP-712 signed-attach paths (happy path, forged signatures, wrong hash / wrong id / wrong signer, on-chain ↔ off-chain digest round-trip).
+- 4 contract tests for re-attach semantics (new-hash clear, same-hash preserve, full-reattach overwrite, add-party-by-same-hash).
+- 3 contract tests for end-to-end ECIES round-trip using Node `crypto` (alice + bob ECIES encrypt, store on-chain, decrypt, verify integrity hash; tamper detection; SDK-derived key compatibility).
+- 2 contract tests for the EIP-7825 deploy-gas guardrail (deploy and `initialize()` each fit under the Fusaka per-tx cap).
+- 4 contract tests for `initialize()` lifecycle (idempotency, owner-only, default-seeding, gas budget).
+- 3 contract tests for the library-shim getters (`currentFeatureKitId`, `featureKits`, `featureKitVoted`, `currentDirectMessageId`, `currentEndorsementId`).
+- 35 SDK unit tests (`sdk/test/pki.test.js`) covering `deriveSecp256k1PublicKey`, `_normalizePublicKey`, `_validateCiphertext`, `_validateContentHash`, `_validateSignature`, EIP-712 signer round-trip, method surface guardrail, and SDK↔ECIES interop.
+
+### Fixed
+- **Partial re-attach footgun**: previously, re-attaching an agreement envelope with a subset of recipients + a new `contentHash` left non-passed parties paired with stale ciphertext that no longer matched the stored hash. Fixed by tracking the full recipient set in the envelope and atomically clearing old ciphertexts on hash change.
+- **Custom `_recover` ECDSA implementation** replaced with OpenZeppelin's audited `ECDSA.recover` — no more custom malleability / `v` / length checks to audit separately.
 
 ---
 

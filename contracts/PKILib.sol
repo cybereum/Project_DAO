@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+
 /**
  * @title PKILib — PKI registry + encrypted artifact envelopes
  * @notice External library that holds most of the PKI logic for
@@ -34,16 +36,25 @@ library PKILib {
         address setBy;          // Who performed the last attach
         bool    exists;         // True once an envelope has been stored
         bool    hasSignatures;  // True if attached via the signed variant
+        // Tracks the full recipient set whose ciphertexts exist in
+        // ciphertextFor[id][...] so re-attach can clear them atomically
+        // (fixing the partial re-attach footgun).
+        address[] recipients;
     }
 
     struct PubKeyRegistry {
         mapping(address => bytes) keys;
         mapping(address => uint256) updatedAt;
+        // Reserved for future fields so appending to this struct does not
+        // shift the layout of unrelated state variables in Project_DAO.
+        uint256[50] __gap;
     }
 
     struct EnvelopeStore {
         mapping(uint256 => EncryptedEnvelope) envelopes;
         mapping(uint256 => mapping(address => string)) ciphertextFor;
+        // Same storage-gap pattern as PubKeyRegistry above.
+        uint256[50] __gap;
     }
 
     // ─── Events ────────────────────────────────────────────────────────────
@@ -100,13 +111,24 @@ library PKILib {
     // ─── Envelope storage primitives ────────────────────────────────────────
 
     /**
-     * @dev Core validate-and-store routine. The caller must have already
-     *      checked authorization (party membership) for mutations. This
-     *      function only enforces recipient-side invariants: each recipient
-     *      has a published key, each ciphertext is within length bounds,
-     *      content hash is non-zero, arrays match.
+     * @dev Core validate-and-store routine for agreement envelopes.
+     *      The caller must have already checked authorization (party
+     *      membership). This routine enforces recipient-side invariants
+     *      (published pubkey, ciphertext length, non-zero hash) AND fixes
+     *      the partial re-attach footgun:
      *
-     *      This is used by BOTH the agreement and payment-request flows.
+     *      - If the caller re-attaches with a DIFFERENT contentHash, ALL
+     *        previously-stored ciphertexts are cleared before the new ones
+     *        are written, so non-passed parties can never see a stale
+     *        ciphertext paired with a new hash.
+     *      - If the caller re-attaches with the SAME contentHash, existing
+     *        ciphertexts are preserved. This supports the legitimate
+     *        "rotate one party's key — rewrite only their ciphertext"
+     *        use case, since the plaintext (and thus the hash) is unchanged.
+     *
+     *      The recipients array in the envelope tracks the full current
+     *      set of addresses with a stored ciphertext so the clear step
+     *      can run without knowing who was written in the past.
      */
     function _writeEnvelope(
         EnvelopeStore storage store,
@@ -121,22 +143,45 @@ library PKILib {
         require(recipients.length > 0, "At least one recipient required.");
         require(contentHash != bytes32(0), "Content hash required.");
 
+        EncryptedEnvelope storage env = store.envelopes[id];
+
+        // ── Hash change → clear every previously-stored ciphertext so no
+        //    non-passed party can be left with data that no longer matches
+        //    the envelope's integrity hash.
+        if (env.exists && env.contentHash != contentHash) {
+            address[] storage oldRecipients = env.recipients;
+            uint256 oldLen = oldRecipients.length;
+            for (uint256 j = 0; j < oldLen; j++) {
+                delete store.ciphertextFor[id][oldRecipients[j]];
+            }
+            delete env.recipients;
+        }
+
+        // ── Write new ciphertexts. A recipient is "new to the envelope"
+        //    iff there's no existing ciphertext for it in this id — after
+        //    the clear step above, that's automatically true for every
+        //    recipient in the hash-change case. On same-hash re-attach,
+        //    recipients whose ciphertext is being refreshed are skipped
+        //    from the recipients array push so we don't create duplicates.
         for (uint256 i = 0; i < recipients.length; i++) {
             address r = recipients[i];
             require(pubKeys.keys[r].length > 0, "Recipient has no published public key.");
             bytes calldata ct = bytes(ciphertexts[i]);
             require(ct.length > 0, "Ciphertext must be non-empty.");
             require(ct.length <= MAX_CIPHERTEXT_BYTES, "Ciphertext exceeds max length.");
+
+            bool isNewRecipient = bytes(store.ciphertextFor[id][r]).length == 0;
             store.ciphertextFor[id][r] = ciphertexts[i];
+            if (isNewRecipient) {
+                env.recipients.push(r);
+            }
         }
 
-        store.envelopes[id] = EncryptedEnvelope({
-            contentHash:   contentHash,
-            updatedAt:     block.timestamp,
-            setBy:         msg.sender,
-            exists:        true,
-            hasSignatures: signed
-        });
+        env.contentHash   = contentHash;
+        env.updatedAt     = block.timestamp;
+        env.setBy         = msg.sender;
+        env.exists        = true;
+        env.hasSignatures = signed;
     }
 
     /**
@@ -246,13 +291,18 @@ library PKILib {
         store.ciphertextFor[requestId][requester] = ciphertextForRequester;
         store.ciphertextFor[requestId][payer] = ciphertextForPayer;
 
-        store.envelopes[requestId] = EncryptedEnvelope({
-            contentHash:   contentHash,
-            updatedAt:     block.timestamp,
-            setBy:         msg.sender,
-            exists:        true,
-            hasSignatures: signed
-        });
+        // Field-by-field assignment: the struct contains a dynamic array
+        // (recipients) so Solidity won't accept a literal with mixed
+        // calldata→storage copy semantics. Update each field explicitly.
+        EncryptedEnvelope storage env = store.envelopes[requestId];
+        env.contentHash   = contentHash;
+        env.updatedAt     = block.timestamp;
+        env.setBy         = msg.sender;
+        env.exists        = true;
+        env.hasSignatures = signed;
+        // Payment requests always write both slots on every attach, so no
+        // need to track recipients — the partial-reattach footgun doesn't
+        // apply here.
     }
 
     /**
@@ -325,27 +375,14 @@ library PKILib {
         return _paymentRequestDigest(requestId, contentHash);
     }
 
-    /// @dev Minimal ECDSA recover — rejects malleable (upper-half) s values
-    ///      and recIds outside {27,28}. Equivalent to OZ ECDSA.recover.
-    function _recover(bytes32 digest, bytes calldata sig) internal pure returns (address) {
-        require(sig.length == 65, "Invalid signature length.");
-        bytes32 r;
-        bytes32 s;
-        uint8 v;
-        assembly {
-            r := calldataload(sig.offset)
-            s := calldataload(add(sig.offset, 32))
-            v := byte(0, calldataload(add(sig.offset, 64)))
-        }
-        // Reject malleable signatures (EIP-2)
-        require(
-            uint256(s) <= 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0,
-            "Malleable signature."
-        );
-        require(v == 27 || v == 28, "Invalid signature v value.");
-        address signer = ecrecover(digest, v, r, s);
-        require(signer != address(0), "Invalid signature.");
-        return signer;
+    /// @dev Recover the signer from a 65-byte EIP-191/EIP-712 signature.
+    ///      Delegates to OpenZeppelin's audited ECDSA library — which
+    ///      enforces canonical s (EIP-2 anti-malleability), a 65-byte
+    ///      payload shape, v ∈ {27, 28}, and reverts on non-zero invalid
+    ///      signatures. Passing the memory copy is required because OZ
+    ///      ECDSA.recover only takes `bytes memory`.
+    function _recover(bytes32 digest, bytes memory sig) internal pure returns (address) {
+        return ECDSA.recover(digest, sig);
     }
 
     function _verifyAgreementSignatures(

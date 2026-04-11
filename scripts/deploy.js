@@ -71,6 +71,15 @@ async function main() {
   const address = await dao.getAddress();
   console.log("Project_DAO deployed to:", address);
 
+  // Second transaction: seed counters, fee defaults, reputation decay
+  // constants, and the Owner role. These were moved out of the
+  // constructor so the deploy tx stays under EIP-7825 / Osaka's 16.78 M
+  // per-transaction gas cap. initialize() is single-use and onlyOwner.
+  console.log("Initializing Project_DAO (post-deploy bootstrap)...");
+  const initTx = await dao.initialize();
+  await initTx.wait();
+  console.log("Project_DAO initialized.");
+
   // Verify deployment
   const code = await ethers.provider.getCode(address);
   if (code === "0x") {

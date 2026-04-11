@@ -24,6 +24,8 @@ library FeatureKitLib {
         uint256 currentFeatureKitId;
         mapping(uint256 => FeatureKit) featureKits;
         mapping(uint256 => mapping(address => bool)) featureKitVoted;
+        // Reserved for future fields — storage-gap pattern.
+        uint256[50] __gap;
     }
 
     event FeatureKitSubmitted(
