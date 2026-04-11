@@ -203,6 +203,71 @@ export const PROJECT_DAO_ABI = [
   'event PaymentStreamCreated(uint256 indexed streamId, address indexed payer, address indexed recipient, uint256 ratePerSecond, uint256 totalDeposit, uint256 startTime, uint256 stopTime)',
   'event PaymentStreamWithdrawn(uint256 indexed streamId, address indexed recipient, uint256 amount)',
   'event PaymentStreamCancelled(uint256 indexed streamId, address indexed cancelledBy, uint256 recipientAmount, uint256 payerRefund)',
+
+  // ─── Lifecycle: deploy-time initialize() ──────────────────────────────
+  'function initialize() external',
+  'function initialized() external view returns (bool)',
+
+  // ─── PKI: Agent public key registry ───────────────────────────────────
+  'function publishAgentPublicKey(bytes _publicKey) external',
+  'function revokeAgentPublicKey() external',
+  'function getAgentPublicKey(address _agent) external view returns (bytes publicKey, uint256 updatedAt)',
+  'function hasAgentPublicKey(address _agent) external view returns (bool)',
+  'function agentPublicKeyUpdatedAt(address) external view returns (uint256)',
+  'function MIN_AGENT_PUBLIC_KEY_BYTES() external view returns (uint256)',
+  'function MAX_AGENT_PUBLIC_KEY_BYTES() external view returns (uint256)',
+  'function MAX_ENCRYPTED_PAYLOAD_BYTES() external view returns (uint256)',
+  'event AgentPublicKeyPublished(address indexed agent, bytes publicKey, uint256 updatedAt)',
+  'event AgentPublicKeyRevoked(address indexed agent, uint256 revokedAt)',
+
+  // ─── PKI: Encrypted service-agreement envelopes ───────────────────────
+  'function attachEncryptedAgreementPayload(uint256 _agreementId, address[] _recipients, string[] _ciphertexts, bytes32 _contentHash) external',
+  'function attachEncryptedAgreementPayloadSigned(uint256 _agreementId, address[] _recipients, string[] _ciphertexts, bytes32 _contentHash, address[] _expectedSigners, bytes[] _signatures) external',
+  'function getEncryptedAgreementPayload(uint256 _agreementId) external view returns (bytes32 contentHash, string ciphertextForCaller, uint256 updatedAt, address setBy, bool hasSignatures)',
+  'event AgreementEncryptedPayloadAttached(uint256 indexed agreementId, address indexed setBy, bytes32 contentHash, uint256 recipientCount, uint256 updatedAt, bool signed)',
+
+  // ─── PKI: Encrypted payment-request envelopes ─────────────────────────
+  'function attachEncryptedPaymentRequestPayload(uint256 _requestId, string _ciphertextForRequester, string _ciphertextForPayer, bytes32 _contentHash) external',
+  'function attachEncryptedPaymentRequestPayloadSigned(uint256 _requestId, string _ciphertextForRequester, string _ciphertextForPayer, bytes32 _contentHash, bytes _requesterSignature, bytes _payerSignature) external',
+  'function getEncryptedPaymentRequestPayload(uint256 _requestId) external view returns (bytes32 contentHash, string ciphertextForCaller, uint256 updatedAt, address setBy, bool hasSignatures)',
+  'event PaymentRequestEncryptedPayloadAttached(uint256 indexed requestId, address indexed setBy, bytes32 contentHash, uint256 updatedAt, bool signed)',
+
+  // ─── PKI: EIP-712 digest helpers ──────────────────────────────────────
+  'function agreementTermsDigest(uint256 _agreementId, bytes32 _contentHash) external view returns (bytes32)',
+  'function paymentRequestTermsDigest(uint256 _requestId, bytes32 _contentHash) external view returns (bytes32)',
+
+  // ─── Trust graph (endorsements) ───────────────────────────────────────
+  'function endorseAgent(uint256 _agreementId, address _endorsed, string _capability) external',
+  'function revokeEndorsement(uint256 _endorsementId) external',
+  'function getAgentTrustScore(address _agent) external view returns (uint256 trustScore, uint256 endorsementCount)',
+  'function getTimeWeightedTrustScore(address _agent) external view returns (uint256 weightedScore, uint256 activeEndorsements)',
+  'function getAgentEndorsements(address _agent, uint256 offset, uint256 limit) external view returns (uint256[] endorsementIds, uint256 total)',
+  'function getEndorsement(uint256 _endorsementId) external view returns (uint256 id, address endorser, address endorsed, uint256 agreementId, string capability, uint256 weight, uint256 timestamp, bool revoked)',
+  'function currentEndorsementId() external view returns (uint256)',
+  'event EndorsementCreated(uint256 indexed endorsementId, address indexed endorser, address indexed endorsed, uint256 agreementId, string capability, uint256 weight)',
+  'event EndorsementRevoked(uint256 indexed endorsementId, address indexed endorser, address indexed endorsed)',
+
+  // ─── Feature kit pipeline ─────────────────────────────────────────────
+  'function submitFeatureKit(string metadataURI, uint8 priority) external',
+  'function upvoteFeatureKit(uint256 kitId) external',
+  'function setFeatureKitStatus(uint256 kitId, uint8 newStatus, string reason) external',
+  'function getFeatureKits(uint256 offset, uint256 limit) external view returns (tuple(uint256 id, address submitter, uint8 priority, uint8 status, string metadataURI, uint256 voteCount, uint256 submittedAt)[] page, uint256 total)',
+  'function featureKits(uint256 kitId) external view returns (uint256 id, address submitter, uint8 priority, uint8 status, string metadataURI, uint256 voteCount, uint256 submittedAt)',
+  'function featureKitVoted(uint256 kitId, address voter) external view returns (bool)',
+  'function currentFeatureKitId() external view returns (uint256)',
+  'event FeatureKitSubmitted(uint256 indexed kitId, address indexed submitter, uint8 priority, string metadataURI, uint256 timestamp)',
+  'event FeatureKitUpvoted(uint256 indexed kitId, address indexed voter, uint256 newVoteCount)',
+  'event FeatureKitStatusChanged(uint256 indexed kitId, uint8 newStatus, string reason)',
+
+  // ─── Direct messaging ─────────────────────────────────────────────────
+  'function sendDirectMessage(address _to, string _encryptedContent, bytes32 _contentHash) external',
+  'function markMessageRead(uint256 _messageId) external',
+  'function getDirectMessage(uint256 _messageId) external view returns (uint256 id, address sender, address recipient, bytes32 contentHash, string encryptedContent, uint256 timestamp, bool readByRecipient)',
+  'function getConversation(address _otherAgent, uint256 offset, uint256 limit) external view returns (uint256[] messageIds, uint256 total)',
+  'function getInbox(uint256 offset, uint256 limit) external view returns (uint256[] messageIds, uint256 total)',
+  'function currentDirectMessageId() external view returns (uint256)',
+  'event DirectMessageSent(uint256 indexed messageId, address indexed sender, address indexed recipient, bytes32 contentHash, uint256 timestamp)',
+  'event DirectMessageRead(uint256 indexed messageId, address indexed recipient)',
 ];
 
 export function hasContractConfig() {

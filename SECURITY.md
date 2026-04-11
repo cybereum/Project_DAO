@@ -208,10 +208,26 @@ Note: The contract currently uses both custom errors and `require` strings. Migr
 ## 5. Known Limitations
 
 ### Contract Size
-The contract is **40,329 bytes**, exceeding the Ethereum L1 Spurious Dragon limit of 24,576 bytes. This means:
-- **Cannot deploy to Ethereum L1** without splitting into multiple contracts (Diamond proxy or library extraction)
-- **Can deploy to L2 chains** (Base, Arbitrum, Optimism) where this limit is relaxed
-- Hardhat tests use `allowUnlimitedContractSize: true` to bypass this locally
+The main contract is **~75,800 bytes**, still exceeding the Ethereum L1 Spurious Dragon limit of 24,576 bytes. Partial mitigation landed in 0.6.0:
+- Four subsystems extracted into external libraries (`PKILib`, `TrustLib`, `FeatureKitLib`, `MessagingLib`), each invoked via `DELEGATECALL` from the main contract.
+- Most post-deploy bootstrap (counters, fee defaults, reputation decay constants, referral config, Owner role) moved from the constructor into a separate `initialize()` function; deploy-tx gas is now ~16.59 M, **under** the 16,777,216 per-transaction cap enforced by the Osaka / Fusaka hardfork (EIP-7825).
+- **However, the 24 KB Spurious Dragon code-size limit is still exceeded.** The contract **cannot be deployed to Ethereum mainnet or Base** as-is; either (a) more subsystems must be extracted into libraries, or (b) the contract must be split into multiple deployed contracts composed at runtime.
+- Hardhat tests use `allowUnlimitedContractSize: true` and a per-tx `gas: 60_000_000` override to bypass this locally.
+
+### Deferred Initialization
+Because of the per-tx gas cap above, post-deploy state setup lives in `initialize()`, which is:
+- **`onlyOwner`** and **single-use** (`initialized` flag, guarded with `require(!initialized, "Already initialized.");`)
+- Called automatically by `scripts/deploy.js` immediately after `CREATE`
+- A CI guardrail test (`EIP-7825 deploy-gas guardrail`) asserts both the deploy tx and `initialize()` each fit under the per-tx cap
+- **Operational risk**: if a deployment ever fails to call `initialize()`, fee getters return zero, counters are uninitialized, and member-gated functions revert. The deploy script's atomic "deploy → initialize" sequence is the only supported path.
+
+### Library Storage Fragility
+Each extracted library's `Store` struct is embedded in `Project_DAO` via a private state variable. Adding a field to any `Store` struct shifts the storage layout of subsequent state variables in the main contract.
+- Each `Store` reserves a `uint256[50] __gap;` at the end so future additions stay within the reserved range.
+- Contributors adding fields to library `Store` structs MUST decrement `__gap`'s length by the number of slots their new fields occupy — otherwise they corrupt storage on redeploy.
+
+### PKI Envelopes: Confidentiality ≠ Non-Repudiation
+The unsigned `attachEncryptedAgreementPayload` / `attachEncryptedPaymentRequestPayload` paths provide confidentiality and integrity-against-tampering (via the on-chain `contentHash`), but **not** non-repudiation — a party can attach whatever `contentHash` they like. For legally-binding agreement on the plaintext, callers MUST use the EIP-712 signed variants (`attachEncryptedAgreementPayloadSigned` / `attachEncryptedPaymentRequestPayloadSigned`), which require signatures from every address in the expected signer set supplied for verification over `(id, contentHash)` before the envelope is stored. The stored envelope's `hasSignatures` flag lets readers distinguish the two paths.
 
 ### Single Owner
 The contract uses a single owner address with broad powers. There is no:
@@ -223,7 +239,7 @@ The contract uses a single owner address with broad powers. There is no:
 The contract has not undergone formal verification. Critical invariants (e.g., "treasury balance delta equals sum of all fees") are tested but not formally proven.
 
 ### No Upgrade Mechanism
-The contract is not upgradeable. Any bug fixes require deploying a new contract and migrating state.
+The contract is not upgradeable. Any bug fixes require deploying a new contract and migrating state. This includes bugs found in any of the linked external libraries — the library addresses are hard-coded at `Project_DAO` deploy time via Solidity's library-linking mechanism, so a library upgrade requires a fresh `Project_DAO` deployment.
 
 ---
 
@@ -232,15 +248,25 @@ The contract is not upgradeable. Any bug fixes require deploying a new contract 
 ### Current State
 - **No professional security audit has been performed.**
 - NexusAI security analysis mode provides automated scanning (available at `/nexus-ai` in the NEXUS app)
-- 58 unit tests cover critical paths (fee math, escrow, transfers, payment requests, projects)
-- ReentrancyGuard added to all ETH-transferring functions
+- **432 contract tests + 160 SDK unit tests**, all green. Coverage now includes:
+  - Fee math, escrow, transfers, payment requests, projects, streams, service agreements
+  - PKI registry + envelope access control + integrity hash plumbing
+  - EIP-712 signed-attach happy path AND forged-signature / wrong-hash / wrong-id rejection
+  - End-to-end ECIES round-trip with a real cipher (Node `crypto` secp256k1 ECDH + AES-256-GCM)
+  - Partial re-attach semantics for both hash-change (clear) and same-hash (preserve) cases
+  - `initialize()` idempotency and owner-only guard
+  - Library-shim getter parity with pre-extraction auto-getters
+  - EIP-7825 deploy-gas guardrail (deploy + `initialize()` each under the Fusaka cap)
+- ReentrancyGuard on all ETH-transferring functions
 - Safe `.call{value:}` pattern used throughout
+- `PKILib` uses OpenZeppelin's audited `ECDSA.recover` (no custom signature math)
 
 ### Recommended Before Mainnet
-1. Professional audit by a reputable firm (OpenZeppelin, Trail of Bits, Cyfrin, or equivalent)
-2. Reentrancy attack tests with malicious contract
+1. Professional audit by a reputable firm (OpenZeppelin, Trail of Bits, Cyfrin, or equivalent) — audit scope now includes PKI registry, envelope access control, EIP-712 signed paths, library delegatecall pattern, and `initialize()` lifecycle
+2. Reentrancy attack tests with a malicious contract targeting the library delegatecall boundaries
 3. Formal invariant verification for fee accounting
-4. Gas optimization review
+4. Gas optimization review, particularly for library-wrapper call sites
+5. Additional library extraction or a multi-contract split so `Project_DAO` fits under the 24 KB Spurious Dragon code limit
 
 ---
 

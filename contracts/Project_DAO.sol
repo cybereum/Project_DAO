@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.26;
+
+import {PKILib} from "./PKILib.sol";
+import {TrustLib} from "./TrustLib.sol";
+import {FeatureKitLib} from "./FeatureKitLib.sol";
+import {MessagingLib} from "./MessagingLib.sol";
 
 interface IERC20 {
     function transferFrom(address from, address to, uint256 value) external returns (bool);
@@ -11,6 +16,12 @@ interface IERC721Lite {
 }
 
 contract Project_DAO {
+    using PKILib for PKILib.PubKeyRegistry;
+    using PKILib for PKILib.EnvelopeStore;
+    using TrustLib for TrustLib.Store;
+    using FeatureKitLib for FeatureKitLib.Store;
+    using MessagingLib for MessagingLib.Store;
+
     // ─── Custom Errors (gas-efficient reverts) ───────────────────────────────
     error Unauthorized();
     error NotMember();
@@ -130,11 +141,15 @@ contract Project_DAO {
     }
 
     mapping(uint256 => ProposalDispute) public proposalDisputes;
-    uint256 public currentProposalDisputeId = 1;
+    // Counters start at 0 on deploy and are bumped to 1 by initialize().
+    // This moves ~22 K gas per counter OUT of the deploy transaction so
+    // Project_DAO fits under the EIP-7825 / Osaka per-tx gas cap. The
+    // public-getter shape is unchanged.
+    uint256 public currentProposalDisputeId;
     mapping(uint256 => mapping(address => bool)) public proposalHasVoted;
     mapping(uint256 => mapping(address => bool)) public proposalMembersWhoCanVote;
     mapping(uint256 => Progress) public progressData;
-    uint256 public currentProgressId = 1;
+    uint256 public currentProgressId;
 
     address public owner;
     mapping(address => Member) public members;
@@ -142,15 +157,15 @@ contract Project_DAO {
     address[] public agentAddresses;  // Registry for agent discovery
     mapping(address => mapping(address => uint256)) public agentTokenEscrowBalances;
     mapping(uint256 => AgentPaymentRequest) public agentPaymentRequests;
-    uint256 public currentAgentPaymentRequestId = 1;
+    uint256 public currentAgentPaymentRequestId;
     Proposal[] public proposals;
-    uint256 public currentProposalId = 1;
-    uint256 public votingPeriod = 7 days;
-    uint256 public minimumVotingPower = 10;
+    uint256 public currentProposalId;
+    uint256 public votingPeriod;
+    uint256 public minimumVotingPower;
     Milestone[] public milestones;
-    uint256 public currentMilestoneId = 1;
+    uint256 public currentMilestoneId;
     Task[] public tasks;
-    uint256 public currentTaskId = 1;
+    uint256 public currentTaskId;
     Role[] roles;
     mapping(address => uint256) public memberRoles;
     address[] public memberAddresses;
@@ -161,16 +176,20 @@ contract Project_DAO {
     uint256 public constant FEE_BPS_DENOMINATOR = 10_000;
     /// @dev Minimum fee floor: 1 bps (0.01%). Fee can never be set to zero.
     uint256 public constant MIN_FEE_BPS = 1;
-    uint256 public cybereumFeeBps = 5;
-    uint256 public assetTransferFlatFeeWei = 1e12;
-    uint256 public aiServiceFeeWei = 0.0003 ether;
+    // Default fee parameters are seeded by initialize() so the cold SSTOREs
+    // happen outside the deploy transaction. Between deploy and initialize()
+    // these fields read as zero — the deploy script MUST call initialize()
+    // before any user traffic.
+    uint256 public cybereumFeeBps;
+    uint256 public assetTransferFlatFeeWei;
+    uint256 public aiServiceFeeWei;
     address public cybereumTreasury;
 
     // ─── Commerce Blackhole State ───────────────────────────────────────────
     /// @notice Fee charged per direct message sent (from sender's escrow).
-    uint256 public messagingFeeWei = 0.0001 ether;
+    uint256 public messagingFeeWei;
     /// @notice Exit fee in bps charged when value leaves the protocol (claims, refunds, leave).
-    uint256 public exitFeeBps = 3;
+    uint256 public exitFeeBps;
     /// @notice Total protocol commerce volume (all value movements, cumulative).
     uint256 public totalCommerceVolume;
     /// @notice Total fees ever collected by the protocol.
@@ -196,9 +215,10 @@ contract Project_DAO {
     uint256 public constant REP_TIER_GOLD = 500;
     uint256 public constant REP_TIER_PLATINUM = 750;
     /// @notice Decay rate: reputation points lost per day of inactivity (after 7-day grace).
-    uint256 public reputationDecayPerDay = 2;
+    /// @dev Seeded in initialize() to keep deploy-tx gas under the EIP-7825 cap.
+    uint256 public reputationDecayPerDay;
     /// @notice Grace period before decay kicks in (seconds).
-    uint256 public reputationDecayGracePeriod = 7 days;
+    uint256 public reputationDecayGracePeriod;
 
     event TaskCreated(uint256 id, string description, uint256 deadline, uint256 milestoneId, address assignedMember, string status);
     event TaskUpdated(uint256 id, string description, uint256 deadline, address assignedMember, string status);
@@ -282,15 +302,73 @@ contract Project_DAO {
     event ProposalDisputeResolved(uint256 indexed disputeId, bool inFavor);
     event OwnerChanged(address indexed previousOwner, address indexed newOwner);
 
+    /// @dev True once initialize() has run. Exposed for off-chain tooling.
+    bool public initialized;
+
+    /// @dev The deploy transaction only sets `owner` so the creation tx
+    ///      stays under the EIP-7825 per-tx gas cap on newer hardforks.
+    ///      ALL other state is seeded by initialize() in a second tx the
+    ///      deploy script runs immediately after creation.
     constructor() {
         owner = msg.sender;
+    }
+
+    /**
+     * @notice One-time post-deploy bootstrap. Must be called by the
+     *         contract owner in a second transaction right after the
+     *         constructor — the deploy script already does this. Until
+     *         this function has run, fee getters return zero, counters
+     *         are uninitialized, and member-gated functions will revert.
+     *
+     *         Moved out of the constructor purely for EIP-7825 (Fusaka)
+     *         compliance: the deploy tx's code-deposit alone already
+     *         consumes ~15.2M gas, leaving no budget for the ~600K of
+     *         cold SSTOREs the full bootstrap requires.
+     */
+    function initialize() external {
+        require(!initialized, "Already initialized.");
+        require(msg.sender == owner, "Only the owner can initialize.");
+        initialized = true;
+
+        // ── Member + admin setup ─────────────────────────────────────
         members[owner].isMember = true;
         members[owner].votingPower = 100;
         memberAddresses.push(owner);
         memberCount = 1;
         cybereumTreasury = owner;
 
-        // Create an "Owner" role and add it to the roles array
+        // ── Counter starting points (1-based IDs) ────────────────────
+        currentProposalDisputeId     = 1;
+        currentProgressId            = 1;
+        currentAgentPaymentRequestId = 1;
+        currentProposalId            = 1;
+        currentMilestoneId           = 1;
+        currentTaskId                = 1;
+        currentBroadcastId           = 1;
+        currentProjectId             = 1;
+        currentServiceAgreementId    = 1;
+        currentPaymentStreamId       = 1;
+
+        // ── Governance defaults ──────────────────────────────────────
+        votingPeriod       = 7 days;
+        minimumVotingPower = 10;
+
+        // ── Fee rail defaults ────────────────────────────────────────
+        cybereumFeeBps         = 5;
+        assetTransferFlatFeeWei = 1e12;
+        aiServiceFeeWei        = 0.0003 ether;
+        messagingFeeWei        = 0.0001 ether;
+        exitFeeBps             = 3;
+
+        // ── Reputation decay defaults ────────────────────────────────
+        reputationDecayPerDay      = 2;
+        reputationDecayGracePeriod = 7 days;
+
+        // ── Referral reward defaults ─────────────────────────────────
+        referralRewardBps = 1000;
+        referralTier2Bps  = 300;
+
+        // Create the "Owner" role (role ID 1) and hand it to the deployer.
         _createRole(bytes32("Owner"));
     }
 
@@ -1381,7 +1459,7 @@ contract Project_DAO {
 
     // ─── Agent Broadcast ──────────────────────────────────────────────────────
 
-    uint256 public currentBroadcastId = 1;
+    uint256 public currentBroadcastId;
 
     /**
      * @notice Broadcast a protocol message to all registered agents.
@@ -1401,25 +1479,13 @@ contract Project_DAO {
     }
 
     // ─── Secure Agent Direct Messaging ──────────────────────────────────────
+    //
+    // Storage + validation + mutation live in MessagingLib. The main
+    // contract wrapper handles authorization, the per-message fee deduction
+    // (escrow decrement + treasury transfer), and volume recording, then
+    // forwards to the library for state mutation and event emission.
 
-    struct DirectMessage {
-        uint256 id;
-        address sender;
-        address recipient;
-        bytes32 contentHash;      // keccak256 of the plaintext — proves integrity
-        string  encryptedContent; // Encrypted payload (e.g. ECIES with recipient pubkey, or IPFS CID to encrypted blob)
-        uint256 timestamp;
-        bool    readByRecipient;
-    }
-
-    uint256 public currentDirectMessageId = 1;
-    mapping(uint256 => DirectMessage) private directMessages;
-
-    /// @notice Index of message IDs per conversation pair (sorted key = min(a,b), max(a,b))
-    mapping(bytes32 => uint256[]) private _conversationIndex;
-
-    /// @notice Inbox: message IDs received by each agent.
-    mapping(address => uint256[]) private _inbox;
+    MessagingLib.Store private _msgStore;
 
     event DirectMessageSent(
         uint256 indexed messageId,
@@ -1428,42 +1494,26 @@ contract Project_DAO {
         bytes32 contentHash,
         uint256 timestamp
     );
-
     event DirectMessageRead(
         uint256 indexed messageId,
         address indexed recipient
     );
 
-    /**
-     * @notice Compute the deterministic conversation key for two agents.
-     *         Ensures (A,B) and (B,A) map to the same thread.
-     */
-    function _conversationKey(address a, address b) internal pure returns (bytes32) {
-        return a < b
-            ? keccak256(abi.encodePacked(a, b))
-            : keccak256(abi.encodePacked(b, a));
+    /// @notice Next direct-message ID. Returns 1 before any messages exist
+    ///         (matching the pre-extraction initializer).
+    function currentDirectMessageId() external view returns (uint256) {
+        uint256 v = _msgStore.currentDirectMessageId;
+        return v == 0 ? 1 : v;
     }
 
-    /**
-     * @notice Send an encrypted direct message to another registered agent.
-     * @param _to               Recipient agent address.
-     * @param _encryptedContent Encrypted message payload (off-chain encryption via
-     *                          ECIES / x25519 / app-level scheme). Can be an IPFS CID
-     *                          pointing to a larger encrypted blob.
-     * @param _contentHash      keccak256 hash of the plaintext (lets the recipient
-     *                          verify integrity after decryption).
-     */
     function sendDirectMessage(
         address _to,
         string calldata _encryptedContent,
         bytes32 _contentHash
     ) external onlyRegisteredAgent whenNotPaused nonReentrant {
         require(agents[_to].registered, "Recipient must be a registered agent.");
-        require(_to != msg.sender, "Cannot message self.");
-        require(bytes(_encryptedContent).length > 0, "Message content required.");
-        require(_contentHash != bytes32(0), "Content hash required.");
 
-        // Commerce Blackhole: messaging fee from sender's escrow (reputation discount applies)
+        // Commerce Blackhole: messaging fee (reputation discount applied).
         if (messagingFeeWei > 0) {
             uint256 actualMsgFee = _getMessagingFeeForAgent(msg.sender);
             require(agents[msg.sender].nativeEscrowBalance >= actualMsgFee, "Insufficient escrow for messaging fee.");
@@ -1476,45 +1526,13 @@ contract Project_DAO {
             emit CybereumFeePaid(msg.sender, address(0), actualMsgFee, "messaging_fee");
         }
 
-        uint256 id = currentDirectMessageId++;
-        directMessages[id] = DirectMessage({
-            id:               id,
-            sender:           msg.sender,
-            recipient:        _to,
-            contentHash:      _contentHash,
-            encryptedContent: _encryptedContent,
-            timestamp:        block.timestamp,
-            readByRecipient:  false
-        });
-
-        bytes32 convKey = _conversationKey(msg.sender, _to);
-        _conversationIndex[convKey].push(id);
-        _inbox[_to].push(id);
-
-        emit DirectMessageSent(id, msg.sender, _to, _contentHash, block.timestamp);
+        _msgStore.sendMessage(msg.sender, _to, _encryptedContent, _contentHash);
     }
 
-    /**
-     * @notice Mark a message as read. Only the recipient can call this.
-     * @param _messageId  ID of the message to mark as read.
-     */
     function markMessageRead(uint256 _messageId) external onlyRegisteredAgent whenNotPaused {
-        DirectMessage storage m = directMessages[_messageId];
-        require(m.id != 0, "Message not found.");
-        require(m.recipient == msg.sender, "Only recipient can mark as read.");
-
-        // Only update state and emit event on the first transition to "read"
-        if (m.readByRecipient) {
-            return;
-        }
-        m.readByRecipient = true;
-        emit DirectMessageRead(_messageId, msg.sender);
+        _msgStore.markRead(_messageId, msg.sender);
     }
 
-    /**
-     * @notice Retrieve a direct message by ID. Only sender or recipient may read.
-     * @param _messageId  The message ID.
-     */
     function getDirectMessage(uint256 _messageId) external view returns (
         uint256 id,
         address sender,
@@ -1524,156 +1542,84 @@ contract Project_DAO {
         uint256 timestamp,
         bool readByRecipient
     ) {
-        DirectMessage storage m = directMessages[_messageId];
-        require(m.id != 0, "Message not found.");
-        require(
-            msg.sender == m.sender || msg.sender == m.recipient,
-            "Only sender or recipient can read this message."
-        );
-        return (m.id, m.sender, m.recipient, m.contentHash, m.encryptedContent, m.timestamp, m.readByRecipient);
+        return _msgStore.readMessage(_messageId, msg.sender);
     }
 
-    /**
-     * @notice Get the full conversation thread between two agents (paginated).
-     *         Either party in the conversation can call this.
-     * @param _otherAgent  The other agent in the conversation.
-     * @param offset       0-based starting index.
-     * @param limit        Max messages to return.
-     */
     function getConversation(
         address _otherAgent,
         uint256 offset,
         uint256 limit
     ) external view returns (uint256[] memory messageIds, uint256 total) {
-        require(
-            agents[msg.sender].registered,
-            "Caller must be a registered agent."
-        );
-        bytes32 convKey = _conversationKey(msg.sender, _otherAgent);
-        uint256[] storage allIds = _conversationIndex[convKey];
-        total = allIds.length;
-        if (offset >= total) return (new uint256[](0), total);
-        uint256 end = offset + limit;
-        if (end > total) end = total;
-        messageIds = new uint256[](end - offset);
-        for (uint256 i = 0; i < messageIds.length; i++) {
-            messageIds[i] = allIds[offset + i];
-        }
+        require(agents[msg.sender].registered, "Caller must be a registered agent.");
+        return _msgStore.conversation(msg.sender, _otherAgent, offset, limit);
     }
 
-    /**
-     * @notice Get the caller's inbox — IDs of all messages received (paginated).
-     * @param offset  0-based starting index.
-     * @param limit   Max message IDs to return.
-     */
     function getInbox(
         uint256 offset,
         uint256 limit
     ) external view returns (uint256[] memory messageIds, uint256 total) {
-        uint256[] storage allIds = _inbox[msg.sender];
-        total = allIds.length;
-        if (offset >= total) return (new uint256[](0), total);
-        uint256 end = offset + limit;
-        if (end > total) end = total;
-        messageIds = new uint256[](end - offset);
-        for (uint256 i = 0; i < messageIds.length; i++) {
-            messageIds[i] = allIds[offset + i];
-        }
+        return _msgStore.getInbox(msg.sender, offset, limit);
     }
 
     // ─── Feature Kit Pipeline ────────────────────────────────────────────────
+    //
+    // Storage + mutation live in FeatureKitLib. The main contract exposes
+    // thin authorization wrappers. Events are re-declared above for ABI
+    // visibility; the library emits them via delegatecall.
 
-    struct FeatureKit {
-        uint256 id;
-        address submitter;
-        uint8   priority;      // 0=low, 1=medium, 2=high, 3=critical
-        uint8   status;        // 0=pending, 1=validated, 2=queued, 3=rejected, 4=implemented
-        string  metadataURI;   // IPFS CID → { title, description, rationale, codeSketch, effort }
-        uint256 voteCount;
-        uint256 submittedAt;
+    FeatureKitLib.Store private _featureKitStore;
+
+    /// @notice Next feature-kit ID. Returns 1 before any kit is created
+    ///         (matching the pre-extraction initializer).
+    function currentFeatureKitId() external view returns (uint256) {
+        uint256 v = _featureKitStore.currentFeatureKitId;
+        return v == 0 ? 1 : v;
     }
 
-    mapping(uint256 => FeatureKit) public featureKits;
-    mapping(uint256 => mapping(address => bool)) public featureKitVoted;
-    uint256 public currentFeatureKitId = 1;
+    /// @notice Lookup a feature kit by ID (struct fields unpacked).
+    function featureKits(uint256 kitId) external view returns (
+        uint256 id,
+        address submitter,
+        uint8 priority,
+        uint8 status,
+        string memory metadataURI,
+        uint256 voteCount,
+        uint256 submittedAt
+    ) {
+        FeatureKitLib.FeatureKit storage k = _featureKitStore.featureKits[kitId];
+        return (k.id, k.submitter, k.priority, k.status, k.metadataURI, k.voteCount, k.submittedAt);
+    }
 
-    /**
-     * @notice Submit a feature request as a registered agent.
-     * @param metadataURI  IPFS URI pointing to structured feature-kit JSON.
-     * @param priority     0=low, 1=medium, 2=high, 3=critical.
-     */
+    /// @notice Whether `voter` has already upvoted `kitId`.
+    function featureKitVoted(uint256 kitId, address voter) external view returns (bool) {
+        return _featureKitStore.featureKitVoted[kitId][voter];
+    }
+
     function submitFeatureKit(
         string calldata metadataURI,
         uint8 priority
     ) external onlyRegisteredAgent whenNotPaused {
-        require(bytes(metadataURI).length > 0, "metadataURI required.");
-        require(priority <= 3, "Invalid priority.");
-
-        uint256 id = currentFeatureKitId++;
-        featureKits[id] = FeatureKit({
-            id:          id,
-            submitter:   msg.sender,
-            priority:    priority,
-            status:      0,
-            metadataURI: metadataURI,
-            voteCount:   0,
-            submittedAt: block.timestamp
-        });
-
-        emit FeatureKitSubmitted(id, msg.sender, priority, metadataURI, block.timestamp);
+        _featureKitStore.submit(msg.sender, metadataURI, priority);
     }
 
-    /**
-     * @notice Upvote a pending or validated feature kit. Members vote once.
-     * @param kitId  ID of the feature kit to upvote.
-     */
     function upvoteFeatureKit(uint256 kitId) external onlyMember whenNotPaused {
-        require(kitId > 0 && kitId < currentFeatureKitId, "Invalid kit ID.");
-        require(!featureKitVoted[kitId][msg.sender], "Already voted.");
-        FeatureKit storage kit = featureKits[kitId];
-        require(kit.status == 0 || kit.status == 1, "Kit not open for voting.");
-
-        featureKitVoted[kitId][msg.sender] = true;
-        kit.voteCount++;
-
-        emit FeatureKitUpvoted(kitId, msg.sender, kit.voteCount);
+        _featureKitStore.upvote(kitId, msg.sender);
     }
 
-    /**
-     * @notice Change the status of a feature kit (owner / governance).
-     * @param kitId    ID of the feature kit.
-     * @param newStatus 0=pending,1=validated,2=queued,3=rejected,4=implemented.
-     * @param reason   Short human-readable reason stored in the event.
-     */
     function setFeatureKitStatus(
         uint256 kitId,
         uint8 newStatus,
         string calldata reason
     ) external onlyOwner whenNotPaused {
-        require(kitId > 0 && kitId < currentFeatureKitId, "Invalid kit ID.");
-        require(newStatus <= 4, "Invalid status.");
-        featureKits[kitId].status = newStatus;
-        emit FeatureKitStatusChanged(kitId, newStatus, reason);
+        _featureKitStore.setStatus(kitId, newStatus, reason);
     }
 
-    /**
-     * @notice Return all feature kits (paginated).
-     * @param offset  Starting index (0-based).
-     * @param limit   Maximum kits to return.
-     */
     function getFeatureKits(uint256 offset, uint256 limit)
         external
         view
-        returns (FeatureKit[] memory page, uint256 total)
+        returns (FeatureKitLib.FeatureKit[] memory page, uint256 total)
     {
-        total = currentFeatureKitId - 1;
-        if (offset >= total) return (new FeatureKit[](0), total);
-        uint256 end = offset + limit;
-        if (end > total) end = total;
-        page = new FeatureKit[](end - offset);
-        for (uint256 i = 0; i < page.length; i++) {
-            page[i] = featureKits[offset + i + 1];
-        }
+        return _featureKitStore.getPage(offset, limit);
     }
 
     // ─── Open Onboarding (Stake to Join) ─────────────────────────────────────
@@ -1795,7 +1741,7 @@ contract Project_DAO {
         uint256 funderCount;
     }
 
-    uint256 public currentProjectId = 1;
+    uint256 public currentProjectId;
     mapping(uint256 => EconomicProject)             public economicProjects;
     mapping(uint256 => address[])                   private _projectContributors;
     mapping(uint256 => mapping(address => uint256)) public projectContributorShares; // bps
@@ -2434,7 +2380,7 @@ contract Project_DAO {
     }
 
     mapping(uint256 => ServiceAgreement) public serviceAgreements;
-    uint256 public currentServiceAgreementId = 1;
+    uint256 public currentServiceAgreementId;
     /// @notice Tracks active agreements per agent (client + provider). Blocks leaveDAO when > 0.
     mapping(address => uint256) public activeAgreementCount;
 
@@ -2614,7 +2560,7 @@ contract Project_DAO {
     }
 
     mapping(uint256 => PaymentStream) public paymentStreams;
-    uint256 public currentPaymentStreamId = 1;
+    uint256 public currentPaymentStreamId;
     /// @notice Tracks active streams per agent (payer + recipient). Blocks leaveDAO when > 0.
     mapping(address => uint256) public activeStreamCount;
 
@@ -2775,10 +2721,11 @@ contract Project_DAO {
     mapping(address => uint256) public agentReferralEarnings;
     /// @notice Tier-1 referral reward: bps of protocol fee credited to direct referrer.
     ///         Default 1000 = 10% of fee. Max 2500 (25%).
-    uint256 public referralRewardBps = 1000;
+    /// @dev Seeded by initialize() for EIP-7825 deploy-gas compliance.
+    uint256 public referralRewardBps;
     /// @notice Tier-2 referral reward: bps of protocol fee credited to referrer's referrer.
     ///         Default 300 = 3% of fee. Max 1000 (10%).
-    uint256 public referralTier2Bps = 300;
+    uint256 public referralTier2Bps;
 
     event ReferralRecorded(address indexed agent, address indexed referrer);
     event ReferralRewardPaid(address indexed referrer, address indexed source, uint256 amount, uint8 tier);
@@ -2940,33 +2887,13 @@ contract Project_DAO {
     // ═══════════════════════════════════════════════════════════════════════════
     // ─── NETWORK EFFECT 2: Trust Graph (Cross-Agent Endorsements) ──────────
     // ═══════════════════════════════════════════════════════════════════════════
+    //
+    // Storage + validation + mutation live in TrustLib. This section holds
+    // a single TrustLib.Store and thin authorization wrappers. Events are
+    // re-declared here for ABI visibility; TrustLib emits them via
+    // delegatecall under this contract's address.
 
-    struct Endorsement {
-        uint256 id;
-        address endorser;
-        address endorsed;
-        uint256 agreementId;   // the completed service agreement
-        string  capability;    // which skill is endorsed (e.g. "data-oracle")
-        uint256 weight;        // endorser's reputation tier at time (1-4)
-        uint256 timestamp;
-        bool    revoked;       // true if endorser revoked this endorsement
-    }
-
-    uint256 public currentEndorsementId = 1;
-    mapping(uint256 => Endorsement) public endorsements;
-    /// @notice Cumulative trust score per agent (sum of active endorsement weights).
-    mapping(address => uint256) public agentTrustScore;
-    /// @notice Number of active (non-revoked) endorsements received per agent.
-    mapping(address => uint256) public agentEndorsementCount;
-    /// @notice Prevent duplicate endorsements: keccak256(endorser, endorsed, agreementId) => true.
-    mapping(bytes32 => bool) public endorsementExists;
-    /// @notice Per-agent list of endorsement IDs received.
-    mapping(address => uint256[]) private _agentEndorsementIds;
-
-    /// @notice Time-weighting constants for trust score view.
-    ///         Endorsements lose weight over time: 100% (< 180d), 50% (180-365d), 25% (> 365d).
-    uint256 public constant TRUST_FULL_WEIGHT_PERIOD = 180 days;
-    uint256 public constant TRUST_HALF_WEIGHT_PERIOD = 365 days;
+    TrustLib.Store private _trustStore;
 
     event EndorsementCreated(
         uint256 indexed endorsementId,
@@ -2976,21 +2903,19 @@ contract Project_DAO {
         string capability,
         uint256 weight
     );
-
     event EndorsementRevoked(
         uint256 indexed endorsementId,
         address indexed endorser,
         address indexed endorsed
     );
 
-    /**
-     * @notice Endorse another agent after a completed service agreement.
-     *         Only parties to a completed agreement can endorse each other.
-     *         The endorsement weight equals the endorser's reputation tier (1-4).
-     * @param _agreementId  The completed service agreement ID.
-     * @param _endorsed     The agent being endorsed (must be the other party).
-     * @param _capability   The capability being endorsed (e.g. "data-oracle").
-     */
+    /// @notice Next endorsement ID that will be assigned. Returns 1 before
+    ///         any endorsements exist (matching the pre-extraction initializer).
+    function currentEndorsementId() external view returns (uint256) {
+        uint256 v = _trustStore.currentEndorsementId;
+        return v == 0 ? 1 : v;
+    }
+
     function endorseAgent(
         uint256 _agreementId,
         address _endorsed,
@@ -3004,131 +2929,39 @@ contract Project_DAO {
             (msg.sender == a.provider && _endorsed == a.client),
             "Can only endorse the other party in the agreement."
         );
-        require(bytes(_capability).length > 0 && bytes(_capability).length <= MAX_CAPABILITY_LENGTH, "Invalid capability length.");
-
-        bytes32 dedupKey = keccak256(abi.encodePacked(msg.sender, _endorsed, _agreementId));
-        require(!endorsementExists[dedupKey], "Already endorsed for this agreement.");
-        endorsementExists[dedupKey] = true;
-
-        // Weight = endorser's reputation tier + 1 (so Bronze=1, Silver=2, Gold=3, Platinum=4)
         uint256 weight = _getReputationTier(agentReputation[msg.sender]) + 1;
-
-        uint256 id = currentEndorsementId++;
-        endorsements[id] = Endorsement({
-            id: id,
-            endorser: msg.sender,
-            endorsed: _endorsed,
-            agreementId: _agreementId,
-            capability: _capability,
-            weight: weight,
-            timestamp: block.timestamp,
-            revoked: false
-        });
-
-        agentTrustScore[_endorsed] += weight;
-        agentEndorsementCount[_endorsed]++;
-        _agentEndorsementIds[_endorsed].push(id);
-
-        emit EndorsementCreated(id, msg.sender, _endorsed, _agreementId, _capability, weight);
+        _trustStore.createEndorsement(_agreementId, msg.sender, _endorsed, weight, _capability);
     }
 
-    /// @notice Get trust stats for an agent.
     function getAgentTrustScore(address _agent) external view returns (
         uint256 trustScore,
         uint256 endorsementCount
     ) {
-        return (agentTrustScore[_agent], agentEndorsementCount[_agent]);
+        return _trustStore.getTrustScore(_agent);
     }
 
-    /// @notice Get paginated endorsement IDs received by an agent.
     function getAgentEndorsements(address _agent, uint256 offset, uint256 limit)
         external view returns (uint256[] memory endorsementIds, uint256 total)
     {
-        uint256[] storage allIds = _agentEndorsementIds[_agent];
-        total = allIds.length;
-        if (offset >= total) return (new uint256[](0), total);
-        uint256 end = offset + limit;
-        if (end > total) end = total;
-        endorsementIds = new uint256[](end - offset);
-        for (uint256 i = 0; i < endorsementIds.length; i++) {
-            endorsementIds[i] = allIds[offset + i];
-        }
+        return _trustStore.getAgentEndorsements(_agent, offset, limit);
     }
 
-    /// @notice Get a single endorsement by ID.
     function getEndorsement(uint256 _endorsementId) external view returns (
         uint256 id, address endorser, address endorsed, uint256 agreementId,
         string memory capability, uint256 weight, uint256 timestamp, bool revoked
     ) {
-        Endorsement storage e = endorsements[_endorsementId];
-        require(e.id > 0, "Endorsement not found.");
-        return (e.id, e.endorser, e.endorsed, e.agreementId, e.capability, e.weight, e.timestamp, e.revoked);
+        return _trustStore.getEndorsement(_endorsementId);
     }
 
-    /**
-     * @notice Revoke a previously given endorsement. Only the original endorser
-     *         can revoke. The endorsed agent's trust score is reduced by the
-     *         endorsement weight. The endorsement record stays on-chain for
-     *         audit trail but is marked as revoked.
-     * @param _endorsementId The endorsement to revoke.
-     */
     function revokeEndorsement(uint256 _endorsementId) external onlyRegisteredAgent whenNotPaused nonReentrant {
-        Endorsement storage e = endorsements[_endorsementId];
-        require(e.id > 0, "Endorsement not found.");
-        require(e.endorser == msg.sender, "Only the endorser can revoke.");
-        require(!e.revoked, "Endorsement already revoked.");
-
-        e.revoked = true;
-
-        // Subtract weight from endorsed agent's trust score (safe subtraction)
-        if (agentTrustScore[e.endorsed] >= e.weight) {
-            agentTrustScore[e.endorsed] -= e.weight;
-        } else {
-            agentTrustScore[e.endorsed] = 0;
-        }
-        if (agentEndorsementCount[e.endorsed] > 0) {
-            agentEndorsementCount[e.endorsed]--;
-        }
-
-        emit EndorsementRevoked(_endorsementId, msg.sender, e.endorsed);
+        _trustStore.revokeEndorsement(_endorsementId, msg.sender);
     }
 
-    /**
-     * @notice Compute a time-weighted trust score for an agent. Recent
-     *         endorsements carry full weight; older ones are discounted.
-     *         - < 180 days old: 100% weight
-     *         - 180-365 days old: 50% weight
-     *         - > 365 days old: 25% weight
-     *         Revoked endorsements are excluded entirely.
-     *
-     *         This is a view function (no state change) — the raw
-     *         agentTrustScore is kept for cheap writes; this view gives
-     *         a more accurate signal for discovery and ranking.
-     *
-     * @param _agent The agent to score.
-     * @return weightedScore The time-weighted trust score.
-     * @return activeEndorsements Number of non-revoked endorsements.
-     */
     function getTimeWeightedTrustScore(address _agent) external view returns (
         uint256 weightedScore,
         uint256 activeEndorsements
     ) {
-        uint256[] storage ids = _agentEndorsementIds[_agent];
-        for (uint256 i = 0; i < ids.length; i++) {
-            Endorsement storage e = endorsements[ids[i]];
-            if (e.revoked) continue;
-
-            activeEndorsements++;
-            uint256 age = block.timestamp - e.timestamp;
-
-            if (age < TRUST_FULL_WEIGHT_PERIOD) {
-                weightedScore += e.weight;             // 100%
-            } else if (age < TRUST_HALF_WEIGHT_PERIOD) {
-                weightedScore += e.weight / 2;         // 50%
-            } else {
-                weightedScore += e.weight / 4;         // 25%
-            }
-        }
+        return _trustStore.getTimeWeightedTrustScore(_agent);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -3209,5 +3042,289 @@ contract Project_DAO {
         agentsUntilNextMilestone = nextMilestone > totalAgents ? nextMilestone - totalAgents : 0;
         totalVolume = totalCommerceVolume;
         totalFees = totalFeesCollected;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ─── PKI: Agent Public Key Registry + Encrypted Artifact Envelopes ─────
+    // ═══════════════════════════════════════════════════════════════════════════
+    //
+    // Storage + authorization live here; validation and mutation is delegated
+    // to the external PKILib library (linked at deploy time) so the main
+    // contract's deployed bytecode stays lean. All events are re-declared here
+    // so they appear in this contract's ABI for SDK/clients — PKILib emits
+    // them under this contract's address via DELEGATECALL.
+    //
+    // Two facilities:
+    //   - Encrypted service agreement payloads: any party (client / provider
+    //     / arbiter) attaches per-party ciphertexts plus a shared integrity
+    //     hash. Only parties can read; each caller only ever sees the
+    //     ciphertext encrypted for their own key.
+    //   - Encrypted payment request payloads: only the requester attaches;
+    //     reads are restricted to requester and payer.
+    //
+    // Both facilities also expose a signed variant (EIP-712) where the
+    // supplied expected signer set must sign the (id, contentHash) pair
+    // before the envelope is stored — providing explicit, on-chain-
+    // verifiable non-repudiation for that signer set in addition to
+    // confidentiality and tamper-detection.
+
+    // Length bounds are re-exposed here for ABI stability. We declare
+    // them as local constants instead of forwarding to PKILib at call
+    // time so the getters don't depend on library-internal constant
+    // visibility quirks.
+    //
+    // INVARIANT (enforced by a unit test in test/ProjectDAO.test.js):
+    //   _MIN_AGENT_PUBLIC_KEY_BYTES  == PKILib.MIN_KEY_BYTES         (32)
+    //   _MAX_AGENT_PUBLIC_KEY_BYTES  == PKILib.MAX_KEY_BYTES          (256)
+    //   _MAX_ENCRYPTED_PAYLOAD_BYTES == PKILib.MAX_CIPHERTEXT_BYTES   (8192)
+    // If you change a PKILib constant you MUST change the matching
+    // value here. The test will fail the build otherwise.
+    uint256 private constant _MIN_AGENT_PUBLIC_KEY_BYTES  = 32;
+    uint256 private constant _MAX_AGENT_PUBLIC_KEY_BYTES  = 256;
+    uint256 private constant _MAX_ENCRYPTED_PAYLOAD_BYTES = 8192;
+
+    function MIN_AGENT_PUBLIC_KEY_BYTES() external pure returns (uint256) { return _MIN_AGENT_PUBLIC_KEY_BYTES; }
+    function MAX_AGENT_PUBLIC_KEY_BYTES() external pure returns (uint256) { return _MAX_AGENT_PUBLIC_KEY_BYTES; }
+    function MAX_ENCRYPTED_PAYLOAD_BYTES() external pure returns (uint256) { return _MAX_ENCRYPTED_PAYLOAD_BYTES; }
+    // ─── Storage (owned by PKILib via struct pointers) ─────────────────────
+    PKILib.PubKeyRegistry private _pkiPubKeys;
+    PKILib.EnvelopeStore private _pkiAgreementEnvelopes;
+    PKILib.EnvelopeStore private _pkiPaymentRequestEnvelopes;
+
+    // ─── Events (re-declared for ABI; emitted from PKILib via delegatecall) ──
+    event AgentPublicKeyPublished(address indexed agent, bytes publicKey, uint256 updatedAt);
+    event AgentPublicKeyRevoked(address indexed agent, uint256 revokedAt);
+    event AgreementEncryptedPayloadAttached(
+        uint256 indexed agreementId,
+        address indexed setBy,
+        bytes32 contentHash,
+        uint256 recipientCount,
+        uint256 updatedAt,
+        bool signed
+    );
+    event PaymentRequestEncryptedPayloadAttached(
+        uint256 indexed requestId,
+        address indexed setBy,
+        bytes32 contentHash,
+        uint256 updatedAt,
+        bool signed
+    );
+
+    // ─── Public key registry wrappers ──────────────────────────────────────
+
+    function publishAgentPublicKey(bytes calldata _publicKey) external onlyRegisteredAgent whenNotPaused {
+        _pkiPubKeys.publishKey(_publicKey);
+    }
+
+    function revokeAgentPublicKey() external onlyRegisteredAgent whenNotPaused {
+        _pkiPubKeys.revokeKey();
+    }
+
+    function getAgentPublicKey(address _agent) external view returns (bytes memory publicKey, uint256 updatedAt) {
+        return _pkiPubKeys.getKey(_agent);
+    }
+
+    function hasAgentPublicKey(address _agent) external view returns (bool) {
+        return _pkiPubKeys.hasKey(_agent);
+    }
+
+    function agentPublicKeyUpdatedAt(address _agent) external view returns (uint256) {
+        return _pkiPubKeys.updatedAt[_agent];
+    }
+
+    // ─── Agreement envelope wrappers ───────────────────────────────────────
+
+    /// @dev True if `who` is a party to service agreement `id`.
+    function _isAgreementParty(uint256 _agreementId, address who) internal view returns (bool) {
+        ServiceAgreement storage a = serviceAgreements[_agreementId];
+        if (a.id == 0) return false;
+        return who == a.client || who == a.provider || (a.arbiter != address(0) && who == a.arbiter);
+    }
+
+    /// @dev Require every recipient in `_recipients` to be a party to the
+    ///      agreement. The rest of the recipient-level validation (pubkey
+    ///      published, ciphertext length) happens inside PKILib.
+    function _requireAllPartiesInAgreement(uint256 _agreementId, address[] calldata _recipients) internal view {
+        for (uint256 i = 0; i < _recipients.length; i++) {
+            require(_isAgreementParty(_agreementId, _recipients[i]), "Recipient not a party to the agreement.");
+        }
+    }
+
+    /**
+     * @notice Attach an encrypted payload (unsigned) to a service agreement.
+     *         Only parties to the agreement may attach; each recipient must
+     *         also be a party and must have a published public key.
+     */
+    function attachEncryptedAgreementPayload(
+        uint256 _agreementId,
+        address[] calldata _recipients,
+        string[] calldata _ciphertexts,
+        bytes32 _contentHash
+    ) external onlyRegisteredAgent whenNotPaused {
+        require(serviceAgreements[_agreementId].id != 0, "Agreement not found.");
+        require(_isAgreementParty(_agreementId, msg.sender), "Only parties can attach encrypted payloads.");
+        _requireAllPartiesInAgreement(_agreementId, _recipients);
+        PKILib.attachAgreementEnvelope(
+            _pkiAgreementEnvelopes,
+            _pkiPubKeys,
+            _agreementId,
+            _recipients,
+            _ciphertexts,
+            _contentHash
+        );
+    }
+
+    /**
+     * @notice Attach an encrypted payload to a service agreement with
+     *         EIP-712 signatures from every expected signer over the
+     *         (agreementId, contentHash) pair. Provides non-repudiation:
+     *         any observer can later re-verify that the parties actually
+     *         agreed to the plaintext hash.
+     *
+     * @param _expectedSigners Addresses whose signatures are required. The
+     *                         caller supplies this list; every address in
+     *                         it must be a party to the agreement. Clients
+     *                         typically pass [client, provider] or
+     *                         [client, provider, arbiter].
+     * @param _signatures      65-byte EIP-712 signatures, positional with
+     *                         _expectedSigners.
+     */
+    function attachEncryptedAgreementPayloadSigned(
+        uint256 _agreementId,
+        address[] calldata _recipients,
+        string[] calldata _ciphertexts,
+        bytes32 _contentHash,
+        address[] calldata _expectedSigners,
+        bytes[] calldata _signatures
+    ) external onlyRegisteredAgent whenNotPaused {
+        require(serviceAgreements[_agreementId].id != 0, "Agreement not found.");
+        require(_isAgreementParty(_agreementId, msg.sender), "Only parties can attach encrypted payloads.");
+        _requireAllPartiesInAgreement(_agreementId, _recipients);
+        // Every expected signer must also be a party to the agreement.
+        for (uint256 i = 0; i < _expectedSigners.length; i++) {
+            require(_isAgreementParty(_agreementId, _expectedSigners[i]), "Signer not a party to the agreement.");
+        }
+        PKILib.attachAgreementEnvelopeSigned(
+            _pkiAgreementEnvelopes,
+            _pkiPubKeys,
+            _agreementId,
+            _recipients,
+            _ciphertexts,
+            _contentHash,
+            _expectedSigners,
+            _signatures
+        );
+    }
+
+    /**
+     * @notice Read the caller's own ciphertext from a service agreement envelope.
+     *         Only parties may call; each caller only sees the ciphertext
+     *         encrypted for their own address.
+     */
+    function getEncryptedAgreementPayload(uint256 _agreementId) external view returns (
+        bytes32 contentHash,
+        string memory ciphertextForCaller,
+        uint256 updatedAt,
+        address setBy,
+        bool hasSignatures
+    ) {
+        require(_isAgreementParty(_agreementId, msg.sender), "Only parties can read encrypted payloads.");
+        return _pkiAgreementEnvelopes.readEnvelope(_agreementId, msg.sender);
+    }
+
+    // ─── Payment request envelope wrappers ─────────────────────────────────
+
+    /**
+     * @notice Attach an encrypted payload (unsigned) to a payment request.
+     *         Only the original requester can attach.
+     */
+    function attachEncryptedPaymentRequestPayload(
+        uint256 _requestId,
+        string calldata _ciphertextForRequester,
+        string calldata _ciphertextForPayer,
+        bytes32 _contentHash
+    ) external onlyRegisteredAgent whenNotPaused {
+        AgentPaymentRequest storage r = agentPaymentRequests[_requestId];
+        require(r.id != 0, "Payment request does not exist.");
+        require(r.requester == msg.sender, "Only the requester can attach encrypted payloads.");
+        PKILib.attachPaymentRequestEnvelope(
+            _pkiPaymentRequestEnvelopes,
+            _pkiPubKeys,
+            _requestId,
+            r.requester,
+            r.payer,
+            _ciphertextForRequester,
+            _ciphertextForPayer,
+            _contentHash
+        );
+    }
+
+    /**
+     * @notice Attach an encrypted payload to a payment request with EIP-712
+     *         signatures from BOTH the requester and the payer over the
+     *         (requestId, contentHash) pair. Non-repudiation guarantee.
+     *
+     *         The requester is still the only one who can submit the
+     *         transaction — but they now must produce a valid payer signature
+     *         before the envelope can be stored.
+     */
+    function attachEncryptedPaymentRequestPayloadSigned(
+        uint256 _requestId,
+        string calldata _ciphertextForRequester,
+        string calldata _ciphertextForPayer,
+        bytes32 _contentHash,
+        bytes calldata _requesterSignature,
+        bytes calldata _payerSignature
+    ) external onlyRegisteredAgent whenNotPaused {
+        AgentPaymentRequest storage r = agentPaymentRequests[_requestId];
+        require(r.id != 0, "Payment request does not exist.");
+        require(r.requester == msg.sender, "Only the requester can attach encrypted payloads.");
+        PKILib.attachPaymentRequestEnvelopeSigned(
+            _pkiPaymentRequestEnvelopes,
+            _pkiPubKeys,
+            _requestId,
+            r.requester,
+            r.payer,
+            _ciphertextForRequester,
+            _ciphertextForPayer,
+            _contentHash,
+            _requesterSignature,
+            _payerSignature
+        );
+    }
+
+    /**
+     * @notice Read the caller's own ciphertext from a payment request envelope.
+     *         Only requester or payer may call.
+     */
+    function getEncryptedPaymentRequestPayload(uint256 _requestId) external view returns (
+        bytes32 contentHash,
+        string memory ciphertextForCaller,
+        uint256 updatedAt,
+        address setBy,
+        bool hasSignatures
+    ) {
+        AgentPaymentRequest storage r = agentPaymentRequests[_requestId];
+        require(
+            msg.sender == r.requester || msg.sender == r.payer,
+            "Only parties can read encrypted payloads."
+        );
+        return _pkiPaymentRequestEnvelopes.readEnvelope(_requestId, msg.sender);
+    }
+
+    // ─── EIP-712 digest helpers ────────────────────────────────────────────
+
+    /// @notice Returns the EIP-712 digest that a party must sign to
+    ///         authorise an agreement envelope for `_agreementId` committing
+    ///         to `_contentHash`. Off-chain clients fetch this, sign it with
+    ///         the party's private key, and pass the signature to
+    ///         `attachEncryptedAgreementPayloadSigned`.
+    function agreementTermsDigest(uint256 _agreementId, bytes32 _contentHash) external view returns (bytes32) {
+        return PKILib.agreementDigest(_agreementId, _contentHash);
+    }
+
+    /// @notice Returns the EIP-712 digest for a payment request envelope.
+    function paymentRequestTermsDigest(uint256 _requestId, bytes32 _contentHash) external view returns (bytes32) {
+        return PKILib.paymentRequestDigest(_requestId, _contentHash);
     }
 }

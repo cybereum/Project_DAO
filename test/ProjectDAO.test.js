@@ -1,15 +1,54 @@
 const { expect } = require("chai");
 const { anyValue } = require("@nomicfoundation/hardhat-chai-matchers/withArgs");
+const { loadFixture } = require("@nomicfoundation/hardhat-network-helpers");
 const { ethers } = require("hardhat");
+const crypto = require("node:crypto");
 
-// Helper: deploy fresh contract + set treasury
-async function deploy() {
+// The four external libraries linked into Project_DAO are stateless —
+// they only contain code, no per-deployment state. Deploying them fresh
+// on every call to deploy() would mean ~1,640 redundant transactions
+// across this suite. Instead we wrap the whole bootstrap in a loadFixture
+// so Hardhat deploys-and-snapshots once and reverts to that snapshot at
+// the start of every subsequent test. Net effect: the libraries and the
+// linked Project_DAO factory are reused across all 300+ tests that call
+// deploy(), cutting a lot of CI time.
+async function _deployFixture() {
   const [owner, alice, bob, carol, treasury] = await ethers.getSigners();
-  const DAO = await ethers.getContractFactory("Project_DAO");
+  const PKILib = await ethers.getContractFactory("PKILib");
+  const pkiLib = await PKILib.deploy();
+  await pkiLib.waitForDeployment();
+  const TrustLib = await ethers.getContractFactory("TrustLib");
+  const trustLib = await TrustLib.deploy();
+  await trustLib.waitForDeployment();
+  const FeatureKitLib = await ethers.getContractFactory("FeatureKitLib");
+  const fkLib = await FeatureKitLib.deploy();
+  await fkLib.waitForDeployment();
+  const MessagingLib = await ethers.getContractFactory("MessagingLib");
+  const msgLib = await MessagingLib.deploy();
+  await msgLib.waitForDeployment();
+  const DAO = await ethers.getContractFactory("Project_DAO", {
+    libraries: {
+      PKILib: await pkiLib.getAddress(),
+      TrustLib: await trustLib.getAddress(),
+      FeatureKitLib: await fkLib.getAddress(),
+      MessagingLib: await msgLib.getAddress(),
+    },
+  });
   const dao = await DAO.deploy();
   await dao.waitForDeployment();
+  // Constructor only sets owner; the rest of the bootstrap runs in a
+  // separate initialize() tx so the deploy transaction fits under the
+  // EIP-7825 / Osaka per-tx gas cap.
+  await dao.initialize();
   await dao.setCybereumTreasury(treasury.address);
   return { dao, owner, alice, bob, carol, treasury };
+}
+
+// Public helper used by every test. Delegates to loadFixture so the
+// expensive library deployment + Project_DAO creation happens exactly
+// once across the whole run; each test starts from a fresh snapshot.
+async function deploy() {
+  return loadFixture(_deployFixture);
 }
 
 // Helper: add member + register as agent
@@ -4520,5 +4559,1302 @@ describe("Network Growth Milestones", () => {
     await expect(
       dao.connect(signers[10]).registerAgent("ipfs://agent10")
     ).to.emit(dao, "NetworkMilestoneReached");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── PKI: Agent Public Key Registry ──────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("Agent public key registry", () => {
+  // 33-byte dummy compressed secp256k1-style public key
+  const keyA = "0x02" + "a".repeat(64);
+  // 32-byte x25519-style public key
+  const keyB = "0x" + "b".repeat(64);
+  // 33-byte rotated key
+  const keyC = "0x03" + "c".repeat(64);
+
+  it("registered agent can publish a public key", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await expect(dao.connect(alice).publishAgentPublicKey(keyA))
+      .to.emit(dao, "AgentPublicKeyPublished");
+
+    const [key, updatedAt] = await dao.getAgentPublicKey(alice.address);
+    expect(key).to.equal(keyA);
+    expect(updatedAt).to.be.gt(0n);
+    expect(await dao.hasAgentPublicKey(alice.address)).to.be.true;
+  });
+
+  it("works with a 32-byte x25519-style key", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await dao.connect(alice).publishAgentPublicKey(keyB);
+    const [key] = await dao.getAgentPublicKey(alice.address);
+    expect(key).to.equal(keyB);
+  });
+
+  it("rotating the key overwrites the previous value", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await dao.connect(alice).publishAgentPublicKey(keyA);
+    await dao.connect(alice).publishAgentPublicKey(keyC);
+    const [key] = await dao.getAgentPublicKey(alice.address);
+    expect(key).to.equal(keyC);
+  });
+
+  it("unregistered agent cannot publish", async () => {
+    const { dao, alice } = await deploy();
+    await expect(dao.connect(alice).publishAgentPublicKey(keyA)).to.be.revertedWith(
+      "Only registered agents can call this function."
+    );
+  });
+
+  it("rejects keys below the minimum length", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    const tooShort = "0x" + "a".repeat(62); // 31 bytes
+    await expect(dao.connect(alice).publishAgentPublicKey(tooShort)).to.be.revertedWith(
+      "Public key too short."
+    );
+  });
+
+  it("rejects keys above the maximum length", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    const tooLong = "0x" + "a".repeat(514); // 257 bytes
+    await expect(dao.connect(alice).publishAgentPublicKey(tooLong)).to.be.revertedWith(
+      "Public key too long."
+    );
+  });
+
+  it("agent can revoke its published key", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await dao.connect(alice).publishAgentPublicKey(keyA);
+    await expect(dao.connect(alice).revokeAgentPublicKey())
+      .to.emit(dao, "AgentPublicKeyRevoked");
+
+    const [key] = await dao.getAgentPublicKey(alice.address);
+    expect(key).to.equal("0x");
+    expect(await dao.hasAgentPublicKey(alice.address)).to.be.false;
+  });
+
+  it("cannot revoke if no key was published", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await expect(dao.connect(alice).revokeAgentPublicKey()).to.be.revertedWith(
+      "No public key published."
+    );
+  });
+
+  it("publish is blocked when the contract is paused", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    await dao.pauseContract();
+    await expect(dao.connect(alice).publishAgentPublicKey(keyA)).to.be.revertedWith(
+      "Contract is paused."
+    );
+  });
+
+  it("getAgentPublicKey returns empty for an agent that never published", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    const [key, updatedAt] = await dao.getAgentPublicKey(alice.address);
+    expect(key).to.equal("0x");
+    expect(updatedAt).to.equal(0n);
+    expect(await dao.hasAgentPublicKey(alice.address)).to.be.false;
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── PKI: Encrypted Service Agreement Envelopes ──────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("Encrypted service agreement envelopes", () => {
+  const clientKey   = "0x02" + "11".repeat(32); // client pubkey
+  const providerKey = "0x02" + "22".repeat(32); // provider pubkey
+  const arbiterKey  = "0x02" + "33".repeat(32); // arbiter pubkey
+
+  async function setup() {
+    const { dao, owner, alice, bob, carol, treasury } = await deploy();
+    await memberAgent(dao, alice); // client
+    await memberAgent(dao, bob);   // provider
+    await memberAgent(dao, carol); // arbiter
+    await dao.connect(alice).publishAgentPublicKey(clientKey);
+    await dao.connect(bob).publishAgentPublicKey(providerKey);
+    await dao.connect(carol).publishAgentPublicKey(arbiterKey);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1.0") });
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(alice).createServiceAgreement(
+      bob.address, carol.address, ethers.parseEther("0.1"), deadline, "public terms"
+    );
+    return { dao, owner, alice, bob, carol, treasury };
+  }
+
+  it("client can attach per-party ciphertexts", async () => {
+    const { dao, alice, bob, carol } = await setup();
+    const ctAlice = "cipher-for-alice";
+    const ctBob   = "cipher-for-bob";
+    const ctCarol = "cipher-for-carol";
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("SECRET: deliver nuclear codes"));
+
+    await expect(
+      dao.connect(alice).attachEncryptedAgreementPayload(
+        1,
+        [alice.address, bob.address, carol.address],
+        [ctAlice, ctBob, ctCarol],
+        hash
+      )
+    ).to.emit(dao, "AgreementEncryptedPayloadAttached")
+      .withArgs(1n, alice.address, hash, 3n, anyValue, false);
+  });
+
+  it("each party reads only their own ciphertext", async () => {
+    const { dao, alice, bob, carol } = await setup();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("secret terms"));
+    await dao.connect(alice).attachEncryptedAgreementPayload(
+      1,
+      [alice.address, bob.address, carol.address],
+      ["ct-alice", "ct-bob", "ct-carol"],
+      hash
+    );
+
+    const forAlice = await dao.connect(alice).getEncryptedAgreementPayload(1);
+    const forBob   = await dao.connect(bob).getEncryptedAgreementPayload(1);
+    const forCarol = await dao.connect(carol).getEncryptedAgreementPayload(1);
+
+    expect(forAlice.ciphertextForCaller).to.equal("ct-alice");
+    expect(forBob.ciphertextForCaller).to.equal("ct-bob");
+    expect(forCarol.ciphertextForCaller).to.equal("ct-carol");
+    // All three see the same integrity hash
+    expect(forAlice.contentHash).to.equal(hash);
+    expect(forBob.contentHash).to.equal(hash);
+    expect(forCarol.contentHash).to.equal(hash);
+    expect(forAlice.setBy).to.equal(alice.address);
+  });
+
+  it("non-party cannot read the envelope", async () => {
+    const { dao, alice, bob, carol } = await setup();
+    const [, , , , stranger] = await ethers.getSigners();
+    await memberAgent(dao, stranger);
+    await dao.connect(stranger).publishAgentPublicKey(
+      "0x02" + "44".repeat(32)
+    );
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    await dao.connect(alice).attachEncryptedAgreementPayload(
+      1, [alice.address, bob.address, carol.address], ["a", "b", "c"], hash
+    );
+    await expect(
+      dao.connect(stranger).getEncryptedAgreementPayload(1)
+    ).to.be.revertedWith("Only parties can read encrypted payloads.");
+  });
+
+  it("non-party cannot attach the envelope", async () => {
+    const { dao, alice, bob, carol } = await setup();
+    const [, , , , stranger] = await ethers.getSigners();
+    await memberAgent(dao, stranger);
+    await dao.connect(stranger).publishAgentPublicKey(
+      "0x02" + "44".repeat(32)
+    );
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    await expect(
+      dao.connect(stranger).attachEncryptedAgreementPayload(
+        1, [alice.address, bob.address, carol.address], ["a", "b", "c"], hash
+      )
+    ).to.be.revertedWith("Only parties can attach encrypted payloads.");
+  });
+
+  it("recipients must be parties to the agreement", async () => {
+    const { dao, alice, bob, carol } = await setup();
+    const [, , , , stranger] = await ethers.getSigners();
+    await memberAgent(dao, stranger);
+    await dao.connect(stranger).publishAgentPublicKey(
+      "0x02" + "44".repeat(32)
+    );
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    await expect(
+      dao.connect(alice).attachEncryptedAgreementPayload(
+        1, [alice.address, stranger.address], ["a", "b"], hash
+      )
+    ).to.be.revertedWith("Recipient not a party to the agreement.");
+  });
+
+  it("recipient must have a published public key", async () => {
+    const { dao, alice, bob, carol } = await setup();
+    // Strip bob's key
+    await dao.connect(bob).revokeAgentPublicKey();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    await expect(
+      dao.connect(alice).attachEncryptedAgreementPayload(
+        1, [alice.address, bob.address], ["a", "b"], hash
+      )
+    ).to.be.revertedWith("Recipient has no published public key.");
+  });
+
+  it("reverts if recipients/ciphertexts lengths mismatch", async () => {
+    const { dao, alice, bob, carol } = await setup();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    await expect(
+      dao.connect(alice).attachEncryptedAgreementPayload(
+        1, [alice.address, bob.address], ["only-one"], hash
+      )
+    ).to.be.revertedWith("Recipients/ciphertexts length mismatch.");
+  });
+
+  it("reverts with zero content hash", async () => {
+    const { dao, alice, bob, carol } = await setup();
+    await expect(
+      dao.connect(alice).attachEncryptedAgreementPayload(
+        1, [alice.address, bob.address], ["a", "b"], ethers.ZeroHash
+      )
+    ).to.be.revertedWith("Content hash required.");
+  });
+
+  it("reverts when reading an envelope that was never attached", async () => {
+    const { dao, alice } = await setup();
+    await expect(
+      dao.connect(alice).getEncryptedAgreementPayload(1)
+    ).to.be.revertedWith("No encrypted payload attached.");
+  });
+
+  it("re-attaching overwrites the envelope (renegotiation)", async () => {
+    const { dao, alice, bob, carol } = await setup();
+    const h1 = ethers.keccak256(ethers.toUtf8Bytes("v1"));
+    const h2 = ethers.keccak256(ethers.toUtf8Bytes("v2"));
+    await dao.connect(alice).attachEncryptedAgreementPayload(
+      1, [alice.address, bob.address, carol.address], ["a1", "b1", "c1"], h1
+    );
+    // Provider updates the envelope
+    await dao.connect(bob).attachEncryptedAgreementPayload(
+      1, [alice.address, bob.address, carol.address], ["a2", "b2", "c2"], h2
+    );
+    const forAlice = await dao.connect(alice).getEncryptedAgreementPayload(1);
+    expect(forAlice.ciphertextForCaller).to.equal("a2");
+    expect(forAlice.contentHash).to.equal(h2);
+    expect(forAlice.setBy).to.equal(bob.address);
+  });
+
+  it("reverts with an unknown agreement id", async () => {
+    const { dao, alice } = await setup();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    await expect(
+      dao.connect(alice).attachEncryptedAgreementPayload(
+        999, [alice.address], ["a"], hash
+      )
+    ).to.be.revertedWith("Agreement not found.");
+  });
+
+  it("blocks attach when paused", async () => {
+    const { dao, alice, bob, carol } = await setup();
+    await dao.pauseContract();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    await expect(
+      dao.connect(alice).attachEncryptedAgreementPayload(
+        1, [alice.address, bob.address, carol.address], ["a", "b", "c"], hash
+      )
+    ).to.be.revertedWith("Contract is paused.");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── PKI: Encrypted Payment Request Envelopes ────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("Encrypted payment request envelopes", () => {
+  const requesterKey = "0x02" + "aa".repeat(32);
+  const payerKey     = "0x02" + "bb".repeat(32);
+
+  async function setup() {
+    const { dao, owner, alice, bob, treasury } = await deploy();
+    // alice = requester, owner = payer
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    await dao.publishAgentPublicKey(payerKey);              // owner/payer
+    await dao.connect(alice).publishAgentPublicKey(requesterKey); // alice/requester
+    await dao.connect(alice).createAgentPaymentRequest(
+      owner.address, ethers.ZeroAddress, ethers.parseEther("0.1"), true, "public description"
+    );
+    return { dao, owner, alice, bob, treasury };
+  }
+
+  it("requester can attach encrypted payload for both parties", async () => {
+    const { dao, owner, alice } = await setup();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("private invoice: 0.1 ETH for audit"));
+    await expect(
+      dao.connect(alice).attachEncryptedPaymentRequestPayload(
+        1, "ct-requester", "ct-payer", hash
+      )
+    ).to.emit(dao, "PaymentRequestEncryptedPayloadAttached")
+      .withArgs(1n, alice.address, hash, anyValue, false);
+  });
+
+  it("requester and payer each read their own ciphertext", async () => {
+    const { dao, owner, alice } = await setup();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("private"));
+    await dao.connect(alice).attachEncryptedPaymentRequestPayload(
+      1, "ct-requester", "ct-payer", hash
+    );
+
+    const forRequester = await dao.connect(alice).getEncryptedPaymentRequestPayload(1);
+    const forPayer     = await dao.getEncryptedPaymentRequestPayload(1);
+
+    expect(forRequester.ciphertextForCaller).to.equal("ct-requester");
+    expect(forPayer.ciphertextForCaller).to.equal("ct-payer");
+    expect(forRequester.contentHash).to.equal(hash);
+    expect(forPayer.contentHash).to.equal(hash);
+    expect(forRequester.setBy).to.equal(alice.address);
+  });
+
+  it("non-party cannot read the payload", async () => {
+    const { dao, alice } = await setup();
+    const [, , , , stranger] = await ethers.getSigners();
+    await memberAgent(dao, stranger);
+    await dao.connect(stranger).publishAgentPublicKey("0x02" + "cc".repeat(32));
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    await dao.connect(alice).attachEncryptedPaymentRequestPayload(
+      1, "ct-r", "ct-p", hash
+    );
+    await expect(
+      dao.connect(stranger).getEncryptedPaymentRequestPayload(1)
+    ).to.be.revertedWith("Only parties can read encrypted payloads.");
+  });
+
+  it("payer cannot attach the payload — only the requester can", async () => {
+    const { dao, owner } = await setup();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    await expect(
+      dao.attachEncryptedPaymentRequestPayload(1, "ct-r", "ct-p", hash)
+    ).to.be.revertedWith("Only the requester can attach encrypted payloads.");
+  });
+
+  it("reverts when either party has no public key", async () => {
+    const { dao, owner, alice } = await setup();
+    await dao.revokeAgentPublicKey(); // strip owner/payer key
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    await expect(
+      dao.connect(alice).attachEncryptedPaymentRequestPayload(1, "ct-r", "ct-p", hash)
+    ).to.be.revertedWith("Payer has no published public key.");
+  });
+
+  it("reverts when requester has no public key", async () => {
+    const { dao, alice } = await setup();
+    await dao.connect(alice).revokeAgentPublicKey();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    await expect(
+      dao.connect(alice).attachEncryptedPaymentRequestPayload(1, "ct-r", "ct-p", hash)
+    ).to.be.revertedWith("Requester has no published public key.");
+  });
+
+  it("reverts with empty ciphertexts", async () => {
+    const { dao, alice } = await setup();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    await expect(
+      dao.connect(alice).attachEncryptedPaymentRequestPayload(1, "", "ct-p", hash)
+    ).to.be.revertedWith("Ciphertexts must be non-empty.");
+  });
+
+  it("reverts with zero content hash", async () => {
+    const { dao, alice } = await setup();
+    await expect(
+      dao.connect(alice).attachEncryptedPaymentRequestPayload(1, "ct-r", "ct-p", ethers.ZeroHash)
+    ).to.be.revertedWith("Content hash required.");
+  });
+
+  it("reverts on unknown request id", async () => {
+    const { dao, alice } = await setup();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    await expect(
+      dao.connect(alice).attachEncryptedPaymentRequestPayload(999, "ct-r", "ct-p", hash)
+    ).to.be.revertedWith("Payment request does not exist.");
+  });
+
+  it("reverts when reading an envelope that was never attached", async () => {
+    const { dao, alice } = await setup();
+    await expect(
+      dao.connect(alice).getEncryptedPaymentRequestPayload(1)
+    ).to.be.revertedWith("No encrypted payload attached.");
+  });
+
+  it("attach is blocked when paused", async () => {
+    const { dao, alice } = await setup();
+    await dao.pauseContract();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    await expect(
+      dao.connect(alice).attachEncryptedPaymentRequestPayload(1, "ct-r", "ct-p", hash)
+    ).to.be.revertedWith("Contract is paused.");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── PKI: Signed Envelope Variants (EIP-712 non-repudiation) ─────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("Signed agreement envelopes (EIP-712)", () => {
+  const clientKey   = "0x02" + "11".repeat(32);
+  const providerKey = "0x02" + "22".repeat(32);
+  const arbiterKey  = "0x02" + "33".repeat(32);
+
+  async function setup() {
+    const { dao, owner, alice, bob, carol, treasury } = await deploy();
+    await memberAgent(dao, alice); // client
+    await memberAgent(dao, bob);   // provider
+    await memberAgent(dao, carol); // arbiter
+    await dao.connect(alice).publishAgentPublicKey(clientKey);
+    await dao.connect(bob).publishAgentPublicKey(providerKey);
+    await dao.connect(carol).publishAgentPublicKey(arbiterKey);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1.0") });
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(alice).createServiceAgreement(
+      bob.address, carol.address, ethers.parseEther("0.1"), deadline, "public terms"
+    );
+    const chainId = (await ethers.provider.getNetwork()).chainId;
+    const domain = {
+      name: "Project_DAO",
+      version: "1",
+      chainId,
+      verifyingContract: await dao.getAddress(),
+    };
+    const types = {
+      AgreementTerms: [
+        { name: "agreementId", type: "uint256" },
+        { name: "contentHash", type: "bytes32" },
+      ],
+    };
+    return { dao, owner, alice, bob, carol, treasury, domain, types };
+  }
+
+  it("accepts an attach signed by every party", async () => {
+    const { dao, alice, bob, carol, domain, types } = await setup();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("signed terms"));
+    const value = { agreementId: 1n, contentHash: hash };
+    const sigAlice = await alice.signTypedData(domain, types, value);
+    const sigBob   = await bob.signTypedData(domain, types, value);
+    const sigCarol = await carol.signTypedData(domain, types, value);
+
+    await expect(
+      dao.connect(alice).attachEncryptedAgreementPayloadSigned(
+        1,
+        [alice.address, bob.address, carol.address],
+        ["ct-a", "ct-b", "ct-c"],
+        hash,
+        [alice.address, bob.address, carol.address],
+        [sigAlice, sigBob, sigCarol]
+      )
+    ).to.emit(dao, "AgreementEncryptedPayloadAttached")
+      .withArgs(1n, alice.address, hash, 3n, anyValue, true);
+
+    // The envelope is flagged as signed.
+    const forAlice = await dao.connect(alice).getEncryptedAgreementPayload(1);
+    expect(forAlice.hasSignatures).to.be.true;
+    expect(forAlice.contentHash).to.equal(hash);
+  });
+
+  it("reverts if a signature is from the wrong party", async () => {
+    const { dao, alice, bob, carol, domain, types } = await setup();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("signed"));
+    const value = { agreementId: 1n, contentHash: hash };
+    const sigAlice = await alice.signTypedData(domain, types, value);
+    // carol signs in bob's slot
+    const sigCarolAsBob = await carol.signTypedData(domain, types, value);
+
+    await expect(
+      dao.connect(alice).attachEncryptedAgreementPayloadSigned(
+        1,
+        [alice.address, bob.address],
+        ["ct-a", "ct-b"],
+        hash,
+        [alice.address, bob.address],
+        [sigAlice, sigCarolAsBob]
+      )
+    ).to.be.revertedWith("Invalid party signature.");
+  });
+
+  it("reverts if a signature is over the wrong contentHash", async () => {
+    const { dao, alice, bob, domain, types } = await setup();
+    const realHash = ethers.keccak256(ethers.toUtf8Bytes("real"));
+    const attackHash = ethers.keccak256(ethers.toUtf8Bytes("attack"));
+    // Both parties signed the REAL hash
+    const sigAlice = await alice.signTypedData(domain, types, { agreementId: 1n, contentHash: realHash });
+    const sigBob   = await bob.signTypedData(domain, types, { agreementId: 1n, contentHash: realHash });
+
+    // Caller tries to submit with a DIFFERENT hash
+    await expect(
+      dao.connect(alice).attachEncryptedAgreementPayloadSigned(
+        1,
+        [alice.address, bob.address],
+        ["ct-a", "ct-b"],
+        attackHash,
+        [alice.address, bob.address],
+        [sigAlice, sigBob]
+      )
+    ).to.be.revertedWith("Invalid party signature.");
+  });
+
+  it("reverts if a signature is over a different agreement id", async () => {
+    const { dao, alice, bob, domain, types } = await setup();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    const sigAlice = await alice.signTypedData(domain, types, { agreementId: 99n, contentHash: hash });
+    const sigBob = await bob.signTypedData(domain, types, { agreementId: 1n, contentHash: hash });
+    await expect(
+      dao.connect(alice).attachEncryptedAgreementPayloadSigned(
+        1,
+        [alice.address, bob.address],
+        ["ct-a", "ct-b"],
+        hash,
+        [alice.address, bob.address],
+        [sigAlice, sigBob]
+      )
+    ).to.be.revertedWith("Invalid party signature.");
+  });
+
+  it("reverts if an expected signer isn't a party to the agreement", async () => {
+    const { dao, alice, bob, domain, types } = await setup();
+    const [, , , , stranger] = await ethers.getSigners();
+    await memberAgent(dao, stranger);
+    await dao.connect(stranger).publishAgentPublicKey("0x02" + "77".repeat(32));
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    const sigAlice = await alice.signTypedData(domain, types, { agreementId: 1n, contentHash: hash });
+    const sigStranger = await stranger.signTypedData(domain, types, { agreementId: 1n, contentHash: hash });
+    await expect(
+      dao.connect(alice).attachEncryptedAgreementPayloadSigned(
+        1,
+        [alice.address, bob.address],
+        ["ct-a", "ct-b"],
+        hash,
+        [alice.address, stranger.address],
+        [sigAlice, sigStranger]
+      )
+    ).to.be.revertedWith("Signer not a party to the agreement.");
+  });
+
+  it("reverts on signers/signatures length mismatch", async () => {
+    const { dao, alice, bob, domain, types } = await setup();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    const sigAlice = await alice.signTypedData(domain, types, { agreementId: 1n, contentHash: hash });
+    await expect(
+      dao.connect(alice).attachEncryptedAgreementPayloadSigned(
+        1,
+        [alice.address, bob.address],
+        ["ct-a", "ct-b"],
+        hash,
+        [alice.address, bob.address],
+        [sigAlice] // missing bob's sig
+      )
+    ).to.be.revertedWith("Signers/signatures length mismatch.");
+  });
+
+  it("agreementTermsDigest is deterministic and matches signTypedData digest", async () => {
+    const { dao, alice, domain, types } = await setup();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    const onchainDigest = await dao.agreementTermsDigest(1, hash);
+    const offchainDigest = ethers.TypedDataEncoder.hash(domain, types, { agreementId: 1n, contentHash: hash });
+    expect(onchainDigest).to.equal(offchainDigest);
+  });
+
+  it("unsigned attach records hasSignatures=false", async () => {
+    const { dao, alice, bob, carol } = await setup();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("unsigned"));
+    await dao.connect(alice).attachEncryptedAgreementPayload(
+      1, [alice.address, bob.address, carol.address], ["a", "b", "c"], hash
+    );
+    const r = await dao.connect(alice).getEncryptedAgreementPayload(1);
+    expect(r.hasSignatures).to.be.false;
+  });
+});
+
+describe("Signed payment request envelopes (EIP-712)", () => {
+  const requesterKey = "0x02" + "aa".repeat(32);
+  const payerKey     = "0x02" + "bb".repeat(32);
+
+  async function setup() {
+    const { dao, owner, alice } = await deploy();
+    // alice = requester, owner = payer
+    await dao.registerAgent("ipfs://owner");
+    await memberAgent(dao, alice);
+    await dao.publishAgentPublicKey(payerKey);              // owner/payer
+    await dao.connect(alice).publishAgentPublicKey(requesterKey);
+    await dao.connect(alice).createAgentPaymentRequest(
+      owner.address, ethers.ZeroAddress, ethers.parseEther("0.1"), true, "public"
+    );
+    const chainId = (await ethers.provider.getNetwork()).chainId;
+    const domain = {
+      name: "Project_DAO",
+      version: "1",
+      chainId,
+      verifyingContract: await dao.getAddress(),
+    };
+    const types = {
+      PaymentRequestTerms: [
+        { name: "requestId", type: "uint256" },
+        { name: "contentHash", type: "bytes32" },
+      ],
+    };
+    return { dao, owner, alice, domain, types };
+  }
+
+  it("accepts both-party signed attach", async () => {
+    const { dao, owner, alice, domain, types } = await setup();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("signed invoice"));
+    const sigRequester = await alice.signTypedData(domain, types, { requestId: 1n, contentHash: hash });
+    const sigPayer = await owner.signTypedData(domain, types, { requestId: 1n, contentHash: hash });
+
+    await expect(
+      dao.connect(alice).attachEncryptedPaymentRequestPayloadSigned(
+        1, "ct-r", "ct-p", hash, sigRequester, sigPayer
+      )
+    ).to.emit(dao, "PaymentRequestEncryptedPayloadAttached")
+      .withArgs(1n, alice.address, hash, anyValue, true);
+
+    const r = await dao.connect(alice).getEncryptedPaymentRequestPayload(1);
+    expect(r.hasSignatures).to.be.true;
+  });
+
+  it("reverts if the requester signature is forged", async () => {
+    const { dao, owner, alice, domain, types } = await setup();
+    const [, , stranger] = await ethers.getSigners();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    const badSig = await stranger.signTypedData(domain, types, { requestId: 1n, contentHash: hash });
+    const goodPayerSig = await owner.signTypedData(domain, types, { requestId: 1n, contentHash: hash });
+    await expect(
+      dao.connect(alice).attachEncryptedPaymentRequestPayloadSigned(
+        1, "ct-r", "ct-p", hash, badSig, goodPayerSig
+      )
+    ).to.be.revertedWith("Invalid requester signature.");
+  });
+
+  it("reverts if the payer signature is forged", async () => {
+    const { dao, owner, alice, domain, types } = await setup();
+    const [, , stranger] = await ethers.getSigners();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    const goodReqSig = await alice.signTypedData(domain, types, { requestId: 1n, contentHash: hash });
+    const badPayerSig = await stranger.signTypedData(domain, types, { requestId: 1n, contentHash: hash });
+    await expect(
+      dao.connect(alice).attachEncryptedPaymentRequestPayloadSigned(
+        1, "ct-r", "ct-p", hash, goodReqSig, badPayerSig
+      )
+    ).to.be.revertedWith("Invalid payer signature.");
+  });
+
+  it("paymentRequestTermsDigest matches off-chain TypedDataEncoder", async () => {
+    const { dao, domain, types } = await setup();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    const onchainDigest = await dao.paymentRequestTermsDigest(1, hash);
+    const offchainDigest = ethers.TypedDataEncoder.hash(domain, types, { requestId: 1n, contentHash: hash });
+    expect(onchainDigest).to.equal(offchainDigest);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── PKI: Re-attach semantics ────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// The contract distinguishes two kinds of re-attach:
+//
+//   1. Re-attach with a DIFFERENT contentHash: the plaintext has changed,
+//      so the envelope's integrity hash is now inconsistent with every
+//      previously-stored ciphertext. The library atomically clears ALL
+//      old ciphertexts before writing the new ones, so a party whose
+//      address isn't in the new recipients list sees an empty ciphertext
+//      (not a stale one paired with the new hash). This closes the
+//      partial re-attach footgun that earlier revisions of this suite
+//      documented as "known behaviour".
+//
+//   2. Re-attach with the SAME contentHash: the plaintext is unchanged,
+//      so old ciphertexts still decrypt to it. Old ciphertexts are
+//      preserved; only the recipients named in this call are rewritten.
+//      This is the legitimate "party X rotated their key — refresh only
+//      X's ciphertext" flow.
+
+describe("Agreement envelope re-attach semantics", () => {
+  const keyA = "0x02" + "11".repeat(32);
+  const keyB = "0x02" + "22".repeat(32);
+  const keyC = "0x02" + "33".repeat(32);
+
+  async function setup() {
+    const { dao, owner, alice, bob, carol, treasury } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    await memberAgent(dao, carol);
+    await dao.connect(alice).publishAgentPublicKey(keyA);
+    await dao.connect(bob).publishAgentPublicKey(keyB);
+    await dao.connect(carol).publishAgentPublicKey(keyC);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1.0") });
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(alice).createServiceAgreement(
+      bob.address, carol.address, ethers.parseEther("0.1"), deadline, "public"
+    );
+    return { dao, alice, bob, carol };
+  }
+
+  it("partial re-attach with a NEW hash clears every stale ciphertext", async () => {
+    const { dao, alice, bob, carol } = await setup();
+    const h1 = ethers.keccak256(ethers.toUtf8Bytes("terms v1"));
+    const h2 = ethers.keccak256(ethers.toUtf8Bytes("terms v2"));
+
+    await dao.connect(alice).attachEncryptedAgreementPayload(
+      1, [alice.address, bob.address, carol.address], ["a1", "b1", "c1"], h1
+    );
+
+    // Caller rewrites only alice's slot, but with a DIFFERENT hash — the
+    // library must clear bob's and carol's old ciphertexts first.
+    await dao.connect(alice).attachEncryptedAgreementPayload(
+      1, [alice.address], ["a2"], h2
+    );
+
+    const forAlice = await dao.connect(alice).getEncryptedAgreementPayload(1);
+    expect(forAlice.contentHash).to.equal(h2);
+    expect(forAlice.ciphertextForCaller).to.equal("a2");
+
+    // Bob and carol see the new hash AND an empty ciphertext — they are
+    // safe, because the envelope no longer claims to have a ciphertext for
+    // them that is consistent with h2.
+    const forBob = await dao.connect(bob).getEncryptedAgreementPayload(1);
+    expect(forBob.contentHash).to.equal(h2);
+    expect(forBob.ciphertextForCaller).to.equal("");
+
+    const forCarol = await dao.connect(carol).getEncryptedAgreementPayload(1);
+    expect(forCarol.contentHash).to.equal(h2);
+    expect(forCarol.ciphertextForCaller).to.equal("");
+  });
+
+  it("partial re-attach with the SAME hash preserves other parties' ciphertexts", async () => {
+    const { dao, alice, bob, carol } = await setup();
+    const h = ethers.keccak256(ethers.toUtf8Bytes("stable terms"));
+
+    await dao.connect(alice).attachEncryptedAgreementPayload(
+      1, [alice.address, bob.address, carol.address], ["a1", "b1", "c1"], h
+    );
+
+    // Bob rotated his encryption key, so alice re-attaches only for bob
+    // with the same hash. alice's and carol's ciphertexts MUST stay — they
+    // still encrypt the same plaintext.
+    await dao.connect(alice).attachEncryptedAgreementPayload(
+      1, [bob.address], ["b2"], h
+    );
+
+    const forAlice = await dao.connect(alice).getEncryptedAgreementPayload(1);
+    const forBob = await dao.connect(bob).getEncryptedAgreementPayload(1);
+    const forCarol = await dao.connect(carol).getEncryptedAgreementPayload(1);
+
+    expect(forAlice.contentHash).to.equal(h);
+    expect(forBob.contentHash).to.equal(h);
+    expect(forCarol.contentHash).to.equal(h);
+    expect(forAlice.ciphertextForCaller).to.equal("a1");
+    expect(forBob.ciphertextForCaller).to.equal("b2");
+    expect(forCarol.ciphertextForCaller).to.equal("c1");
+  });
+
+  it("full re-attach with a NEW hash overwrites every ciphertext cleanly", async () => {
+    const { dao, alice, bob, carol } = await setup();
+    const h1 = ethers.keccak256(ethers.toUtf8Bytes("v1"));
+    const h2 = ethers.keccak256(ethers.toUtf8Bytes("v2"));
+
+    await dao.connect(alice).attachEncryptedAgreementPayload(
+      1, [alice.address, bob.address, carol.address], ["a1", "b1", "c1"], h1
+    );
+    await dao.connect(alice).attachEncryptedAgreementPayload(
+      1, [alice.address, bob.address, carol.address], ["a2", "b2", "c2"], h2
+    );
+
+    const forAlice = await dao.connect(alice).getEncryptedAgreementPayload(1);
+    const forBob = await dao.connect(bob).getEncryptedAgreementPayload(1);
+    const forCarol = await dao.connect(carol).getEncryptedAgreementPayload(1);
+    expect(forAlice.contentHash).to.equal(h2);
+    expect(forBob.contentHash).to.equal(h2);
+    expect(forCarol.contentHash).to.equal(h2);
+    expect(forAlice.ciphertextForCaller).to.equal("a2");
+    expect(forBob.ciphertextForCaller).to.equal("b2");
+    expect(forCarol.ciphertextForCaller).to.equal("c2");
+  });
+
+  it("adding a new party via same-hash re-attach leaves others intact", async () => {
+    const { dao, alice, bob, carol } = await setup();
+    const h = ethers.keccak256(ethers.toUtf8Bytes("terms"));
+
+    // First attach only alice + bob — carol is not yet included.
+    await dao.connect(alice).attachEncryptedAgreementPayload(
+      1, [alice.address, bob.address], ["a1", "b1"], h
+    );
+
+    // Later attach only carol with the same hash — she joins the envelope
+    // without disturbing alice or bob.
+    await dao.connect(alice).attachEncryptedAgreementPayload(
+      1, [carol.address], ["c1"], h
+    );
+
+    expect((await dao.connect(alice).getEncryptedAgreementPayload(1)).ciphertextForCaller).to.equal("a1");
+    expect((await dao.connect(bob).getEncryptedAgreementPayload(1)).ciphertextForCaller).to.equal("b1");
+    expect((await dao.connect(carol).getEncryptedAgreementPayload(1)).ciphertextForCaller).to.equal("c1");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── PKI: End-to-end real-cipher round-trip ─────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// The rest of the PKI tests store opaque string literals and assert they
+// round-trip through the contract. This suite goes further: it does a real
+// ECIES encrypt/decrypt round-trip against actual secp256k1 keypairs and
+// verifies the contract-stored `contentHash` survives end-to-end.
+//
+// ECIES construction (stdlib only — no new deps):
+//   1. Sender generates an ephemeral secp256k1 keypair (ek_sk, ek_pk).
+//   2. Shared secret = ECDH(ek_sk, recipient_pk)     (32 bytes X coord)
+//   3. Key material  = SHA-512(shared_secret)        (AES key || MAC key)
+//   4. AES-256-GCM encrypts the plaintext under a random 12-byte IV.
+//   5. Ciphertext bytes = ek_pk (33) || iv (12) || ct || tag (16)
+//   6. Published as a 0x-prefixed hex string for on-chain storage.
+// Decryption reverses steps 1-5 using the recipient's private key.
+//
+// This is the same construction an agent would use in production with a
+// library like `eciesjs`; writing it out here verifies that the SDK's
+// `deriveSecp256k1PublicKey` helper produces a key the standard scheme
+// actually accepts, and that the ciphertext byte length fits the on-chain
+// length limit.
+
+// Generate a fresh secp256k1 keypair (compressed pubkey, hex).
+function genKeypair() {
+  const ecdh = crypto.createECDH("secp256k1");
+  ecdh.generateKeys();
+  return {
+    privateKey: "0x" + ecdh.getPrivateKey("hex"),
+    publicKey:  "0x" + ecdh.getPublicKey("hex", "compressed"), // 33 bytes
+  };
+}
+
+function eciesEncrypt(recipientPubKeyHex, plaintext) {
+  const recipientPub = Buffer.from(recipientPubKeyHex.replace(/^0x/, ""), "hex");
+  const ephemeral = crypto.createECDH("secp256k1");
+  ephemeral.generateKeys();
+  const ephPub = ephemeral.getPublicKey(null, "compressed"); // 33 bytes
+  const shared = ephemeral.computeSecret(recipientPub);      // 32-byte X coord
+  const keyMaterial = crypto.createHash("sha512").update(shared).digest();
+  const aesKey = keyMaterial.subarray(0, 32);
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", aesKey, iv);
+  const ct = Buffer.concat([cipher.update(Buffer.from(plaintext, "utf8")), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return "0x" + Buffer.concat([ephPub, iv, ct, tag]).toString("hex");
+}
+
+function eciesDecrypt(recipientPrivKeyHex, ciphertextHex) {
+  const buf = Buffer.from(ciphertextHex.replace(/^0x/, ""), "hex");
+  const ephPub = buf.subarray(0, 33);
+  const iv = buf.subarray(33, 45);
+  const tag = buf.subarray(buf.length - 16);
+  const ct = buf.subarray(45, buf.length - 16);
+  const recipient = crypto.createECDH("secp256k1");
+  recipient.setPrivateKey(Buffer.from(recipientPrivKeyHex.replace(/^0x/, ""), "hex"));
+  const shared = recipient.computeSecret(ephPub);
+  const keyMaterial = crypto.createHash("sha512").update(shared).digest();
+  const aesKey = keyMaterial.subarray(0, 32);
+  const decipher = crypto.createDecipheriv("aes-256-gcm", aesKey, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(ct), decipher.final()]).toString("utf8");
+}
+
+describe("PKI end-to-end ECIES round-trip", () => {
+  async function setupTwoFundedAgents() {
+    const { dao, owner, treasury } = await deploy();
+
+    // Make two fresh wallets bound to the local provider and fund them
+    // from the deployer so they can pay for their own txs.
+    const aliceWallet = ethers.Wallet.createRandom().connect(ethers.provider);
+    const bobWallet = ethers.Wallet.createRandom().connect(ethers.provider);
+    await owner.sendTransaction({ to: aliceWallet.address, value: ethers.parseEther("2") });
+    await owner.sendTransaction({ to: bobWallet.address, value: ethers.parseEther("2") });
+
+    // Self-onboard via stakeAndJoin so member + agent state is set.
+    await dao.connect(aliceWallet).stakeAndJoin("ipfs://alice", { value: ethers.parseEther("0.01") });
+    await dao.connect(bobWallet).stakeAndJoin("ipfs://bob", { value: ethers.parseEther("0.01") });
+
+    // Each party generates a fresh secp256k1 keypair for encryption and
+    // publishes the compressed public key on-chain.
+    const aliceKeys = genKeypair();
+    const bobKeys = genKeypair();
+    await dao.connect(aliceWallet).publishAgentPublicKey(aliceKeys.publicKey);
+    await dao.connect(bobWallet).publishAgentPublicKey(bobKeys.publicKey);
+
+    // Alice funds an escrow, opens a service agreement with bob.
+    await dao.connect(aliceWallet).depositNativeToEscrow({ value: ethers.parseEther("0.5") });
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(aliceWallet).createServiceAgreement(
+      bobWallet.address,
+      ethers.ZeroAddress,
+      ethers.parseEther("0.1"),
+      deadline,
+      "public terms"
+    );
+    return { dao, owner, treasury, aliceWallet, bobWallet, aliceKeys, bobKeys };
+  }
+
+  it("alice and bob each decrypt their own real ECIES ciphertext and verify the content hash", async () => {
+    const { dao, aliceWallet, bobWallet, aliceKeys, bobKeys } = await setupTwoFundedAgents();
+
+    // The actual sensitive terms — never stored in plaintext on-chain.
+    const plaintext = "Confidential: alice pays bob 0.1 ETH upon delivery of dataset-42.";
+    const contentHash = ethers.keccak256(ethers.toUtf8Bytes(plaintext));
+
+    // Alice (the client) encrypts the plaintext separately to each
+    // party's published public key.
+    const ctForAlice = eciesEncrypt(aliceKeys.publicKey, plaintext);
+    const ctForBob   = eciesEncrypt(bobKeys.publicKey, plaintext);
+
+    // Sanity: ciphertexts are hex, non-empty, below the 8 KB length limit.
+    expect(ctForAlice.startsWith("0x")).to.be.true;
+    expect(ctForBob.startsWith("0x")).to.be.true;
+    expect(ethers.toUtf8Bytes(ctForAlice).length).to.be.lessThan(8192);
+    expect(ethers.toUtf8Bytes(ctForBob).length).to.be.lessThan(8192);
+
+    await dao.connect(aliceWallet).attachEncryptedAgreementPayload(
+      1,
+      [aliceWallet.address, bobWallet.address],
+      [ctForAlice, ctForBob],
+      contentHash
+    );
+
+    // Alice reads her own ciphertext back and decrypts it.
+    const forAlice = await dao.connect(aliceWallet).getEncryptedAgreementPayload(1);
+    expect(forAlice.contentHash).to.equal(contentHash);
+    const aliceDecrypted = eciesDecrypt(aliceKeys.privateKey, forAlice.ciphertextForCaller);
+    expect(aliceDecrypted).to.equal(plaintext);
+    // Integrity check: recomputed hash matches the stored envelope hash.
+    expect(ethers.keccak256(ethers.toUtf8Bytes(aliceDecrypted))).to.equal(forAlice.contentHash);
+
+    // Bob reads his own ciphertext back and decrypts it.
+    const forBob = await dao.connect(bobWallet).getEncryptedAgreementPayload(1);
+    expect(forBob.contentHash).to.equal(contentHash);
+    const bobDecrypted = eciesDecrypt(bobKeys.privateKey, forBob.ciphertextForCaller);
+    expect(bobDecrypted).to.equal(plaintext);
+    expect(ethers.keccak256(ethers.toUtf8Bytes(bobDecrypted))).to.equal(forBob.contentHash);
+
+    // Alice cannot decrypt bob's ciphertext and vice versa.
+    expect(() => eciesDecrypt(aliceKeys.privateKey, forBob.ciphertextForCaller)).to.throw();
+    expect(() => eciesDecrypt(bobKeys.privateKey, forAlice.ciphertextForCaller)).to.throw();
+  });
+
+  it("tampered ciphertext fails AES-GCM authentication on decrypt", async () => {
+    const { dao, aliceWallet, bobWallet, aliceKeys, bobKeys } = await setupTwoFundedAgents();
+    const plaintext = "secret-42";
+    const contentHash = ethers.keccak256(ethers.toUtf8Bytes(plaintext));
+
+    const ctForAlice = eciesEncrypt(aliceKeys.publicKey, plaintext);
+    const ctForBob = eciesEncrypt(bobKeys.publicKey, plaintext);
+    await dao.connect(aliceWallet).attachEncryptedAgreementPayload(
+      1,
+      [aliceWallet.address, bobWallet.address],
+      [ctForAlice, ctForBob],
+      contentHash
+    );
+
+    // Flip one byte of bob's on-chain ciphertext — can't do this directly
+    // against the contract (storage is immutable to non-parties), so we
+    // simulate tampering at the application layer: take the retrieved
+    // string, flip a byte, attempt to decrypt. AES-GCM MUST reject it.
+    const forBob = await dao.connect(bobWallet).getEncryptedAgreementPayload(1);
+    const tampered = forBob.ciphertextForCaller.slice(0, -2) + "00"; // flip last hex byte
+    expect(() => eciesDecrypt(bobKeys.privateKey, tampered)).to.throw();
+  });
+
+  it("SDK deriveSecp256k1PublicKey produces a key compatible with ECIES decrypt", async () => {
+    // Cross-check the SDK helper against the raw Node crypto path.
+    const { AgentClient } = await import("../sdk/index.js");
+    const wallet = ethers.Wallet.createRandom();
+    const derivedPub = AgentClient.deriveSecp256k1PublicKey(wallet.privateKey);
+    // Must be 33-byte compressed hex (0x + 66 hex chars).
+    expect(/^0x[0-9a-fA-F]{66}$/.test(derivedPub)).to.be.true;
+    // Round-trip: encrypt to derivedPub, decrypt with the wallet's privateKey.
+    const pt = "sdk-derived key round-trip";
+    const ct = eciesEncrypt(derivedPub, pt);
+    const back = eciesDecrypt(wallet.privateKey, ct);
+    expect(back).to.equal(pt);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── EIP-7825 / Osaka deploy-gas guardrail ───────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Newer Ethereum hardforks (Osaka / Fusaka) enforce EIP-7825: a single
+// transaction can consume at most 16,777,216 gas (2^24). Deploying
+// Project_DAO including creation + init code must fit under this cap or
+// the contract becomes undeployable on any chain that enables Fusaka.
+//
+// This test measures the ACTUAL deploy-transaction gas — not a guess from
+// bytecode size — using estimateGas against the locally-forked chain. If
+// the number creeps above the cap in a future change, CI catches it here
+// before it breaks production deployment.
+
+describe("EIP-7825 deploy-gas guardrail", () => {
+  const FUSAKA_TX_GAS_LIMIT = 16_777_216n;
+
+  it("Project_DAO creation gas stays under the Fusaka per-tx cap", async () => {
+    // Deploy the 4 linked libraries, then estimate the full main-contract
+    // creation transaction (constructor execution + code-deposit fee).
+    const PKILib = await ethers.getContractFactory("PKILib");
+    const pkiLib = await PKILib.deploy();
+    await pkiLib.waitForDeployment();
+
+    const TrustLib = await ethers.getContractFactory("TrustLib");
+    const trustLib = await TrustLib.deploy();
+    await trustLib.waitForDeployment();
+
+    const FeatureKitLib = await ethers.getContractFactory("FeatureKitLib");
+    const fkLib = await FeatureKitLib.deploy();
+    await fkLib.waitForDeployment();
+
+    const MessagingLib = await ethers.getContractFactory("MessagingLib");
+    const msgLib = await MessagingLib.deploy();
+    await msgLib.waitForDeployment();
+
+    const DAO = await ethers.getContractFactory("Project_DAO", {
+      libraries: {
+        PKILib:        await pkiLib.getAddress(),
+        TrustLib:      await trustLib.getAddress(),
+        FeatureKitLib: await fkLib.getAddress(),
+        MessagingLib:  await msgLib.getAddress(),
+      },
+    });
+    const deployTx = await DAO.getDeployTransaction();
+    deployTx.from = await DAO.runner.getAddress();
+    const estimated = await ethers.provider.estimateGas(deployTx);
+
+    // Log the actual number for future reference in CI output.
+    // Use process.stdout so it shows up even when tests are quiet.
+    process.stdout.write(
+      `\n    Project_DAO deploy gas: ${estimated.toString()} (cap ${FUSAKA_TX_GAS_LIMIT.toString()})\n`
+    );
+
+    expect(estimated).to.be.lessThan(FUSAKA_TX_GAS_LIMIT);
+  });
+
+  it("initialize() can only be called once", async () => {
+    const { dao } = await deploy();
+    // deploy() already called initialize() inside the helper; a second
+    // call must revert.
+    await expect(dao.initialize()).to.be.revertedWith("Already initialized.");
+  });
+
+  it("only the deployer / owner can call initialize()", async () => {
+    // Manual deploy path that skips the helper, so we control the caller.
+    const [deployer, stranger] = await ethers.getSigners();
+    const PKILib = await ethers.getContractFactory("PKILib");
+    const pkiLib = await PKILib.deploy();
+    await pkiLib.waitForDeployment();
+    const TrustLib = await ethers.getContractFactory("TrustLib");
+    const trustLib = await TrustLib.deploy();
+    await trustLib.waitForDeployment();
+    const FeatureKitLib = await ethers.getContractFactory("FeatureKitLib");
+    const fkLib = await FeatureKitLib.deploy();
+    await fkLib.waitForDeployment();
+    const MessagingLib = await ethers.getContractFactory("MessagingLib");
+    const msgLib = await MessagingLib.deploy();
+    await msgLib.waitForDeployment();
+    const DAO = await ethers.getContractFactory("Project_DAO", {
+      libraries: {
+        PKILib:        await pkiLib.getAddress(),
+        TrustLib:      await trustLib.getAddress(),
+        FeatureKitLib: await fkLib.getAddress(),
+        MessagingLib:  await msgLib.getAddress(),
+      },
+    });
+    const dao = await DAO.connect(deployer).deploy();
+    await dao.waitForDeployment();
+    // Stranger cannot steal initialization.
+    await expect(dao.connect(stranger).initialize()).to.be.revertedWith(
+      "Only the owner can initialize."
+    );
+    // Deployer can.
+    await dao.connect(deployer).initialize();
+    expect(await dao.initialized()).to.be.true;
+  });
+
+  it("initialize() seeds the expected default config", async () => {
+    const { dao } = await deploy();
+    expect(await dao.initialized()).to.be.true;
+    expect(await dao.cybereumFeeBps()).to.equal(5n);
+    expect(await dao.assetTransferFlatFeeWei()).to.equal(1_000_000_000_000n);
+    expect(await dao.aiServiceFeeWei()).to.equal(ethers.parseEther("0.0003"));
+    expect(await dao.messagingFeeWei()).to.equal(ethers.parseEther("0.0001"));
+    expect(await dao.exitFeeBps()).to.equal(3n);
+    expect(await dao.reputationDecayPerDay()).to.equal(2n);
+    expect(await dao.reputationDecayGracePeriod()).to.equal(7n * 24n * 60n * 60n);
+    expect(await dao.votingPeriod()).to.equal(7n * 24n * 60n * 60n);
+    expect(await dao.minimumVotingPower()).to.equal(10n);
+    expect(await dao.referralRewardBps()).to.equal(1000n);
+    expect(await dao.referralTier2Bps()).to.equal(300n);
+    // Counters all start at 1
+    expect(await dao.currentProposalDisputeId()).to.equal(1n);
+    expect(await dao.currentProgressId()).to.equal(1n);
+    expect(await dao.currentAgentPaymentRequestId()).to.equal(1n);
+    expect(await dao.currentProposalId()).to.equal(1n);
+    expect(await dao.currentMilestoneId()).to.equal(1n);
+    expect(await dao.currentTaskId()).to.equal(1n);
+    expect(await dao.currentBroadcastId()).to.equal(1n);
+    expect(await dao.currentProjectId()).to.equal(1n);
+    expect(await dao.currentServiceAgreementId()).to.equal(1n);
+    expect(await dao.currentPaymentStreamId()).to.equal(1n);
+  });
+
+  it("initialize() tx on its own also fits under the Fusaka cap", async () => {
+    // Moving post-deploy bootstrap into initialize() must not simply push
+    // the gas pressure into the second transaction. Verify the initialize
+    // call ALSO fits under the per-tx cap with plenty of headroom.
+    const PKILib = await ethers.getContractFactory("PKILib");
+    const pkiLib = await PKILib.deploy();
+    await pkiLib.waitForDeployment();
+    const TrustLib = await ethers.getContractFactory("TrustLib");
+    const trustLib = await TrustLib.deploy();
+    await trustLib.waitForDeployment();
+    const FeatureKitLib = await ethers.getContractFactory("FeatureKitLib");
+    const fkLib = await FeatureKitLib.deploy();
+    await fkLib.waitForDeployment();
+    const MessagingLib = await ethers.getContractFactory("MessagingLib");
+    const msgLib = await MessagingLib.deploy();
+    await msgLib.waitForDeployment();
+    const DAO = await ethers.getContractFactory("Project_DAO", {
+      libraries: {
+        PKILib:        await pkiLib.getAddress(),
+        TrustLib:      await trustLib.getAddress(),
+        FeatureKitLib: await fkLib.getAddress(),
+        MessagingLib:  await msgLib.getAddress(),
+      },
+    });
+    const dao = await DAO.deploy();
+    await dao.waitForDeployment();
+    // Estimate the initialize() call on the deployed contract.
+    const initGas = await dao.initialize.estimateGas();
+    process.stdout.write(
+      `    Project_DAO initialize() gas: ${initGas.toString()}\n`
+    );
+    expect(initGas).to.be.lessThan(FUSAKA_TX_GAS_LIMIT);
+    // initialize() does ~25 cold SSTOREs + the Owner role creation —
+    // should be well under 1 M gas.
+    expect(initGas).to.be.lessThan(1_000_000n);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── Backwards-compat shim getters (library-extracted subsystems) ────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// The TrustLib / FeatureKitLib / MessagingLib extractions moved several
+// former `public` mappings + counters into library Store structs. To keep
+// the external ABI compatible with the pre-extraction shape we added thin
+// shim getters on Project_DAO. These tests verify the shims return the
+// exact same shape and values you'd expect from the original auto-getters,
+// so SDK / frontend consumers don't silently break.
+
+describe("Library shim getter parity", () => {
+  it("currentFeatureKitId / featureKits / featureKitVoted shims", async () => {
+    const { dao, owner, alice } = await deploy();
+    // Before any submission the shim returns the initial "next ID" = 1.
+    expect(await dao.currentFeatureKitId()).to.equal(1n);
+
+    // Add the submitter as a member + agent so submitFeatureKit works.
+    await memberAgent(dao, alice);
+    await dao.connect(alice).submitFeatureKit("ipfs://kit-a", 2);
+
+    // After 1 submission the shim reflects the new counter state.
+    expect(await dao.currentFeatureKitId()).to.equal(2n);
+
+    // featureKits(id) shim returns the full struct tuple.
+    const kit = await dao.featureKits(1);
+    expect(kit.id).to.equal(1n);
+    expect(kit.submitter).to.equal(alice.address);
+    expect(kit.priority).to.equal(2);
+    expect(kit.status).to.equal(0);
+    expect(kit.metadataURI).to.equal("ipfs://kit-a");
+    expect(kit.voteCount).to.equal(0n);
+
+    // featureKitVoted(kitId, voter) shim defaults to false.
+    expect(await dao.featureKitVoted(1, owner.address)).to.be.false;
+
+    // After the owner votes, the shim reflects true + voteCount bumps.
+    await dao.upvoteFeatureKit(1);
+    expect(await dao.featureKitVoted(1, owner.address)).to.be.true;
+    const kit2 = await dao.featureKits(1);
+    expect(kit2.voteCount).to.equal(1n);
+  });
+
+  it("currentDirectMessageId shim returns 1 when no messages exist", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    // Before any message the shim returns the "next ID" default of 1.
+    expect(await dao.currentDirectMessageId()).to.equal(1n);
+
+    // Send one message and the shim advances.
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("hi"));
+    // Fund alice so she can pay the messaging fee from escrow.
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("0.01") });
+    await dao.connect(alice).sendDirectMessage(bob.address, "ct", hash);
+    expect(await dao.currentDirectMessageId()).to.equal(2n);
+  });
+
+  it("currentEndorsementId shim returns 1 when no endorsements exist", async () => {
+    const { dao } = await deploy();
+    expect(await dao.currentEndorsementId()).to.equal(1n);
+    // Full endorsement lifecycle is tested elsewhere; here we only verify
+    // the shim default matches the pre-extraction auto-getter default.
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── PKILib length-bound constant exposure ──────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Project_DAO re-declares PKILib's length constants locally and exposes
+// them as public view getters for ABI stability. This suite locks in
+// two independent invariants:
+//
+//   1. The re-declared constants match PKILib's actual enforcement
+//      values (32 / 256 / 8192). If anyone ever sets one of them to
+//      zero (or any other wrong value), this test fails the build.
+//   2. The runtime behavior matches the getters at the exact boundary:
+//      publishAgentPublicKey accepts a payload of length _MIN and
+//      rejects length _MIN - 1, and similarly for _MAX. This catches
+//      the case where the GETTERS claim one thing but the library
+//      enforces another.
+
+describe("PKI length-bound constant exposure", () => {
+  it("MIN_AGENT_PUBLIC_KEY_BYTES=32, MAX=256, MAX_ENCRYPTED_PAYLOAD_BYTES=8192", async () => {
+    const { dao } = await deploy();
+    expect(await dao.MIN_AGENT_PUBLIC_KEY_BYTES()).to.equal(32n);
+    expect(await dao.MAX_AGENT_PUBLIC_KEY_BYTES()).to.equal(256n);
+    expect(await dao.MAX_ENCRYPTED_PAYLOAD_BYTES()).to.equal(8192n);
+  });
+
+  it("publishAgentPublicKey enforces the MIN boundary the getter reports", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    const min = Number(await dao.MIN_AGENT_PUBLIC_KEY_BYTES());
+    // Exactly MIN bytes -> accepted.
+    const atMin = "0x" + "aa".repeat(min);
+    await dao.connect(alice).publishAgentPublicKey(atMin);
+    const [k] = await dao.getAgentPublicKey(alice.address);
+    expect(k).to.equal(atMin);
+    // MIN - 1 bytes -> rejected with the exact library error.
+    const belowMin = "0x" + "aa".repeat(min - 1);
+    await expect(
+      dao.connect(alice).publishAgentPublicKey(belowMin)
+    ).to.be.revertedWith("Public key too short.");
+  });
+
+  it("publishAgentPublicKey enforces the MAX boundary the getter reports", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    const max = Number(await dao.MAX_AGENT_PUBLIC_KEY_BYTES());
+    // Exactly MAX bytes -> accepted.
+    const atMax = "0x" + "bb".repeat(max);
+    await dao.connect(alice).publishAgentPublicKey(atMax);
+    const [k] = await dao.getAgentPublicKey(alice.address);
+    expect(k).to.equal(atMax);
+    // MAX + 1 bytes -> rejected with the exact library error.
+    const aboveMax = "0x" + "bb".repeat(max + 1);
+    await expect(
+      dao.connect(alice).publishAgentPublicKey(aboveMax)
+    ).to.be.revertedWith("Public key too long.");
   });
 });
