@@ -3068,17 +3068,20 @@ contract Project_DAO {
     // verifiable non-repudiation for that signer set in addition to
     // confidentiality and tamper-detection.
 
-    // Length bounds are re-exposed here for ABI stability without depending
-    // on library-internal constant visibility.
+    // Length bounds are re-exposed here for ABI stability. We declare
+    // them as local constants instead of forwarding to PKILib at call
+    // time so the getters don't depend on library-internal constant
+    // visibility quirks.
     //
-    // IMPORTANT: keep these values exactly in sync with the corresponding
-    // PKILib constants:
-    //   - PKILib.MIN_KEY_BYTES
-    //   - PKILib.MAX_KEY_BYTES
-    //   - PKILib.MAX_CIPHERTEXT_BYTES
-    uint256 private constant _MIN_AGENT_PUBLIC_KEY_BYTES = 0;
-    uint256 private constant _MAX_AGENT_PUBLIC_KEY_BYTES = 0;
-    uint256 private constant _MAX_ENCRYPTED_PAYLOAD_BYTES = 0;
+    // INVARIANT (enforced by a unit test in test/ProjectDAO.test.js):
+    //   _MIN_AGENT_PUBLIC_KEY_BYTES  == PKILib.MIN_KEY_BYTES         (32)
+    //   _MAX_AGENT_PUBLIC_KEY_BYTES  == PKILib.MAX_KEY_BYTES          (256)
+    //   _MAX_ENCRYPTED_PAYLOAD_BYTES == PKILib.MAX_CIPHERTEXT_BYTES   (8192)
+    // If you change a PKILib constant you MUST change the matching
+    // value here. The test will fail the build otherwise.
+    uint256 private constant _MIN_AGENT_PUBLIC_KEY_BYTES  = 32;
+    uint256 private constant _MAX_AGENT_PUBLIC_KEY_BYTES  = 256;
+    uint256 private constant _MAX_ENCRYPTED_PAYLOAD_BYTES = 8192;
 
     function MIN_AGENT_PUBLIC_KEY_BYTES() external pure returns (uint256) { return _MIN_AGENT_PUBLIC_KEY_BYTES; }
     function MAX_AGENT_PUBLIC_KEY_BYTES() external pure returns (uint256) { return _MAX_AGENT_PUBLIC_KEY_BYTES; }

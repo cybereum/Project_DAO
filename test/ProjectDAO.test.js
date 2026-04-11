@@ -5800,3 +5800,61 @@ describe("Library shim getter parity", () => {
     // the shim default matches the pre-extraction auto-getter default.
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── PKILib length-bound constant exposure ──────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Project_DAO re-declares PKILib's length constants locally and exposes
+// them as public view getters for ABI stability. This suite locks in
+// two independent invariants:
+//
+//   1. The re-declared constants match PKILib's actual enforcement
+//      values (32 / 256 / 8192). If anyone ever sets one of them to
+//      zero (or any other wrong value), this test fails the build.
+//   2. The runtime behavior matches the getters at the exact boundary:
+//      publishAgentPublicKey accepts a payload of length _MIN and
+//      rejects length _MIN - 1, and similarly for _MAX. This catches
+//      the case where the GETTERS claim one thing but the library
+//      enforces another.
+
+describe("PKI length-bound constant exposure", () => {
+  it("MIN_AGENT_PUBLIC_KEY_BYTES=32, MAX=256, MAX_ENCRYPTED_PAYLOAD_BYTES=8192", async () => {
+    const { dao } = await deploy();
+    expect(await dao.MIN_AGENT_PUBLIC_KEY_BYTES()).to.equal(32n);
+    expect(await dao.MAX_AGENT_PUBLIC_KEY_BYTES()).to.equal(256n);
+    expect(await dao.MAX_ENCRYPTED_PAYLOAD_BYTES()).to.equal(8192n);
+  });
+
+  it("publishAgentPublicKey enforces the MIN boundary the getter reports", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    const min = Number(await dao.MIN_AGENT_PUBLIC_KEY_BYTES());
+    // Exactly MIN bytes -> accepted.
+    const atMin = "0x" + "aa".repeat(min);
+    await dao.connect(alice).publishAgentPublicKey(atMin);
+    const [k] = await dao.getAgentPublicKey(alice.address);
+    expect(k).to.equal(atMin);
+    // MIN - 1 bytes -> rejected with the exact library error.
+    const belowMin = "0x" + "aa".repeat(min - 1);
+    await expect(
+      dao.connect(alice).publishAgentPublicKey(belowMin)
+    ).to.be.revertedWith("Public key too short.");
+  });
+
+  it("publishAgentPublicKey enforces the MAX boundary the getter reports", async () => {
+    const { dao, alice } = await deploy();
+    await memberAgent(dao, alice);
+    const max = Number(await dao.MAX_AGENT_PUBLIC_KEY_BYTES());
+    // Exactly MAX bytes -> accepted.
+    const atMax = "0x" + "bb".repeat(max);
+    await dao.connect(alice).publishAgentPublicKey(atMax);
+    const [k] = await dao.getAgentPublicKey(alice.address);
+    expect(k).to.equal(atMax);
+    // MAX + 1 bytes -> rejected with the exact library error.
+    const aboveMax = "0x" + "bb".repeat(max + 1);
+    await expect(
+      dao.connect(alice).publishAgentPublicKey(aboveMax)
+    ).to.be.revertedWith("Public key too long.");
+  });
+});
