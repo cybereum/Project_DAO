@@ -3068,11 +3068,21 @@ contract Project_DAO {
     // verifiable non-repudiation for that signer set in addition to
     // confidentiality and tamper-detection.
 
-    // Length bounds are constants on the library; re-exposed here for ABI.
-    function MIN_AGENT_PUBLIC_KEY_BYTES() external pure returns (uint256) { return PKILib.MIN_KEY_BYTES; }
-    function MAX_AGENT_PUBLIC_KEY_BYTES() external pure returns (uint256) { return PKILib.MAX_KEY_BYTES; }
-    function MAX_ENCRYPTED_PAYLOAD_BYTES() external pure returns (uint256) { return PKILib.MAX_CIPHERTEXT_BYTES; }
+    // Length bounds are re-exposed here for ABI stability without depending
+    // on library-internal constant visibility.
+    //
+    // IMPORTANT: keep these values exactly in sync with the corresponding
+    // PKILib constants:
+    //   - PKILib.MIN_KEY_BYTES
+    //   - PKILib.MAX_KEY_BYTES
+    //   - PKILib.MAX_CIPHERTEXT_BYTES
+    uint256 private constant _MIN_AGENT_PUBLIC_KEY_BYTES = 0;
+    uint256 private constant _MAX_AGENT_PUBLIC_KEY_BYTES = 0;
+    uint256 private constant _MAX_ENCRYPTED_PAYLOAD_BYTES = 0;
 
+    function MIN_AGENT_PUBLIC_KEY_BYTES() external pure returns (uint256) { return _MIN_AGENT_PUBLIC_KEY_BYTES; }
+    function MAX_AGENT_PUBLIC_KEY_BYTES() external pure returns (uint256) { return _MAX_AGENT_PUBLIC_KEY_BYTES; }
+    function MAX_ENCRYPTED_PAYLOAD_BYTES() external pure returns (uint256) { return _MAX_ENCRYPTED_PAYLOAD_BYTES; }
     // ─── Storage (owned by PKILib via struct pointers) ─────────────────────
     PKILib.PubKeyRegistry private _pkiPubKeys;
     PKILib.EnvelopeStore private _pkiAgreementEnvelopes;
