@@ -160,4 +160,22 @@ export const PROJECT_DAO_ABI = [
   'function getNetworkStats() external view returns (uint256 totalAgents, uint256 totalMembers, uint256 currentMilestone, uint256 nextMilestone, uint256 agentsUntilNextMilestone, uint256 totalVolume, uint256 totalFees)',
   'function lastNetworkMilestone() external view returns (uint256)',
   'event NetworkMilestoneReached(uint256 agentCount, uint256 milestone, string benefit)',
+
+  // ─── PKI: Agent Public Key Registry + Encrypted Envelopes ─────────────
+  'function publishAgentPublicKey(bytes calldata _publicKey) external',
+  'function revokeAgentPublicKey() external',
+  'function getAgentPublicKey(address _agent) external view returns (bytes publicKey, uint256 updatedAt)',
+  'function hasAgentPublicKey(address _agent) external view returns (bool)',
+  'function agentPublicKeyUpdatedAt(address) external view returns (uint256)',
+  'function MIN_AGENT_PUBLIC_KEY_BYTES() external view returns (uint256)',
+  'function MAX_AGENT_PUBLIC_KEY_BYTES() external view returns (uint256)',
+  'function MAX_ENCRYPTED_PAYLOAD_BYTES() external view returns (uint256)',
+  'function attachEncryptedAgreementPayload(uint256 _agreementId, address[] calldata _recipients, string[] calldata _ciphertexts, bytes32 _contentHash) external',
+  'function getEncryptedAgreementPayload(uint256 _agreementId) external view returns (bytes32 contentHash, string ciphertextForCaller, uint256 updatedAt, address setBy)',
+  'function attachEncryptedPaymentRequestPayload(uint256 _requestId, string calldata _ciphertextForRequester, string calldata _ciphertextForPayer, bytes32 _contentHash) external',
+  'function getEncryptedPaymentRequestPayload(uint256 _requestId) external view returns (bytes32 contentHash, string ciphertextForCaller, uint256 updatedAt, address setBy)',
+  'event AgentPublicKeyPublished(address indexed agent, bytes publicKey, uint256 updatedAt)',
+  'event AgentPublicKeyRevoked(address indexed agent, uint256 revokedAt)',
+  'event AgreementEncryptedPayloadAttached(uint256 indexed agreementId, address indexed setBy, bytes32 contentHash, uint256 recipientCount, uint256 updatedAt)',
+  'event PaymentRequestEncryptedPayloadAttached(uint256 indexed requestId, address indexed setBy, bytes32 contentHash, uint256 updatedAt)',
 ];

@@ -24,6 +24,17 @@ module.exports = {
   networks: {
     hardhat: {
       allowUnlimitedContractSize: true,
+      // Pin to "prague" — the hardfork currently active on Ethereum mainnet
+      // and Base. Newer hardhat releases default to "osaka" (Fusaka), which
+      // adds EIP-7825 semantics. Testing against Prague matches production.
+      hardfork: "prague",
+      // Raise the per-transaction gas limit to match the block gas limit.
+      // Hardhat 2.28+ defaults `gas` to min(FUSAKA_TRANSACTION_GAS_LIMIT=16.78M,
+      // blockGasLimit) even outside the Fusaka fork, which is not enough to
+      // deploy Project_DAO (>16.78M creation gas). Matching `gas` to
+      // `blockGasLimit` lets the contract deploy in tests.
+      blockGasLimit: 60_000_000,
+      gas: 60_000_000,
     },
     sepolia: {
       url: process.env.SEPOLIA_RPC_URL || "",
