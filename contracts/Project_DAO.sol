@@ -3062,10 +3062,11 @@ contract Project_DAO {
     //   - Encrypted payment request payloads: only the requester attaches;
     //     reads are restricted to requester and payer.
     //
-    // Both facilities also expose a signed variant (EIP-712) where every
-    // party must sign the (id, contentHash) pair before the envelope is
-    // stored — providing explicit, on-chain-verifiable non-repudiation in
-    // addition to confidentiality and tamper-detection.
+    // Both facilities also expose a signed variant (EIP-712) where the
+    // supplied expected signer set must sign the (id, contentHash) pair
+    // before the envelope is stored — providing explicit, on-chain-
+    // verifiable non-repudiation for that signer set in addition to
+    // confidentiality and tamper-detection.
 
     // Length bounds are constants on the library; re-exposed here for ABI.
     function MIN_AGENT_PUBLIC_KEY_BYTES() external pure returns (uint256) { return PKILib.MIN_KEY_BYTES; }
