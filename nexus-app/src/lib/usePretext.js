@@ -93,8 +93,14 @@ export function useTextHeight(text, font, lineHeight, options) {
       return () => ro.disconnect();
     }
     // No element or no ResizeObserver — measure once asynchronously
-    const frame = requestAnimationFrame(measure);
-    return () => cancelAnimationFrame(frame);
+    if (typeof requestAnimationFrame === 'function') {
+      const frame = requestAnimationFrame(measure);
+      return () => {
+        if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame);
+      };
+    }
+    const timeout = setTimeout(measure, 0);
+    return () => clearTimeout(timeout);
   }, [measure]);
 
   return { ref, ...result };
