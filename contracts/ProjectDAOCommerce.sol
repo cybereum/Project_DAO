@@ -261,6 +261,11 @@ contract ProjectDAOCommerce is ProjectDAOStorage {
     }
 
     // ─── Referral Config ────────────────────────────────────────────────
+    // NOTE: In the monolith contract, setReferralConfig is timelocked
+    // (queueSetReferralConfig / executeSetReferralConfig). In the split
+    // architecture, the timelock lives in Core. This function should be
+    // migrated to Core or given access to _timelock when the split
+    // architecture is finalized for production deployment.
 
     function setReferralConfig(uint256 _tier1Bps, uint256 _tier2Bps) external onlyOwner whenNotPaused {
         require(_tier1Bps <= 2500 && _tier2Bps <= 1000 && _tier1Bps + _tier2Bps <= 3000, "Invalid referral config.");
