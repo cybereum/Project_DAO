@@ -591,12 +591,12 @@ contract Project_DAO {
     }
 
     /// @notice Cancel a pending timelocked operation.
-    function cancelTimelockOperation(bytes32 _opId) external onlyOwner {
+    function cancelTimelockOperation(bytes32 _opId) external onlyOwner whenNotPaused {
         _timelock.cancel(_opId);
     }
 
     /// @notice Update the timelock delay. Between 1 hour and 30 days.
-    function setTimelockDelay(uint256 _delay) external onlyOwner {
+    function setTimelockDelay(uint256 _delay) external onlyOwner whenNotPaused {
         _timelock.setDelay(_delay);
     }
 

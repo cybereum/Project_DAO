@@ -434,6 +434,28 @@ node scripts/monitor.js
 
 See `scripts/monitor-config.example.env` for all options.
 
+### Key Rotation Procedure
+
+**When to rotate the owner key:**
+- On a regular schedule (e.g., quarterly) as a hygiene measure
+- Immediately after any suspected or confirmed key compromise (see `docs/INCIDENT_RESPONSE.md`)
+- When a team member with key access departs the organization
+- When migrating from a single EOA to a multisig (see `docs/MULTISIG_SETUP.md`)
+
+**Steps:**
+1. **Prepare the new owner.** Deploy a new Gnosis Safe (recommended) or generate a new EOA on a hardware wallet. Record the address securely.
+2. **Pause the contract** if rotating due to compromise: `pauseContract()`.
+3. **Transfer ownership.** Call `changeOwner(newOwnerAddress)` from the current owner. Use `scripts/transfer-ownership-to-safe.js` for Safe transfers.
+4. **Verify on-chain.** Read `owner()` to confirm it returns the new address. Test a low-risk owner function (e.g., `setMinStakeToJoin`) to confirm access.
+5. **Update all configs:**
+   - `scripts/monitor.js` — owner address for event filtering
+   - Deployment scripts and CI secrets (`DEPLOYER_PRIVATE_KEY`)
+   - SDK `deployments.json` if the owner is referenced anywhere
+   - Frontend `.env` if applicable
+6. **Resume the contract** if it was paused: `resumeContract()`.
+7. **Broadcast** the rotation to agents if it affects their operations: `broadcastToAgents(3, "ipfs://key-rotation-notice")`.
+8. **Document** the rotation in the changelog with date, old owner (first/last 4 chars), and new owner.
+
 ### Timelocked Operations
 
 Treasury and fee config changes now require a two-step process:

@@ -184,3 +184,35 @@ When paused:
 ### Timelock considerations
 
 The `TimelockLib` enforces a 24-hour delay on `queueSetTreasury` and `queueSetFeeConfig`. During an emergency, the owner can bypass the timelock by calling `setCybereumTreasury()` or `setCybereumFeeConfig()` directly. The timelock queue/execute path is for routine changes; direct calls are the emergency path.
+
+---
+
+## Owner Key Compromise
+
+### Immediate actions (within minutes)
+
+1. **Pause the contract** from a signer key that still has access: `pauseContract()`.
+2. **Rotate ownership** by calling `changeOwner(backupAddress)` before the attacker can. Speed is critical — this is a race.
+3. **Notify all multisig signers** via out-of-band channels (phone, Signal). Do not use email or chat tools the attacker may monitor.
+
+### If the owner is a multisig (Gnosis Safe)
+
+- Contact the minimum quorum of signers (e.g., 3-of-5) to propose and approve an emergency `changeOwner(newSafeAddress)` transaction.
+- If the compromised key is one signer, the remaining signers can still reach quorum and execute the ownership transfer without the attacker.
+- After transfer, remove the compromised signer from the Safe via the Safe UI and add a replacement.
+- Cancel any pending timelock operations the attacker may have queued: `cancelTimelockOperation(opId)`.
+
+### If the owner is a single EOA
+
+- Call `changeOwner(coldBackupAddress)` immediately from the compromised key if you still have access (attacker may not have changed owner yet).
+- If the attacker has already called `changeOwner`, the contract is lost — proceed to emergency contract migration (see `docs/MIGRATION.md`).
+- Cold backup key should be a hardware wallet stored offline and known only to the protocol lead and one designated backup person.
+- Emergency contacts: reach the protocol lead and backup keyholder via pre-agreed phone numbers.
+
+### Post-rotation verification
+
+1. Confirm `owner()` returns the new address on-chain.
+2. Test that the new owner can call: `pauseContract()`, `resumeContract()`, `setCybereumTreasury()`, `setCybereumFeeConfig()`, `addMember()`, `changeOwner()`.
+3. Update `scripts/monitor.js` config with the new owner address for alert filtering.
+4. Update deployment scripts and CI secrets if the owner key is used for deploys.
+5. Broadcast a security notice to agents: `broadcastToAgents(3, "ipfs://key-rotation-notice")`.

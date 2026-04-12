@@ -23,6 +23,12 @@ export default defineConfig(({ mode }) => {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.js'],
     css: false,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov'],
+      include: ['src/**/*.{js,jsx}'],
+      exclude: ['src/test/**', 'src/main.jsx'],
+    },
   },
   build: {
     // Disable source maps for production

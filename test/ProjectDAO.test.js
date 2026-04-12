@@ -6109,4 +6109,132 @@ describe("Timelock: cancel and delay management", () => {
     await dao.executeSetTreasury(alice.address);
     expect(await dao.cybereumTreasury()).to.equal(alice.address);
   });
+
+  it("cancelTimelockOperation reverts when paused", async () => {
+    const { dao, alice } = await deploy();
+    await dao.queueSetTreasury(alice.address);
+    const opId = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(
+      ["string", "address"], ["setTreasury", alice.address]
+    ));
+    await dao.pauseContract();
+    await expect(dao.cancelTimelockOperation(opId)).to.be.revertedWith("Contract is paused.");
+    await dao.resumeContract();
+    await dao.cancelTimelockOperation(opId); // succeeds when unpaused
+  });
+
+  it("setTimelockDelay reverts when paused", async () => {
+    const { dao } = await deploy();
+    await dao.pauseContract();
+    await expect(dao.setTimelockDelay(2 * 3600)).to.be.revertedWith("Contract is paused.");
+    await dao.resumeContract();
+    await dao.setTimelockDelay(2 * 3600); // succeeds when unpaused
+    expect(await dao.timelockDelay()).to.equal(7200n);
+  });
+
+  it("queueSetTreasury reverts when paused", async () => {
+    const { dao, alice } = await deploy();
+    await dao.pauseContract();
+    await expect(dao.queueSetTreasury(alice.address)).to.be.revertedWith("Contract is paused.");
+  });
+
+  it("executeSetTreasury reverts when paused", async () => {
+    const { dao, alice } = await deploy();
+    await dao.queueSetTreasury(alice.address);
+    await time.increase(24 * 3600 + 1);
+    await dao.pauseContract();
+    await expect(dao.executeSetTreasury(alice.address)).to.be.revertedWith("Contract is paused.");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ─── Library shim view functions ────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("Library shim view parity", () => {
+  it("economicProjects() shim returns correct named fields", async () => {
+    const { dao } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.createEconomicProject("ipfs://proj1", ethers.parseEther("1"), deadline);
+    const proj = await dao.economicProjects(1n);
+    expect(proj.id).to.equal(1n);
+    expect(proj.targetBudget).to.equal(ethers.parseEther("1"));
+    expect(proj.totalFunded).to.equal(0n);
+    expect(proj.contributorCount).to.equal(0n);
+    expect(proj.funderCount).to.equal(0n);
+  });
+
+  it("serviceAgreements() shim returns correct named fields", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    // Deposit to fund agreement
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1") });
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(alice).createServiceAgreement(bob.address, ethers.ZeroAddress, ethers.parseEther("0.1"), deadline, "test service");
+    const a = await dao.serviceAgreements(1n);
+    expect(a.id).to.equal(1n);
+    expect(a.client).to.equal(alice.address);
+    expect(a.provider).to.equal(bob.address);
+    expect(a.amount).to.equal(ethers.parseEther("0.1"));
+    expect(a.status).to.equal(0n); // Active
+  });
+
+  it("paymentStreams() shim returns correct named fields", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1") });
+    const now = (await ethers.provider.getBlock("latest")).timestamp;
+    await dao.connect(alice).createPaymentStream(bob.address, ethers.parseEther("0.1"), now + 10, now + 1010);
+    const s = await dao.paymentStreams(1n);
+    expect(s.id).to.equal(1n);
+    expect(s.payer).to.equal(alice.address);
+    expect(s.recipient).to.equal(bob.address);
+    expect(s.status).to.equal(0n); // Active
+  });
+
+  it("activeAgreementCount() shim tracks correctly", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    expect(await dao.activeAgreementCount(alice.address)).to.equal(0n);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1") });
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(alice).createServiceAgreement(bob.address, ethers.ZeroAddress, ethers.parseEther("0.1"), deadline, "test");
+    expect(await dao.activeAgreementCount(alice.address)).to.equal(1n);
+    expect(await dao.activeAgreementCount(bob.address)).to.equal(1n);
+  });
+
+  it("activeStreamCount() shim tracks correctly", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    expect(await dao.activeStreamCount(alice.address)).to.equal(0n);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1") });
+    const now = (await ethers.provider.getBlock("latest")).timestamp;
+    await dao.connect(alice).createPaymentStream(bob.address, ethers.parseEther("0.1"), now + 10, now + 1010);
+    expect(await dao.activeStreamCount(alice.address)).to.equal(1n);
+    expect(await dao.activeStreamCount(bob.address)).to.equal(1n);
+  });
+
+  it("leaveDAO blocks on active service agreement (library store)", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1") });
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(alice).createServiceAgreement(bob.address, ethers.ZeroAddress, ethers.parseEther("0.01"), deadline, "test");
+    await expect(dao.connect(alice).leaveDAO()).to.be.revertedWith("Resolve active service agreements before leaving.");
+  });
+
+  it("leaveDAO blocks on active payment stream (library store)", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1") });
+    const now = (await ethers.provider.getBlock("latest")).timestamp;
+    await dao.connect(alice).createPaymentStream(bob.address, ethers.parseEther("0.1"), now + 10, now + 1010);
+    await expect(dao.connect(alice).leaveDAO()).to.be.revertedWith("Cancel active payment streams before leaving.");
+  });
 });
