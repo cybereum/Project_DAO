@@ -52,7 +52,13 @@ contract ProjectDAOCore is ProjectDAOStorage {
 
     function initializeCore() external {
         require(!initialized, "Already initialized.");
-        require(msg.sender == owner, "Only the owner can initialize.");
+        // When called via Router proxy, owner is address(0) in proxy storage.
+        // The first caller becomes the owner.
+        if (owner == address(0)) {
+            owner = msg.sender;
+        } else {
+            require(msg.sender == owner, "Only the owner can initialize.");
+        }
         initialized = true;
         _reentrancyStatus = 1;
 
