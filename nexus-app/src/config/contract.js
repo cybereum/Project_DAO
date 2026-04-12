@@ -6,7 +6,8 @@ export const PROJECT_DAO_ABI = [
   'function members(address) external view returns (address memberAddress, uint256 votingPower, bool isMember)',
   'function addMember(address _newMember, uint256 _votingPower) external',
   'function removeMember(address _member) external',
-  'function changeOwner(address _newOwner) external',
+  'function queueChangeOwner(address _newOwner) external returns (bytes32)',
+  'function executeChangeOwner(address _newOwner) external',
   'function pauseContract() external',
   'function resumeContract() external',
 

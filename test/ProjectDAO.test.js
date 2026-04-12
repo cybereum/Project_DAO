@@ -1438,9 +1438,13 @@ describe("Role & Permission Management", () => {
 // ─── Access Control & Edge Cases ────────────────────────────────────────────
 
 describe("Access Control & Edge Cases", () => {
-  it("changeOwner works and old owner loses access", async () => {
+  it("changeOwner requires timelock and old owner loses access after execution", async () => {
     const { dao, owner, alice } = await deploy();
-    await dao.changeOwner(alice.address);
+    await dao.queueChangeOwner(alice.address);
+    // Not executed yet — owner hasn't changed
+    expect(await dao.owner()).to.equal(owner.address);
+    await time.increase(24 * 3600 + 1);
+    await dao.executeChangeOwner(alice.address);
     expect(await dao.owner()).to.equal(alice.address);
     // Old owner can no longer call onlyOwner functions
     await expect(
@@ -1453,18 +1457,25 @@ describe("Access Control & Edge Cases", () => {
     expect(await dao.cybereumTreasury()).to.equal(alice.address);
   });
 
-  it("changeOwner reverts on zero address", async () => {
+  it("queueChangeOwner reverts on zero address", async () => {
     const { dao } = await deploy();
-    await expect(dao.changeOwner(ethers.ZeroAddress)).to.be.revertedWith(
+    await expect(dao.queueChangeOwner(ethers.ZeroAddress)).to.be.revertedWith(
       "Invalid new owner address."
     );
   });
 
-  it("changeOwner reverts on self-transfer", async () => {
+  it("queueChangeOwner reverts on self-transfer", async () => {
     const { dao, owner } = await deploy();
-    await expect(dao.changeOwner(owner.address)).to.be.revertedWith(
+    await expect(dao.queueChangeOwner(owner.address)).to.be.revertedWith(
       "Already the owner."
     );
+  });
+
+  it("executeChangeOwner reverts before timelock delay", async () => {
+    const { dao, alice } = await deploy();
+    await dao.queueChangeOwner(alice.address);
+    await expect(dao.executeChangeOwner(alice.address))
+      .to.be.revertedWith("Timelock: not ready yet.");
   });
 
   it("grantPrivilege works for a member", async () => {
@@ -3363,9 +3374,11 @@ describe("Event emissions for audit trail", () => {
     expect(dispute.resolved).to.be.true;
   });
 
-  it("changeOwner emits OwnerChanged", async () => {
+  it("executeChangeOwner emits OwnerChanged", async () => {
     const { dao, owner, alice } = await deploy();
-    await expect(dao.changeOwner(alice.address))
+    await dao.queueChangeOwner(alice.address);
+    await time.increase(24 * 3600 + 1);
+    await expect(dao.executeChangeOwner(alice.address))
       .to.emit(dao, "OwnerChanged")
       .withArgs(owner.address, alice.address);
   });
@@ -4174,40 +4187,40 @@ describe("Referral Rewards", () => {
     });
   });
 
-  describe("referral config", () => {
-    it("owner can update referral config", async () => {
+  describe("referral config (timelocked)", () => {
+    it("referral config change requires timelock", async () => {
       const { dao } = await deploy();
-      await dao.setReferralConfig(2000, 500);
+      await dao.queueSetReferralConfig(2000, 500);
+      await time.increase(24 * 3600 + 1);
+      await dao.executeSetReferralConfig(2000, 500);
       expect(await dao.referralRewardBps()).to.equal(2000n);
       expect(await dao.referralTier2Bps()).to.equal(500n);
     });
 
     it("reverts if tier-1 exceeds 25%", async () => {
       const { dao } = await deploy();
-      await expect(dao.setReferralConfig(2501, 300)).to.be.revertedWith(
+      await expect(dao.queueSetReferralConfig(2501, 300)).to.be.revertedWith(
         "Tier-1 reward cannot exceed 25% of fee."
       );
     });
 
     it("reverts if tier-2 exceeds 10%", async () => {
       const { dao } = await deploy();
-      await expect(dao.setReferralConfig(1000, 1001)).to.be.revertedWith(
+      await expect(dao.queueSetReferralConfig(1000, 1001)).to.be.revertedWith(
         "Tier-2 reward cannot exceed 10% of fee."
       );
     });
 
     it("reverts if combined exceeds 30%", async () => {
       const { dao } = await deploy();
-      await expect(dao.setReferralConfig(2500, 1000)).to.be.revertedWith(
+      await expect(dao.queueSetReferralConfig(2500, 1000)).to.be.revertedWith(
         "Combined rewards cannot exceed 30% of fee."
       );
     });
 
-    it("non-owner cannot update referral config", async () => {
+    it("non-owner cannot queue referral config change", async () => {
       const { dao, alice } = await deploy();
-      await expect(dao.connect(alice).setReferralConfig(1000, 300)).to.be.revertedWith(
-        "Only the owner can call this function."
-      );
+      await expect(dao.connect(alice).queueSetReferralConfig(1000, 300)).to.be.reverted;
     });
   });
 

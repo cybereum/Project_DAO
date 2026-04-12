@@ -1117,7 +1117,20 @@ contract Project_DAO {
         emit PrivilegeGranted(_member, _privilege);
     }
 
-    function changeOwner(address _newOwner) public onlyOwner {
+    /// @notice Queue an ownership transfer. Must wait timelock delay before executing.
+    function queueChangeOwner(address _newOwner) external onlyOwner whenNotPaused returns (bytes32) {
+        require(_newOwner != address(0), "Invalid new owner address.");
+        require(_newOwner != owner, "Already the owner.");
+        bytes32 opId = keccak256(abi.encode("changeOwner", _newOwner));
+        _timelock.queue(opId);
+        return opId;
+    }
+
+    /// @notice Execute a previously queued ownership transfer after the delay.
+    function executeChangeOwner(address _newOwner) external onlyOwner whenNotPaused {
+        bytes32 opId = keccak256(abi.encode("changeOwner", _newOwner));
+        _timelock.assertReady(opId);
+        _timelock.markExecuted(opId);
         require(_newOwner != address(0), "Invalid new owner address.");
         require(_newOwner != owner, "Already the owner.");
         address previousOwner = owner;
@@ -2474,7 +2487,21 @@ contract Project_DAO {
     /// @notice Owner configures referral reward percentages.
     /// @param _tier1Bps Tier-1 reward (direct referrer) in bps of protocol fee. Max 2500.
     /// @param _tier2Bps Tier-2 reward (referrer's referrer) in bps of fee. Max 1000.
-    function setReferralConfig(uint256 _tier1Bps, uint256 _tier2Bps) external onlyOwner whenNotPaused {
+    /// @notice Queue a referral config change. Must wait timelock delay before executing.
+    function queueSetReferralConfig(uint256 _tier1Bps, uint256 _tier2Bps) external onlyOwner whenNotPaused returns (bytes32) {
+        require(_tier1Bps <= 2500, "Tier-1 reward cannot exceed 25% of fee.");
+        require(_tier2Bps <= 1000, "Tier-2 reward cannot exceed 10% of fee.");
+        require(_tier1Bps + _tier2Bps <= 3000, "Combined rewards cannot exceed 30% of fee.");
+        bytes32 opId = keccak256(abi.encode("setReferralConfig", _tier1Bps, _tier2Bps));
+        _timelock.queue(opId);
+        return opId;
+    }
+
+    /// @notice Execute a previously queued referral config change after the delay.
+    function executeSetReferralConfig(uint256 _tier1Bps, uint256 _tier2Bps) external onlyOwner whenNotPaused {
+        bytes32 opId = keccak256(abi.encode("setReferralConfig", _tier1Bps, _tier2Bps));
+        _timelock.assertReady(opId);
+        _timelock.markExecuted(opId);
         require(_tier1Bps <= 2500, "Tier-1 reward cannot exceed 25% of fee.");
         require(_tier2Bps <= 1000, "Tier-2 reward cannot exceed 10% of fee.");
         require(_tier1Bps + _tier2Bps <= 3000, "Combined rewards cannot exceed 30% of fee.");

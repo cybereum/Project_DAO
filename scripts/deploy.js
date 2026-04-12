@@ -12,6 +12,12 @@
 const hre = require("hardhat");
 const { ethers } = hre;
 
+// ── cybereum.eth resolved address (EIP-55 checksummed) ──────────────────────
+// Verify: https://app.ens.domains/cybereum.eth
+// Owner can change treasury via timelock, but this constant ensures the deploy
+// script sets the correct initial value. Update if ENS record changes.
+const CYBEREUM_ETH_ADDRESS = "0x41Eb4491306817eC607e9fb12E96C1B8e4aE4E72";
+
 async function main() {
   const [deployer] = await ethers.getSigners();
   const network = await ethers.provider.getNetwork();
@@ -43,6 +49,12 @@ async function main() {
       ethers.getAddress(treasury); // checksum validation
     } catch {
       throw new Error(`Invalid CYBEREUM_TREASURY address: ${treasury}`);
+    }
+    // Verify against known cybereum.eth address on production networks
+    if (!isLocalNetwork && ethers.getAddress(treasury) !== CYBEREUM_ETH_ADDRESS) {
+      console.warn(`\n⚠ WARNING: CYBEREUM_TREASURY (${treasury}) does not match`);
+      console.warn(`  known cybereum.eth address (${CYBEREUM_ETH_ADDRESS}).`);
+      console.warn(`  Verify the ENS record has changed before proceeding.\n`);
     }
   }
 

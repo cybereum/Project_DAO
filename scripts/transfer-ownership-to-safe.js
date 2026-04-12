@@ -62,15 +62,14 @@ async function main() {
     if (answer.trim().toLowerCase() !== "yes") { console.log("Aborted."); return; }
   }
 
-  console.log("Transferring ownership...");
-  const tx = await dao.changeOwner(safeParsed);
-  await tx.wait();
-
-  const newOwner = await dao.owner();
-  if (newOwner !== safeParsed) {
-    throw new Error(`Verification failed: owner is ${newOwner}, expected ${safeParsed}`);
-  }
-  console.log("Ownership transferred successfully. New owner:", newOwner);
+  console.log("Queuing ownership transfer (24h timelock)...");
+  const queueTx = await dao.queueChangeOwner(safeParsed);
+  await queueTx.wait();
+  console.log("Ownership transfer queued. Must wait timelock delay before executing.");
+  console.log("After the delay, run:");
+  console.log(`  SAFE_ADDRESS=${safeParsed} npx hardhat run scripts/execute-ownership-transfer.js --network <network>`);
+  console.log("\nOr execute manually:");
+  console.log(`  await dao.executeChangeOwner("${safeParsed}")`);
 }
 
 main()

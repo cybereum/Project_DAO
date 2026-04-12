@@ -393,8 +393,22 @@ contract ProjectDAOCore is ProjectDAOStorage {
         emit PrivilegeGranted(_member, _privilege);
     }
 
-    function changeOwner(address _newOwner) public onlyOwner {
+    /// @notice Queue an ownership transfer. Must wait timelock delay before executing.
+    function queueChangeOwner(address _newOwner) external onlyOwner whenNotPaused returns (bytes32) {
         require(_newOwner != address(0), "Invalid new owner address.");
+        require(_newOwner != owner, "Already the owner.");
+        bytes32 opId = keccak256(abi.encode("changeOwner", _newOwner));
+        _timelock.queue(opId);
+        return opId;
+    }
+
+    /// @notice Execute a previously queued ownership transfer after the delay.
+    function executeChangeOwner(address _newOwner) external onlyOwner whenNotPaused {
+        bytes32 opId = keccak256(abi.encode("changeOwner", _newOwner));
+        _timelock.assertReady(opId);
+        _timelock.markExecuted(opId);
+        require(_newOwner != address(0), "Invalid new owner address.");
+        require(_newOwner != owner, "Already the owner.");
         address old = owner;
         owner = _newOwner;
         emit OwnerChanged(old, _newOwner);

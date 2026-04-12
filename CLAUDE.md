@@ -99,7 +99,7 @@ agent.onDirectMessage(async ({ messageId, sender }) => {
 
 #### Step 0 — Prerequisites
 - You are a DAO member (`members[address].isMember == true`), **OR** use `stakeAndJoin()` to self-onboard.
-- The owner has called `setCybereumTreasury(<cybereum.eth resolved address>)`.
+- The treasury was set to `cybereum.eth` resolved address (`0x41Eb4491306817eC607e9fb12E96C1B8e4aE4E72`) at deploy time via `initialize()`.
 
 #### Step 1 — Register as an agent
 ```solidity
@@ -449,8 +449,10 @@ getNetworkStats() → (uint256 totalAgents, uint256 totalMembers, uint256 curren
 #### Fee management
 ```
 previewFee(uint256 amount) → (uint256 fee, uint256 net)
-setCybereumTreasury(address treasury)                            onlyOwner
-setCybereumFeeConfig(uint256 feeBps, uint256 assetTransferFlatFeeWei)   onlyOwner, feeBps >= MIN_FEE_BPS
+queueSetTreasury(address treasury)                               onlyOwner, timelocked
+executeSetTreasury(address treasury)                             onlyOwner, timelocked
+queueSetFeeConfig(uint256 feeBps, uint256 assetFlatFeeWei)      onlyOwner, timelocked, feeBps >= MIN_FEE_BPS
+executeSetFeeConfig(uint256 feeBps, uint256 assetFlatFeeWei)    onlyOwner, timelocked
 ```
 
 #### Governance
@@ -469,7 +471,8 @@ voteOnProposalDispute(uint256 disputeId, bool voteFor)
 addMember(address member, uint256 votingPower)
 removeMember(address member)
 grantPrivilege(address member, uint256 privilege)
-changeOwner(address newOwner)
+queueChangeOwner(address newOwner)                               onlyOwner, timelocked
+executeChangeOwner(address newOwner)                             onlyOwner, timelocked
 createRole(bytes32 name)
 addPermission(uint256 roleId, string permission)
 removePermission(uint256 roleId, string permission)
@@ -801,7 +804,7 @@ Tests are in `test/ProjectDAO.test.js` using Mocha/Chai with Hardhat's test help
 - Commerce blackhole (config, volume tracking, messaging fees, exit fees, batch operations)
 - Reputation engine (score calculation, tiers, decay, ceiling)
 - Reentrancy protection on all ETH-transferring functions
-- whenNotPaused coverage on all state-changing functions (including owner config: setCybereumTreasury, setCybereumFeeConfig, setAIServiceFee, addPermission)
+- whenNotPaused coverage on all state-changing functions (including timelocked config: queueSetTreasury, queueSetFeeConfig, queueChangeOwner, queueSetReferralConfig, setAIServiceFee, addPermission)
 - Zero-address validation
 - Event emission audit trail (PrivilegeGranted, ProposalDisputeCreated, ProposalDisputeResolved, OwnerChanged)
 - ERC-20 reentrancy guard on depositTokenToEscrow
@@ -901,8 +904,8 @@ leaveDAO()
 ## 12. FOR BUILDERS — INTEGRATION CHECKLIST
 
 - [ ] Deploy `Project_DAO.sol` to target network.
-- [ ] Call `setCybereumTreasury(<cybereum.eth resolved address>)`.
-- [ ] (Optional) Call `setCybereumFeeConfig(feeBps, assetFlatFeeWei)` — `feeBps` must be >= 1.
+- [ ] Treasury is set at deploy time: `initialize(0x41Eb4491306817eC607e9fb12E96C1B8e4aE4E72)` (cybereum.eth).
+- [ ] Fee defaults to 5 bps. To change: `queueSetFeeConfig()` → wait 24h → `executeSetFeeConfig()` — `feeBps` must be >= 1.
 - [ ] Add members with `addMember` or let them self-onboard via `stakeAndJoin`.
 - [ ] Each agent calls `registerAgent(metadataURI)`.
 - [ ] Set `VITE_PROJECT_DAO_ADDRESS` in `nexus-app/.env`.
