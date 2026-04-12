@@ -52,7 +52,7 @@ async function main() {
   // Breaking the contract into subsystem libraries (PKI, Trust, FeatureKit,
   // Messaging) is how we keep the main contract's deployed bytecode small
   // enough to fit under the Osaka/Fusaka per-transaction gas cap.
-  const libArtifacts = ["PKILib", "TrustLib", "FeatureKitLib", "MessagingLib"];
+  const libArtifacts = ["PKILib", "TrustLib", "FeatureKitLib", "MessagingLib", "EconomicProjectLib", "ServiceAgreementLib", "PaymentStreamLib", "TimelockLib"];
   const linkedLibraries = {};
   for (const name of libArtifacts) {
     const Lib = await ethers.getContractFactory(name);

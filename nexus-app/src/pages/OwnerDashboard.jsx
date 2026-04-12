@@ -3,10 +3,6 @@ import { motion as Motion } from 'framer-motion';
 import { Lock, Shield, Wallet, RefreshCcw, Activity, TrendingUp, Vote, AlertTriangle } from 'lucide-react';
 import { useApp } from '../store/appStore';
 
-const OWNER_PASSCODE = import.meta.env.VITE_OWNER_DASHBOARD_PASSCODE || '';
-const OWNER_WALLET = (import.meta.env.VITE_OWNER_WALLET_ADDRESS || '').toLowerCase();
-const SESSION_KEY = 'owner_dashboard_unlocked';
-
 const eventLabels = {
   AgentNativeEscrowDeposited: 'Escrow deposit',
   AgentNativeEscrowWithdrawn: 'Escrow withdrawal',
@@ -41,6 +37,7 @@ export default function OwnerDashboard() {
     walletConnected,
     walletAddress,
     connectWallet,
+    getDaoReadContract,
     projects,
     milestones,
     agentActivity,
@@ -49,18 +46,34 @@ export default function OwnerDashboard() {
     loadAgentProfile,
   } = useApp();
 
-  const [passcodeInput, setPasscodeInput] = useState('');
-  const [error, setError] = useState('');
-  const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem(SESSION_KEY) === 'true');
+  const [contractOwner, setContractOwner] = useState(null);
 
-  const normalizedWalletAddress = (walletAddress || '').toLowerCase();
-  const walletMatchesOwner = !OWNER_WALLET || normalizedWalletAddress === OWNER_WALLET;
+  // Fetch the on-chain contract owner address
+  useEffect(() => {
+    if (!walletConnected) return;
+    let cancelled = false;
+    const contract = getDaoReadContract();
+    if (!contract) {
+      // No contract configured — can't verify ownership
+      setContractOwner('');
+      return;
+    }
+    contract.owner().then((addr) => {
+      if (!cancelled) setContractOwner(addr.toLowerCase());
+    }).catch(() => {
+      if (!cancelled) setContractOwner('');
+    });
+    return () => { cancelled = true; };
+  }, [walletConnected, getDaoReadContract]);
+
+  const ownerChecked = contractOwner !== null;
+  const isOwner = ownerChecked && walletAddress && contractOwner === walletAddress.toLowerCase();
 
   useEffect(() => {
-    if (!unlocked || !walletConnected || !walletMatchesOwner) return;
+    if (!isOwner || !walletConnected) return;
     loadAgentProfile();
     loadAgentActivity({ forceFull: true });
-  }, [unlocked, walletConnected, walletMatchesOwner, loadAgentActivity, loadAgentProfile]);
+  }, [isOwner, walletConnected, loadAgentActivity, loadAgentProfile]);
 
   const txSummary = useMemo(() => {
     const recent = agentActivity.slice(0, 10);
@@ -73,7 +86,7 @@ export default function OwnerDashboard() {
       'AgentPaymentRequestSettled',
     ]);
 
-    const wallet = normalizedWalletAddress;
+    const wallet = (walletAddress || '').toLowerCase();
     const openRequests = new Set();
     const settledRequests = new Set();
     const counterparties = new Set();
@@ -105,7 +118,7 @@ export default function OwnerDashboard() {
       counterparties: counterparties.size,
       recent,
     };
-  }, [agentActivity, normalizedWalletAddress]);
+  }, [agentActivity, walletAddress]);
 
   const governanceSummary = useMemo(() => {
     const completedMilestones = milestones.filter((milestone) => milestone.status === 'Completed').length;
@@ -114,68 +127,18 @@ export default function OwnerDashboard() {
     return { completedMilestones, activeProjects };
   }, [projects, milestones]);
 
-  const handleUnlock = (event) => {
-    event.preventDefault();
-    if (!OWNER_PASSCODE) {
-      setError('Missing VITE_OWNER_DASHBOARD_PASSCODE. Set it in your .env file to enable private access.');
-      return;
-    }
-
-    if (passcodeInput !== OWNER_PASSCODE) {
-      setError('Invalid passcode.');
-      return;
-    }
-
-    setError('');
-    setUnlocked(true);
-    sessionStorage.setItem(SESSION_KEY, 'true');
-  };
-
-  const lockDashboard = () => {
-    setUnlocked(false);
-    sessionStorage.removeItem(SESSION_KEY);
-    setPasscodeInput('');
-  };
-
-  if (!unlocked) {
+  if (!walletConnected) {
     return (
-      <div className="max-w-lg mx-auto mt-10 rounded-2xl border border-nexus-border bg-nexus-card p-6">
-        <div className="flex items-center gap-3 mb-4">
+      <div className="max-w-xl mx-auto mt-10 rounded-2xl border border-nexus-border bg-nexus-card p-6 space-y-3">
+        <div className="flex items-center gap-3 mb-2">
           <div className="w-10 h-10 rounded-lg bg-nexus-cyan/10 flex items-center justify-center">
             <Lock size={18} className="text-nexus-cyan" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-glow-cyan">Private Owner Dashboard</h1>
-            <p className="text-xs text-nexus-text-dim">Restricted access for your personal protocol telemetry.</p>
+            <h1 className="text-xl font-bold text-glow-cyan">Owner Dashboard</h1>
+            <p className="text-xs text-nexus-text-dim">Connect the contract owner wallet to access protocol telemetry.</p>
           </div>
         </div>
-
-        <form onSubmit={handleUnlock} className="space-y-3">
-          <label className="block text-xs text-nexus-text-dim">Owner passcode</label>
-          <input
-            type="password"
-            value={passcodeInput}
-            onChange={(event) => setPasscodeInput(event.target.value)}
-            className="w-full px-3 py-2 rounded-lg border border-nexus-border bg-nexus-bg text-sm"
-            placeholder="Enter your passcode"
-          />
-          {error && <p className="text-xs text-red-400">{error}</p>}
-          <button
-            type="submit"
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-nexus-cyan to-nexus-purple text-white text-sm font-medium hover:opacity-90"
-          >
-            <Shield size={14} /> Unlock dashboard
-          </button>
-        </form>
-      </div>
-    );
-  }
-
-  if (!walletConnected) {
-    return (
-      <div className="max-w-xl mx-auto mt-10 rounded-2xl border border-nexus-border bg-nexus-card p-6 space-y-3">
-        <h1 className="text-xl font-bold text-glow-cyan">Owner Dashboard</h1>
-        <p className="text-sm text-nexus-text-dim">Connect your wallet to view your transaction telemetry and metrics.</p>
         <button
           onClick={connectWallet}
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-nexus-cyan to-nexus-purple text-white text-sm font-medium"
@@ -186,14 +149,23 @@ export default function OwnerDashboard() {
     );
   }
 
-  if (!walletMatchesOwner) {
+  if (!ownerChecked) {
+    return (
+      <div className="max-w-xl mx-auto mt-10 rounded-2xl border border-nexus-border bg-nexus-card p-6 space-y-2">
+        <h1 className="text-lg font-semibold text-nexus-text">Verifying owner...</h1>
+        <p className="text-sm text-nexus-text-dim">Checking on-chain contract ownership.</p>
+      </div>
+    );
+  }
+
+  if (!isOwner) {
     return (
       <div className="max-w-xl mx-auto mt-10 rounded-2xl border border-red-500/20 bg-red-500/5 p-6 space-y-2">
-        <h1 className="text-lg font-semibold text-red-300">Wallet not authorized</h1>
+        <h1 className="text-lg font-semibold text-red-300">Not authorized</h1>
         <p className="text-sm text-red-200/80">
-          Connected wallet <span className="font-mono">{walletAddress}</span> does not match owner wallet allowlist.
+          Connected wallet <span className="font-mono text-xs">{walletAddress}</span> is not the on-chain contract owner.
         </p>
-        <p className="text-xs text-red-200/70">Set VITE_OWNER_WALLET_ADDRESS to your wallet address in .env.</p>
+        <p className="text-xs text-red-200/70">Only the contract owner can access this dashboard.</p>
       </div>
     );
   }
@@ -213,10 +185,10 @@ export default function OwnerDashboard() {
             <RefreshCcw size={13} /> Refresh
           </button>
           <button
-            onClick={lockDashboard}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-nexus-border hover:bg-white/5 text-xs"
+            disabled
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-nexus-green/30 bg-nexus-green/5 text-nexus-green text-xs cursor-default"
           >
-            <Lock size={13} /> Lock
+            <Shield size={13} /> Owner verified
           </button>
         </div>
       </div>

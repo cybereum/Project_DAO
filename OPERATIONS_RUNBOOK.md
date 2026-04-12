@@ -410,3 +410,58 @@ newNetwork: {
 2. Verify the ABI in `config/contract.js` matches the deployed contract
 3. Check the user's wallet is connected to the correct network
 4. Verify the RPC endpoint is accessible
+
+---
+
+## Related Documents
+
+| Document | Purpose |
+|---|---|
+| [`docs/MULTISIG_SETUP.md`](docs/MULTISIG_SETUP.md) | How to transfer ownership to a Gnosis Safe multisig |
+| [`docs/GAS_OPTIMIZATION_NOTES.md`](docs/GAS_OPTIMIZATION_NOTES.md) | Known gas scaling issues and V2 fix plans |
+| [`scripts/monitor.js`](scripts/monitor.js) | Real-time monitoring script for critical events |
+| [`scripts/transfer-ownership-to-safe.js`](scripts/transfer-ownership-to-safe.js) | One-shot script to transfer owner to Safe |
+
+### Running the Monitor
+
+```bash
+RPC_URL=https://base-mainnet.g.alchemy.com/v2/KEY \
+CONTRACT_ADDRESS=0x... \
+ALERT_THRESHOLD_ETH=1.0 \
+WEBHOOK_URL=https://hooks.slack.com/... \
+node scripts/monitor.js
+```
+
+See `scripts/monitor-config.example.env` for all options.
+
+### Key Rotation Procedure
+
+**When to rotate the owner key:**
+- On a regular schedule (e.g., quarterly) as a hygiene measure
+- Immediately after any suspected or confirmed key compromise (see `docs/INCIDENT_RESPONSE.md`)
+- When a team member with key access departs the organization
+- When migrating from a single EOA to a multisig (see `docs/MULTISIG_SETUP.md`)
+
+**Steps:**
+1. **Prepare the new owner.** Deploy a new Gnosis Safe (recommended) or generate a new EOA on a hardware wallet. Record the address securely.
+2. **Pause the contract** if rotating due to compromise: `pauseContract()`.
+3. **Transfer ownership.** Call `changeOwner(newOwnerAddress)` from the current owner. Use `scripts/transfer-ownership-to-safe.js` for Safe transfers.
+4. **Verify on-chain.** Read `owner()` to confirm it returns the new address. Test a low-risk owner function (e.g., `setMinStakeToJoin`) to confirm access.
+5. **Update all configs:**
+   - `scripts/monitor.js` — owner address for event filtering
+   - Deployment scripts and CI secrets (`DEPLOYER_PRIVATE_KEY`)
+   - SDK `deployments.json` if the owner is referenced anywhere
+   - Frontend `.env` if applicable
+6. **Resume the contract** if it was paused: `resumeContract()`.
+7. **Broadcast** the rotation to agents if it affects their operations: `broadcastToAgents(3, "ipfs://key-rotation-notice")`.
+8. **Document** the rotation in the changelog with date, old owner (first/last 4 chars), and new owner.
+
+### Timelocked Operations
+
+Treasury and fee config changes now require a two-step process:
+
+1. **Queue**: `queueSetTreasury(newAddress)` — starts a 24h countdown
+2. **Execute**: `executeSetTreasury(newAddress)` — callable after delay, expires after 48h grace
+3. **Cancel** (if needed): `cancelTimelockOperation(opId)`
+
+When using a Gnosis Safe, the flow is: Safe proposes queue tx → signers approve → queue executes → 24h wait → Safe proposes execute tx → signers approve → execute runs.

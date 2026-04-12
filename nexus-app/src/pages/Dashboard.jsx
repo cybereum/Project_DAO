@@ -11,6 +11,7 @@ import {
   ChevronRight, Rocket, AlertTriangle, ClipboardCheck
 } from 'lucide-react';
 import RichText, { CHIP_STYLES } from '../components/RichText';
+import { MetricCardSkeleton } from '../components/Skeleton';
 import { FONTS } from '../config/designTokens.js';
 
 const anim = (i) => ({ initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, transition: { delay: i * 0.05 } });
@@ -49,7 +50,7 @@ function ProtocolPulseLine({ specs }) {
 }
 
 export default function Dashboard() {
-  const { projects, milestones, proposals, members, agentProfile, featureKits } = useApp();
+  const { projects, milestones, proposals, members, agentProfile, featureKits, walletConnected, dataLoadError } = useApp();
 
   const activityData = [
     { name: 'Mon', proposals: 4, tasks: 8, milestones: 2 },
@@ -88,13 +89,17 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <StatCard icon={FolderKanban} label="Active Projects" value={projects.filter(p => p.status === 'Active').length} change="+2" color="cyan" index={0} />
-        <StatCard icon={Users} label="Contributors" value={members.length} change="+5" color="purple" index={1} />
-        <StatCard icon={MilestoneIcon} label="Milestones" value={milestones.length} color="green" index={2} />
-        <StatCard icon={Vote} label="Active Proposals" value={activeProposals.length} color="pink" index={3} />
-        <StatCard icon={TrendingUp} label="Total Value Locked" value="$11.6M" change="+12%" color="amber" index={4} />
-      </div>
+      {dataLoadError ? (
+        <MetricCardSkeleton count={5} />
+      ) : (
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+          <StatCard icon={FolderKanban} label="Active Projects" value={projects.filter(p => p.status === 'Active').length} change="+2" color="cyan" index={0} />
+          <StatCard icon={Users} label="Contributors" value={members.length} change="+5" color="purple" index={1} />
+          <StatCard icon={MilestoneIcon} label="Milestones" value={milestones.length} color="green" index={2} />
+          <StatCard icon={Vote} label="Active Proposals" value={activeProposals.length} color="pink" index={3} />
+          <StatCard icon={TrendingUp} label="Total Value Locked" value="$11.6M" change="+12%" color="amber" index={4} />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Motion.div {...anim(5)} className="lg:col-span-2 rounded-xl border border-nexus-border bg-nexus-card p-5">
@@ -286,7 +291,9 @@ export default function Dashboard() {
               Open <ChevronRight size={12} />
             </Link>
           </div>
-          {agentProfile?.registered ? (
+          {walletConnected && agentProfile === null ? (
+            <MetricCardSkeleton count={1} />
+          ) : agentProfile?.registered ? (
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-nexus-green animate-pulse" />

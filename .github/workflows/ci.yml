@@ -52,6 +52,8 @@ jobs:
           cache-dependency-path: nexus-app/package-lock.json
       - run: npm ci
       - run: npm run lint
+      - name: Run tests with coverage
+        run: npx vitest run --coverage
       - name: Build
         run: npm run build
         env:

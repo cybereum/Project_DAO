@@ -1,6 +1,6 @@
 const { expect } = require("chai");
 const { anyValue } = require("@nomicfoundation/hardhat-chai-matchers/withArgs");
-const { loadFixture } = require("@nomicfoundation/hardhat-network-helpers");
+const { loadFixture, time } = require("@nomicfoundation/hardhat-network-helpers");
 const { ethers } = require("hardhat");
 const crypto = require("node:crypto");
 
@@ -26,12 +26,28 @@ async function _deployFixture() {
   const MessagingLib = await ethers.getContractFactory("MessagingLib");
   const msgLib = await MessagingLib.deploy();
   await msgLib.waitForDeployment();
+  const EconomicProjectLib = await ethers.getContractFactory("EconomicProjectLib");
+  const projLib = await EconomicProjectLib.deploy();
+  await projLib.waitForDeployment();
+  const ServiceAgreementLib = await ethers.getContractFactory("ServiceAgreementLib");
+  const svcLib = await ServiceAgreementLib.deploy();
+  await svcLib.waitForDeployment();
+  const PaymentStreamLib = await ethers.getContractFactory("PaymentStreamLib");
+  const streamLib = await PaymentStreamLib.deploy();
+  await streamLib.waitForDeployment();
+  const TimelockLib = await ethers.getContractFactory("TimelockLib");
+  const tlLib = await TimelockLib.deploy();
+  await tlLib.waitForDeployment();
   const DAO = await ethers.getContractFactory("Project_DAO", {
     libraries: {
       PKILib: await pkiLib.getAddress(),
       TrustLib: await trustLib.getAddress(),
       FeatureKitLib: await fkLib.getAddress(),
       MessagingLib: await msgLib.getAddress(),
+      EconomicProjectLib: await projLib.getAddress(),
+      ServiceAgreementLib: await svcLib.getAddress(),
+      PaymentStreamLib: await streamLib.getAddress(),
+      TimelockLib: await tlLib.getAddress(),
     },
   });
   const dao = await DAO.deploy();
@@ -5608,12 +5624,28 @@ describe("EIP-7825 deploy-gas guardrail", () => {
     const msgLib = await MessagingLib.deploy();
     await msgLib.waitForDeployment();
 
+    const EconomicProjectLib = await ethers.getContractFactory("EconomicProjectLib");
+    const projLib = await EconomicProjectLib.deploy();
+    await projLib.waitForDeployment();
+    const ServiceAgreementLib = await ethers.getContractFactory("ServiceAgreementLib");
+    const svcLib = await ServiceAgreementLib.deploy();
+    await svcLib.waitForDeployment();
+    const PaymentStreamLib = await ethers.getContractFactory("PaymentStreamLib");
+    const streamLib = await PaymentStreamLib.deploy();
+    await streamLib.waitForDeployment();
+    const TimelockLib = await ethers.getContractFactory("TimelockLib");
+    const tlLib = await TimelockLib.deploy();
+    await tlLib.waitForDeployment();
     const DAO = await ethers.getContractFactory("Project_DAO", {
       libraries: {
-        PKILib:        await pkiLib.getAddress(),
-        TrustLib:      await trustLib.getAddress(),
-        FeatureKitLib: await fkLib.getAddress(),
-        MessagingLib:  await msgLib.getAddress(),
+        PKILib:              await pkiLib.getAddress(),
+        TrustLib:            await trustLib.getAddress(),
+        FeatureKitLib:       await fkLib.getAddress(),
+        MessagingLib:        await msgLib.getAddress(),
+        EconomicProjectLib:  await projLib.getAddress(),
+        ServiceAgreementLib: await svcLib.getAddress(),
+        PaymentStreamLib:    await streamLib.getAddress(),
+        TimelockLib:         await tlLib.getAddress(),
       },
     });
     const deployTx = await DAO.getDeployTransaction();
@@ -5651,12 +5683,28 @@ describe("EIP-7825 deploy-gas guardrail", () => {
     const MessagingLib = await ethers.getContractFactory("MessagingLib");
     const msgLib = await MessagingLib.deploy();
     await msgLib.waitForDeployment();
+    const EconomicProjectLib = await ethers.getContractFactory("EconomicProjectLib");
+    const projLib = await EconomicProjectLib.deploy();
+    await projLib.waitForDeployment();
+    const ServiceAgreementLib = await ethers.getContractFactory("ServiceAgreementLib");
+    const svcLib = await ServiceAgreementLib.deploy();
+    await svcLib.waitForDeployment();
+    const PaymentStreamLib = await ethers.getContractFactory("PaymentStreamLib");
+    const streamLib = await PaymentStreamLib.deploy();
+    await streamLib.waitForDeployment();
+    const TimelockLib = await ethers.getContractFactory("TimelockLib");
+    const tlLib = await TimelockLib.deploy();
+    await tlLib.waitForDeployment();
     const DAO = await ethers.getContractFactory("Project_DAO", {
       libraries: {
-        PKILib:        await pkiLib.getAddress(),
-        TrustLib:      await trustLib.getAddress(),
-        FeatureKitLib: await fkLib.getAddress(),
-        MessagingLib:  await msgLib.getAddress(),
+        PKILib:              await pkiLib.getAddress(),
+        TrustLib:            await trustLib.getAddress(),
+        FeatureKitLib:       await fkLib.getAddress(),
+        MessagingLib:        await msgLib.getAddress(),
+        EconomicProjectLib:  await projLib.getAddress(),
+        ServiceAgreementLib: await svcLib.getAddress(),
+        PaymentStreamLib:    await streamLib.getAddress(),
+        TimelockLib:         await tlLib.getAddress(),
       },
     });
     const dao = await DAO.connect(deployer).deploy();
@@ -5713,12 +5761,28 @@ describe("EIP-7825 deploy-gas guardrail", () => {
     const MessagingLib = await ethers.getContractFactory("MessagingLib");
     const msgLib = await MessagingLib.deploy();
     await msgLib.waitForDeployment();
+    const EconomicProjectLib = await ethers.getContractFactory("EconomicProjectLib");
+    const projLib = await EconomicProjectLib.deploy();
+    await projLib.waitForDeployment();
+    const ServiceAgreementLib = await ethers.getContractFactory("ServiceAgreementLib");
+    const svcLib = await ServiceAgreementLib.deploy();
+    await svcLib.waitForDeployment();
+    const PaymentStreamLib = await ethers.getContractFactory("PaymentStreamLib");
+    const streamLib = await PaymentStreamLib.deploy();
+    await streamLib.waitForDeployment();
+    const TimelockLib = await ethers.getContractFactory("TimelockLib");
+    const tlLib = await TimelockLib.deploy();
+    await tlLib.waitForDeployment();
     const DAO = await ethers.getContractFactory("Project_DAO", {
       libraries: {
-        PKILib:        await pkiLib.getAddress(),
-        TrustLib:      await trustLib.getAddress(),
-        FeatureKitLib: await fkLib.getAddress(),
-        MessagingLib:  await msgLib.getAddress(),
+        PKILib:              await pkiLib.getAddress(),
+        TrustLib:            await trustLib.getAddress(),
+        FeatureKitLib:       await fkLib.getAddress(),
+        MessagingLib:        await msgLib.getAddress(),
+        EconomicProjectLib:  await projLib.getAddress(),
+        ServiceAgreementLib: await svcLib.getAddress(),
+        PaymentStreamLib:    await streamLib.getAddress(),
+        TimelockLib:         await tlLib.getAddress(),
       },
     });
     const dao = await DAO.deploy();
@@ -5856,5 +5920,321 @@ describe("PKI length-bound constant exposure", () => {
     await expect(
       dao.connect(alice).publishAgentPublicKey(aboveMax)
     ).to.be.revertedWith("Public key too long.");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ─── Timelock: Treasury & Fee Config Delayed Execution ──────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("Timelock: treasury changes", () => {
+  it("initializes with 24h delay", async () => {
+    const { dao } = await deploy();
+    expect(await dao.timelockDelay()).to.equal(24n * 3600n);
+  });
+
+  it("queueSetTreasury emits TimelockQueued", async () => {
+    const { dao, alice } = await deploy();
+    await expect(dao.queueSetTreasury(alice.address))
+      .to.emit(dao, "TimelockQueued");
+  });
+
+  it("executeSetTreasury reverts before delay elapses", async () => {
+    const { dao, alice } = await deploy();
+    await dao.queueSetTreasury(alice.address);
+    await expect(dao.executeSetTreasury(alice.address))
+      .to.be.revertedWith("Timelock: not ready yet.");
+  });
+
+  it("executeSetTreasury succeeds after delay", async () => {
+    const { dao, alice } = await deploy();
+    await dao.queueSetTreasury(alice.address);
+    await time.increase(24 * 3600 + 1);
+    await expect(dao.executeSetTreasury(alice.address))
+      .to.emit(dao, "CybereumTreasuryUpdated").withArgs(alice.address);
+    expect(await dao.cybereumTreasury()).to.equal(alice.address);
+  });
+
+  it("executeSetTreasury reverts after grace period expires", async () => {
+    const { dao, alice } = await deploy();
+    await dao.queueSetTreasury(alice.address);
+    // delay (24h) + grace (48h) + 1s = expired
+    await time.increase(24 * 3600 + 48 * 3600 + 1);
+    await expect(dao.executeSetTreasury(alice.address))
+      .to.be.revertedWith("Timelock: operation expired.");
+  });
+
+  it("cannot execute twice", async () => {
+    const { dao, alice } = await deploy();
+    await dao.queueSetTreasury(alice.address);
+    await time.increase(24 * 3600 + 1);
+    await dao.executeSetTreasury(alice.address);
+    await expect(dao.executeSetTreasury(alice.address))
+      .to.be.revertedWith("Operation already executed.");
+  });
+
+  it("queueSetTreasury rejects zero address", async () => {
+    const { dao } = await deploy();
+    await expect(dao.queueSetTreasury(ethers.ZeroAddress))
+      .to.be.revertedWith("Invalid treasury address.");
+  });
+
+  it("non-owner cannot queue", async () => {
+    const { dao, alice } = await deploy();
+    await expect(dao.connect(alice).queueSetTreasury(alice.address))
+      .to.be.reverted;
+  });
+});
+
+describe("Timelock: fee config changes", () => {
+  it("queueSetFeeConfig emits TimelockQueued", async () => {
+    const { dao } = await deploy();
+    await expect(dao.queueSetFeeConfig(10, 2_000_000_000_000n))
+      .to.emit(dao, "TimelockQueued");
+  });
+
+  it("executeSetFeeConfig reverts before delay", async () => {
+    const { dao } = await deploy();
+    await dao.queueSetFeeConfig(10, 2_000_000_000_000n);
+    await expect(dao.executeSetFeeConfig(10, 2_000_000_000_000n))
+      .to.be.revertedWith("Timelock: not ready yet.");
+  });
+
+  it("executeSetFeeConfig succeeds after delay", async () => {
+    const { dao } = await deploy();
+    await dao.queueSetFeeConfig(10, 2_000_000_000_000n);
+    await time.increase(24 * 3600 + 1);
+    await dao.executeSetFeeConfig(10, 2_000_000_000_000n);
+    expect(await dao.cybereumFeeBps()).to.equal(10n);
+    expect(await dao.assetTransferFlatFeeWei()).to.equal(2_000_000_000_000n);
+  });
+
+  it("rejects fee below minimum", async () => {
+    const { dao } = await deploy();
+    await expect(dao.queueSetFeeConfig(0, 1_000_000_000_000n))
+      .to.be.revertedWith("Fee cannot be zero: mandatory Cybereum fee floor enforced.");
+  });
+
+  it("rejects fee above 1%", async () => {
+    const { dao } = await deploy();
+    await expect(dao.queueSetFeeConfig(101, 1_000_000_000_000n))
+      .to.be.revertedWith("Fee cannot exceed 1%.");
+  });
+});
+
+describe("Timelock: cancel and delay management", () => {
+  it("cancelTimelockOperation prevents execution", async () => {
+    const { dao, alice } = await deploy();
+    const tx = await dao.queueSetTreasury(alice.address);
+    const receipt = await tx.wait();
+    const event = receipt.logs.find(l => l.fragment?.name === "TimelockQueued");
+    const opId = event.args[0];
+
+    await dao.cancelTimelockOperation(opId);
+    await time.increase(24 * 3600 + 1);
+    await expect(dao.executeSetTreasury(alice.address))
+      .to.be.revertedWith("Operation was cancelled.");
+  });
+
+  it("cancelTimelockOperation emits TimelockCancelled", async () => {
+    const { dao, alice } = await deploy();
+    const tx = await dao.queueSetTreasury(alice.address);
+    const receipt = await tx.wait();
+    const event = receipt.logs.find(l => l.fragment?.name === "TimelockQueued");
+    const opId = event.args[0];
+
+    await expect(dao.cancelTimelockOperation(opId))
+      .to.emit(dao, "TimelockCancelled").withArgs(opId);
+  });
+
+  it("can re-queue after cancel", async () => {
+    const { dao, alice } = await deploy();
+    const tx = await dao.queueSetTreasury(alice.address);
+    const receipt = await tx.wait();
+    const event = receipt.logs.find(l => l.fragment?.name === "TimelockQueued");
+    const opId = event.args[0];
+
+    await dao.cancelTimelockOperation(opId);
+    // Re-queue the same operation
+    await expect(dao.queueSetTreasury(alice.address))
+      .to.emit(dao, "TimelockQueued");
+  });
+
+  it("setTimelockDelay updates the delay", async () => {
+    const { dao } = await deploy();
+    await dao.setTimelockDelay(2 * 3600); // 2 hours
+    expect(await dao.timelockDelay()).to.equal(7200n);
+  });
+
+  it("setTimelockDelay rejects below 1 hour", async () => {
+    const { dao } = await deploy();
+    await expect(dao.setTimelockDelay(1800))
+      .to.be.revertedWith("Delay below minimum (1 hour).");
+  });
+
+  it("setTimelockDelay rejects above 30 days", async () => {
+    const { dao } = await deploy();
+    await expect(dao.setTimelockDelay(31 * 24 * 3600))
+      .to.be.revertedWith("Delay exceeds maximum (30 days).");
+  });
+
+  it("getTimelockOperation returns correct status", async () => {
+    const { dao, alice } = await deploy();
+    await dao.queueSetTreasury(alice.address);
+    const opId = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(
+      ["string", "address"], ["setTreasury", alice.address]
+    ));
+    const op = await dao.getTimelockOperation(opId);
+    expect(op.id).to.equal(opId);
+    expect(op.executed).to.be.false;
+    expect(op.cancelled).to.be.false;
+    expect(op.readyTime).to.be.gt(0n);
+  });
+
+  it("non-owner cannot cancel", async () => {
+    const { dao, alice } = await deploy();
+    await dao.queueSetTreasury(alice.address);
+    const opId = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(
+      ["string", "address"], ["setTreasury", alice.address]
+    ));
+    await expect(dao.connect(alice).cancelTimelockOperation(opId))
+      .to.be.reverted;
+  });
+
+  it("shorter delay after setTimelockDelay works for new operations", async () => {
+    const { dao, alice } = await deploy();
+    await dao.setTimelockDelay(3600); // 1 hour
+    await dao.queueSetTreasury(alice.address);
+    await time.increase(3601);
+    await dao.executeSetTreasury(alice.address);
+    expect(await dao.cybereumTreasury()).to.equal(alice.address);
+  });
+
+  it("cancelTimelockOperation reverts when paused", async () => {
+    const { dao, alice } = await deploy();
+    await dao.queueSetTreasury(alice.address);
+    const opId = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(
+      ["string", "address"], ["setTreasury", alice.address]
+    ));
+    await dao.pauseContract();
+    await expect(dao.cancelTimelockOperation(opId)).to.be.revertedWith("Contract is paused.");
+    await dao.resumeContract();
+    await dao.cancelTimelockOperation(opId); // succeeds when unpaused
+  });
+
+  it("setTimelockDelay reverts when paused", async () => {
+    const { dao } = await deploy();
+    await dao.pauseContract();
+    await expect(dao.setTimelockDelay(2 * 3600)).to.be.revertedWith("Contract is paused.");
+    await dao.resumeContract();
+    await dao.setTimelockDelay(2 * 3600); // succeeds when unpaused
+    expect(await dao.timelockDelay()).to.equal(7200n);
+  });
+
+  it("queueSetTreasury reverts when paused", async () => {
+    const { dao, alice } = await deploy();
+    await dao.pauseContract();
+    await expect(dao.queueSetTreasury(alice.address)).to.be.revertedWith("Contract is paused.");
+  });
+
+  it("executeSetTreasury reverts when paused", async () => {
+    const { dao, alice } = await deploy();
+    await dao.queueSetTreasury(alice.address);
+    await time.increase(24 * 3600 + 1);
+    await dao.pauseContract();
+    await expect(dao.executeSetTreasury(alice.address)).to.be.revertedWith("Contract is paused.");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ─── Library shim view functions ────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("Library shim view parity", () => {
+  it("economicProjects() shim returns correct named fields", async () => {
+    const { dao } = await deploy();
+    await dao.registerAgent("ipfs://owner");
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.createEconomicProject("ipfs://proj1", ethers.parseEther("1"), deadline);
+    const proj = await dao.economicProjects(1n);
+    expect(proj.id).to.equal(1n);
+    expect(proj.targetBudget).to.equal(ethers.parseEther("1"));
+    expect(proj.totalFunded).to.equal(0n);
+    expect(proj.contributorCount).to.equal(0n);
+    expect(proj.funderCount).to.equal(0n);
+  });
+
+  it("serviceAgreements() shim returns correct named fields", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    // Deposit to fund agreement
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1") });
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(alice).createServiceAgreement(bob.address, ethers.ZeroAddress, ethers.parseEther("0.1"), deadline, "test service");
+    const a = await dao.serviceAgreements(1n);
+    expect(a.id).to.equal(1n);
+    expect(a.client).to.equal(alice.address);
+    expect(a.provider).to.equal(bob.address);
+    expect(a.amount).to.equal(ethers.parseEther("0.1"));
+    expect(a.status).to.equal(0n); // Active
+  });
+
+  it("paymentStreams() shim returns correct named fields", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1") });
+    const now = (await ethers.provider.getBlock("latest")).timestamp;
+    await dao.connect(alice).createPaymentStream(bob.address, ethers.parseEther("0.1"), now + 10, now + 1010);
+    const s = await dao.paymentStreams(1n);
+    expect(s.id).to.equal(1n);
+    expect(s.payer).to.equal(alice.address);
+    expect(s.recipient).to.equal(bob.address);
+    expect(s.status).to.equal(0n); // Active
+  });
+
+  it("activeAgreementCount() shim tracks correctly", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    expect(await dao.activeAgreementCount(alice.address)).to.equal(0n);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1") });
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(alice).createServiceAgreement(bob.address, ethers.ZeroAddress, ethers.parseEther("0.1"), deadline, "test");
+    expect(await dao.activeAgreementCount(alice.address)).to.equal(1n);
+    expect(await dao.activeAgreementCount(bob.address)).to.equal(1n);
+  });
+
+  it("activeStreamCount() shim tracks correctly", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    expect(await dao.activeStreamCount(alice.address)).to.equal(0n);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1") });
+    const now = (await ethers.provider.getBlock("latest")).timestamp;
+    await dao.connect(alice).createPaymentStream(bob.address, ethers.parseEther("0.1"), now + 10, now + 1010);
+    expect(await dao.activeStreamCount(alice.address)).to.equal(1n);
+    expect(await dao.activeStreamCount(bob.address)).to.equal(1n);
+  });
+
+  it("leaveDAO blocks on active service agreement (library store)", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1") });
+    const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
+    await dao.connect(alice).createServiceAgreement(bob.address, ethers.ZeroAddress, ethers.parseEther("0.01"), deadline, "test");
+    await expect(dao.connect(alice).leaveDAO()).to.be.revertedWith("Resolve active service agreements before leaving.");
+  });
+
+  it("leaveDAO blocks on active payment stream (library store)", async () => {
+    const { dao, alice, bob } = await deploy();
+    await memberAgent(dao, alice);
+    await memberAgent(dao, bob);
+    await dao.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1") });
+    const now = (await ethers.provider.getBlock("latest")).timestamp;
+    await dao.connect(alice).createPaymentStream(bob.address, ethers.parseEther("0.1"), now + 10, now + 1010);
+    await expect(dao.connect(alice).leaveDAO()).to.be.revertedWith("Cancel active payment streams before leaving.");
   });
 });
