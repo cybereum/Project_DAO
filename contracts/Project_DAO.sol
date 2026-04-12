@@ -5,11 +5,12 @@ import {PKILib} from "./PKILib.sol";
 import {TrustLib} from "./TrustLib.sol";
 import {FeatureKitLib} from "./FeatureKitLib.sol";
 import {MessagingLib} from "./MessagingLib.sol";
-
-interface IERC20 {
-    function transferFrom(address from, address to, uint256 value) external returns (bool);
-    function transfer(address to, uint256 value) external returns (bool);
-}
+import {EconomicProjectLib} from "./EconomicProjectLib.sol";
+import {ServiceAgreementLib} from "./ServiceAgreementLib.sol";
+import {PaymentStreamLib} from "./PaymentStreamLib.sol";
+import {TimelockLib} from "./TimelockLib.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 interface IERC721Lite {
     function transferFrom(address from, address to, uint256 tokenId) external;
@@ -21,6 +22,11 @@ contract Project_DAO {
     using TrustLib for TrustLib.Store;
     using FeatureKitLib for FeatureKitLib.Store;
     using MessagingLib for MessagingLib.Store;
+    using EconomicProjectLib for EconomicProjectLib.Store;
+    using ServiceAgreementLib for ServiceAgreementLib.Store;
+    using PaymentStreamLib for PaymentStreamLib.Store;
+    using SafeERC20 for IERC20;
+    using TimelockLib for TimelockLib.Store;
 
     // ─── Custom Errors (gas-efficient reverts) ───────────────────────────────
     error Unauthorized();
@@ -305,6 +311,15 @@ contract Project_DAO {
     /// @dev True once initialize() has run. Exposed for off-chain tooling.
     bool public initialized;
 
+    // ─── Timelock for sensitive operations ─────────────────────────────────
+    TimelockLib.Store private _timelock;
+
+    // Events re-declared for ABI visibility; emitted by library via delegatecall.
+    event TimelockQueued(bytes32 indexed opId, uint256 readyTime, uint256 expiresAt);
+    event TimelockExecuted(bytes32 indexed opId);
+    event TimelockCancelled(bytes32 indexed opId);
+    event TimelockDelayUpdated(uint256 newDelay);
+
     /// @dev The deploy transaction only sets `owner` so the creation tx
     ///      stays under the EIP-7825 per-tx gas cap on newer hardforks.
     ///      ALL other state is seeded by initialize() in a second tx the
@@ -345,9 +360,13 @@ contract Project_DAO {
         currentMilestoneId           = 1;
         currentTaskId                = 1;
         currentBroadcastId           = 1;
-        currentProjectId             = 1;
-        currentServiceAgreementId    = 1;
-        currentPaymentStreamId       = 1;
+        _projectStore.currentProjectId = 1;
+        _serviceStore.currentId        = 1;
+        _streamStore.currentId         = 1;
+
+        // ── Timelock defaults (24h delay, 48h grace period) ─────────
+        _timelock.delay       = 24 hours;
+        _timelock.gracePeriod = 48 hours;
 
         // ── Governance defaults ──────────────────────────────────────
         votingPeriod       = 7 days;
@@ -528,6 +547,71 @@ contract Project_DAO {
         emit CybereumFeeConfigUpdated(_feeBps, _assetTransferFlatFeeWei);
     }
 
+    // ─── Timelocked Configuration (queue → wait → execute) ──────────────
+
+    /// @notice Queue a treasury change. Must wait timelock delay before executing.
+    function queueSetTreasury(address _treasury) external onlyOwner whenNotPaused returns (bytes32) {
+        require(_treasury != address(0), "Invalid treasury address.");
+        bytes32 opId = keccak256(abi.encode("setTreasury", _treasury));
+        _timelock.queue(opId);
+        return opId;
+    }
+
+    /// @notice Execute a previously queued treasury change after the delay.
+    function executeSetTreasury(address _treasury) external onlyOwner whenNotPaused {
+        bytes32 opId = keccak256(abi.encode("setTreasury", _treasury));
+        _timelock.assertReady(opId);
+        _timelock.markExecuted(opId);
+        require(_treasury != address(0), "Invalid treasury address.");
+        cybereumTreasury = _treasury;
+        emit CybereumTreasuryUpdated(_treasury);
+    }
+
+    /// @notice Queue a fee configuration change.
+    function queueSetFeeConfig(uint256 _feeBps, uint256 _assetFlatFeeWei) external onlyOwner whenNotPaused returns (bytes32) {
+        require(_feeBps >= MIN_FEE_BPS, "Fee cannot be zero: mandatory Cybereum fee floor enforced.");
+        require(_feeBps <= 100, "Fee cannot exceed 1%.");
+        require(_assetFlatFeeWei > 0, "Asset transfer fee must be non-zero.");
+        bytes32 opId = keccak256(abi.encode("setFeeConfig", _feeBps, _assetFlatFeeWei));
+        _timelock.queue(opId);
+        return opId;
+    }
+
+    /// @notice Execute a previously queued fee config change after the delay.
+    function executeSetFeeConfig(uint256 _feeBps, uint256 _assetFlatFeeWei) external onlyOwner whenNotPaused {
+        bytes32 opId = keccak256(abi.encode("setFeeConfig", _feeBps, _assetFlatFeeWei));
+        _timelock.assertReady(opId);
+        _timelock.markExecuted(opId);
+        require(_feeBps >= MIN_FEE_BPS, "Fee cannot be zero: mandatory Cybereum fee floor enforced.");
+        require(_feeBps <= 100, "Fee cannot exceed 1%.");
+        require(_assetFlatFeeWei > 0, "Asset transfer fee must be non-zero.");
+        cybereumFeeBps = _feeBps;
+        assetTransferFlatFeeWei = _assetFlatFeeWei;
+        emit CybereumFeeConfigUpdated(_feeBps, _assetFlatFeeWei);
+    }
+
+    /// @notice Cancel a pending timelocked operation.
+    function cancelTimelockOperation(bytes32 _opId) external onlyOwner {
+        _timelock.cancel(_opId);
+    }
+
+    /// @notice Update the timelock delay. Between 1 hour and 30 days.
+    function setTimelockDelay(uint256 _delay) external onlyOwner {
+        _timelock.setDelay(_delay);
+    }
+
+    /// @notice Get the current timelock delay in seconds.
+    function timelockDelay() external view returns (uint256) {
+        return _timelock.delay;
+    }
+
+    /// @notice Get a timelocked operation's status.
+    function getTimelockOperation(bytes32 _opId) external view returns (
+        bytes32 id, uint256 readyTime, uint256 expiresAt, bool executed, bool cancelled
+    ) {
+        return _timelock.getOperation(_opId);
+    }
+
     /// @notice Update AI analysis service fee. Only callable by owner.
     function setAIServiceFee(uint256 _feeWei) public onlyOwner whenNotPaused {
         aiServiceFeeWei = _feeWei;
@@ -654,8 +738,7 @@ contract Project_DAO {
         require(cybereumTreasury != address(0), "Cybereum treasury not configured.");
         uint256 fee = _calculateFee(_amount);
         if (fee > 0) {
-            bool feeTransferSuccess = IERC20(_token).transfer(cybereumTreasury, fee);
-            require(feeTransferSuccess, "Token fee transfer failed.");
+            IERC20(_token).safeTransfer(cybereumTreasury, fee);
             emit CybereumFeePaid(msg.sender, _token, fee, _context);
         }
         _recordVolume(msg.sender, _amount, fee, _context);
@@ -853,8 +936,7 @@ contract Project_DAO {
     function depositTokenToEscrow(address _token, uint256 _amount) public onlyRegisteredAgent whenNotPaused nonReentrant {
         require(_token != address(0), "Invalid token address.");
         require(_amount > 0, "Amount must be greater than zero.");
-        bool success = IERC20(_token).transferFrom(msg.sender, address(this), _amount);
-        require(success, "Token transfer failed.");
+        IERC20(_token).safeTransferFrom(msg.sender, address(this), _amount);
 
         uint256 fee = _collectTokenFee(_token, _amount, "deposit_token_escrow");
         uint256 netAmount = _amount - fee;
@@ -875,12 +957,10 @@ contract Project_DAO {
         uint256 netAmount = _amount - fee;
 
         agentTokenEscrowBalances[msg.sender][_token] -= _amount;
-        bool feeSuccess = IERC20(_token).transfer(cybereumTreasury, fee);
-        require(feeSuccess, "Token fee transfer failed.");
+        IERC20(_token).safeTransfer(cybereumTreasury, fee);
         emit CybereumFeePaid(msg.sender, _token, fee, "withdraw_token_escrow");
 
-        bool success = IERC20(_token).transfer(msg.sender, netAmount);
-        require(success, "Token transfer failed.");
+        IERC20(_token).safeTransfer(msg.sender, netAmount);
         _recordVolume(msg.sender, _amount, fee, "withdraw_token_escrow");
         emit AgentTokenEscrowWithdrawn(msg.sender, _token, netAmount);
     }
@@ -900,8 +980,7 @@ contract Project_DAO {
         agentTokenEscrowBalances[msg.sender][_token] -= _amount;
         agentTokenEscrowBalances[_to][_token] += netAmount;
         if (fee > 0) {
-            bool feeTransferSuccess = IERC20(_token).transfer(cybereumTreasury, fee);
-            require(feeTransferSuccess, "Token fee transfer failed.");
+            IERC20(_token).safeTransfer(cybereumTreasury, fee);
             emit CybereumFeePaid(msg.sender, _token, fee, "agent_token_transfer");
         }
 
@@ -981,13 +1060,11 @@ contract Project_DAO {
             require(payoutOk, "Native payout transfer failed.");
         } else {
             require(msg.value == 0, "Do not send native value for token settlement.");
-            bool success = IERC20(request.token).transferFrom(msg.sender, address(this), request.amount);
-            require(success, "Token transfer failed.");
+            IERC20(request.token).safeTransferFrom(msg.sender, address(this), request.amount);
             uint256 fee = _collectTokenFee(request.token, request.amount, "settle_payment_request_token");
             uint256 netAmount = request.amount - fee;
             require(netAmount > 0, "Amount too small after fee.");
-            bool payoutSuccess = IERC20(request.token).transfer(request.requester, netAmount);
-            require(payoutSuccess, "Token payout transfer failed.");
+            IERC20(request.token).safeTransfer(request.requester, netAmount);
         }
 
         request.status = PaymentStatus.Settled;
@@ -1693,9 +1770,9 @@ contract Project_DAO {
         require(memberStakes[msg.sender] > 0 || msg.sender != owner, "Owner cannot leave.");
 
         // Prevent leaving while involved in active obligations (O(1) checks)
-        require(activeProjectCount[msg.sender] == 0, "Cancel active projects before leaving.");
-        require(activeAgreementCount[msg.sender] == 0, "Resolve active service agreements before leaving.");
-        require(activeStreamCount[msg.sender] == 0, "Cancel active payment streams before leaving.");
+        require(_projectStore.activeProjectCount[msg.sender] == 0, "Cancel active projects before leaving.");
+        require(_serviceStore.activeCount[msg.sender] == 0, "Resolve active service agreements before leaving.");
+        require(_streamStore.activeCount[msg.sender] == 0, "Cancel active payment streams before leaving.");
 
         uint256 stake = memberStakes[msg.sender];
         memberStakes[msg.sender] = 0;
@@ -1724,34 +1801,11 @@ contract Project_DAO {
         emit MemberLeftDAO(msg.sender, stake);
     }
 
-    // ─── Economic Project Primitives ─────────────────────────────────────────
+    // ─── Economic Project Primitives (delegated to EconomicProjectLib) ─────
 
-    enum ProjectStatus { Open, Active, Completed, Cancelled }
+    EconomicProjectLib.Store private _projectStore;
 
-    struct EconomicProject {
-        uint256 id;
-        address proposer;
-        string  metadataURI;    // IPFS: { name, description, category, tags, requirements }
-        uint256 targetBudget;   // wei
-        uint256 totalFunded;    // net wei in pool (after fees)
-        uint256 deadline;       // unix timestamp
-        ProjectStatus status;
-        uint256 createdAt;
-        uint256 contributorCount;
-        uint256 funderCount;
-    }
-
-    uint256 public currentProjectId;
-    mapping(uint256 => EconomicProject)             public economicProjects;
-    mapping(uint256 => address[])                   private _projectContributors;
-    mapping(uint256 => mapping(address => uint256)) public projectContributorShares; // bps
-    mapping(uint256 => mapping(address => bool))    public projectApplications;
-    mapping(uint256 => mapping(address => bool))    public projectApplicationApproved;
-    mapping(uint256 => address[])                   private _projectFunders;
-    mapping(uint256 => mapping(address => uint256)) public projectFunderContributions;
-    mapping(uint256 => mapping(address => bool))    public projectShareClaimed;
-    mapping(address => uint256)                     public activeProjectCount; // tracks Open/Active projects per proposer
-
+    // Events re-declared for ABI visibility; emitted by library via delegatecall.
     event EconomicProjectCreated(uint256 indexed projectId, address indexed proposer, string metadataURI, uint256 targetBudget, uint256 deadline);
     event EconomicProjectFunded(uint256 indexed projectId, address indexed funder, uint256 netAmount);
     event EconomicProjectContributorApplied(uint256 indexed projectId, address indexed contributor);
@@ -1761,166 +1815,86 @@ contract Project_DAO {
     event EconomicProjectShareClaimed(uint256 indexed projectId, address indexed contributor, uint256 amount);
     event EconomicProjectFunderRefunded(uint256 indexed projectId, address indexed funder, uint256 amount);
 
-    /**
-     * @notice Propose a new economic project. Any registered agent can propose.
-     * @param metadataURI   IPFS URI with project details.
-     * @param targetBudget  Funding goal in wei (informational; funding is not capped).
-     * @param deadline      Unix timestamp for project deadline.
-     * @return projectId    Assigned project ID.
-     */
+    /// @notice Shim: expose currentProjectId from library store.
+    function currentProjectId() external view returns (uint256) {
+        uint256 v = _projectStore.currentProjectId;
+        return v == 0 ? 1 : v;
+    }
+
+    /// @notice Shim: expose economicProjects mapping from library store.
+    function economicProjects(uint256 projectId) external view returns (
+        uint256 id, address proposer, string memory metadataURI,
+        uint256 targetBudget, uint256 totalFunded, uint256 deadline,
+        EconomicProjectLib.ProjectStatus status, uint256 createdAt,
+        uint256 contributorCount, uint256 funderCount
+    ) {
+        return _projectStore.getProject(projectId);
+    }
+
+    /// @notice Shim: expose projectContributorShares from library store.
+    function projectContributorShares(uint256 projectId, address contributor) external view returns (uint256) {
+        return _projectStore.contributorShares[projectId][contributor];
+    }
+
+    /// @notice Shim: expose projectApplications from library store.
+    function projectApplications(uint256 projectId, address applicant) external view returns (bool) {
+        return _projectStore.applications[projectId][applicant];
+    }
+
+    /// @notice Shim: expose projectApplicationApproved from library store.
+    function projectApplicationApproved(uint256 projectId, address contributor) external view returns (bool) {
+        return _projectStore.applicationApproved[projectId][contributor];
+    }
+
+    /// @notice Shim: expose projectFunderContributions from library store.
+    function projectFunderContributions(uint256 projectId, address funder) external view returns (uint256) {
+        return _projectStore.funderContributions[projectId][funder];
+    }
+
+    /// @notice Shim: expose projectShareClaimed from library store.
+    function projectShareClaimed(uint256 projectId, address claimant) external view returns (bool) {
+        return _projectStore.shareClaimed[projectId][claimant];
+    }
+
+    /// @notice Shim: expose activeProjectCount from library store.
+    function activeProjectCount(address proposer) external view returns (uint256) {
+        return _projectStore.activeProjectCount[proposer];
+    }
+
     function createEconomicProject(
         string calldata metadataURI,
         uint256 targetBudget,
         uint256 deadline
     ) external whenNotPaused onlyRegisteredAgent returns (uint256) {
-        require(bytes(metadataURI).length > 0, "metadataURI required.");
-        require(targetBudget > 0, "Target budget must be > 0.");
-        require(deadline > block.timestamp, "Deadline must be in the future.");
-
-        uint256 id = currentProjectId++;
-        economicProjects[id] = EconomicProject({
-            id:               id,
-            proposer:         msg.sender,
-            metadataURI:      metadataURI,
-            targetBudget:     targetBudget,
-            totalFunded:      0,
-            deadline:         deadline,
-            status:           ProjectStatus.Open,
-            createdAt:        block.timestamp,
-            contributorCount: 0,
-            funderCount:      0
-        });
-
-        activeProjectCount[msg.sender]++;
-        emit EconomicProjectCreated(id, msg.sender, metadataURI, targetBudget, deadline);
-        return id;
+        return _projectStore.create(msg.sender, metadataURI, targetBudget, deadline);
     }
 
-    /**
-     * @notice Fund an open or active project. Anyone can fund — agents, humans,
-     *         organisations. A protocol fee is deducted; net ETH enters the pool.
-     * @param projectId  ID of the project to fund.
-     */
     function fundProject(uint256 projectId) external payable whenNotPaused {
-        EconomicProject storage proj = economicProjects[projectId];
-        require(proj.id != 0, "Project not found.");
-        require(
-            proj.status == ProjectStatus.Open || proj.status == ProjectStatus.Active,
-            "Project not accepting funds."
-        );
         require(msg.value > 0, "Must send ETH.");
-
         uint256 fee = _collectNativeFee(msg.value, "fundProject");
         uint256 net = msg.value - fee;
-
-        if (projectFunderContributions[projectId][msg.sender] == 0) {
-            _projectFunders[projectId].push(msg.sender);
-            proj.funderCount++;
-        }
-        projectFunderContributions[projectId][msg.sender] += net;
-        proj.totalFunded += net;
-
-        emit EconomicProjectFunded(projectId, msg.sender, net);
+        _projectStore.fund(projectId, msg.sender, net);
     }
 
-    /**
-     * @notice Apply to contribute to an open or active project as a registered agent.
-     * @param projectId  ID of the project to join.
-     */
     function applyToProject(uint256 projectId) external whenNotPaused onlyRegisteredAgent {
-        EconomicProject storage proj = economicProjects[projectId];
-        require(proj.id != 0, "Project not found.");
-        require(
-            proj.status == ProjectStatus.Open || proj.status == ProjectStatus.Active,
-            "Project not accepting applications."
-        );
-        require(msg.sender != proj.proposer, "Proposer is already lead contributor.");
-        require(!projectApplications[projectId][msg.sender], "Already applied.");
-
-        projectApplications[projectId][msg.sender] = true;
-        emit EconomicProjectContributorApplied(projectId, msg.sender);
+        _projectStore.applyToProject(projectId, msg.sender);
     }
 
-    /**
-     * @notice Proposer approves a contributor and assigns their revenue share.
-     *         Total approved shares across all contributors must not exceed 10 000 bps.
-     * @param projectId    ID of the project.
-     * @param contributor  Address of the approved contributor.
-     * @param sharesBps    Share of the funding pool in basis points (100 = 1%).
-     */
     function approveContributor(
         uint256 projectId,
         address contributor,
         uint256 sharesBps
     ) external whenNotPaused {
-        EconomicProject storage proj = economicProjects[projectId];
-        require(proj.id != 0, "Project not found.");
-        require(contributor != address(0), "Invalid contributor address.");
-        require(msg.sender == proj.proposer, "Only the proposer can approve contributors.");
-        require(projectApplications[projectId][contributor], "Contributor has not applied.");
-        require(!projectApplicationApproved[projectId][contributor], "Already approved.");
-        require(sharesBps > 0 && sharesBps <= 10000, "sharesBps must be 1-10000.");
-
-        // Ensure total shares don't exceed 100%
-        uint256 totalShares = 0;
-        address[] storage contribs = _projectContributors[projectId];
-        for (uint256 i = 0; i < contribs.length; i++) {
-            totalShares += projectContributorShares[projectId][contribs[i]];
-        }
-        require(totalShares + sharesBps <= 10000, "Total shares would exceed 100%.");
-
-        projectApplicationApproved[projectId][contributor] = true;
-        projectContributorShares[projectId][contributor] = sharesBps;
-        _projectContributors[projectId].push(contributor);
-        proj.contributorCount++;
-
-        if (proj.status == ProjectStatus.Open) {
-            proj.status = ProjectStatus.Active;
-        }
-
-        emit EconomicProjectContributorApproved(projectId, contributor, sharesBps);
+        _projectStore.approveContributor(projectId, msg.sender, contributor, sharesBps);
     }
 
-    /**
-     * @notice Proposer marks the project complete, unlocking contributor claims.
-     * @param projectId  ID of the project.
-     */
     function completeProject(uint256 projectId) external whenNotPaused {
-        EconomicProject storage proj = economicProjects[projectId];
-        require(proj.id != 0, "Project not found.");
-        require(msg.sender == proj.proposer, "Only the proposer can complete a project.");
-        require(
-            proj.status == ProjectStatus.Open || proj.status == ProjectStatus.Active,
-            "Project already completed or cancelled."
-        );
-
-        proj.status = ProjectStatus.Completed;
-        require(activeProjectCount[proj.proposer] > 0, "Active project count underflow.");
-        activeProjectCount[proj.proposer]--;
-        emit EconomicProjectCompleted(projectId);
+        _projectStore.complete(projectId, msg.sender);
     }
 
-    /**
-     * @notice Approved contributor claims their proportional share of the funding pool.
-     *         Can only be called once per contributor after project is Completed.
-     * @param projectId  ID of the completed project.
-     */
     function claimProjectShare(uint256 projectId) external whenNotPaused nonReentrant {
-        EconomicProject storage proj = economicProjects[projectId];
-        require(proj.id != 0, "Project not found.");
-        require(proj.status == ProjectStatus.Completed, "Project not completed.");
-        require(projectApplicationApproved[projectId][msg.sender], "Not an approved contributor.");
-        require(!projectShareClaimed[projectId][msg.sender], "Share already claimed.");
+        uint256 payout = _projectStore.claimShare(projectId, msg.sender);
 
-        uint256 shares = projectContributorShares[projectId][msg.sender];
-        require(shares > 0, "No shares assigned.");
-
-        uint256 payout = (proj.totalFunded * shares) / 10000;
-        require(payout > 0, "Nothing to claim.");
-
-        projectShareClaimed[projectId][msg.sender] = true;
-
-        // Commerce Blackhole: exit fee on value leaving the protocol
         uint256 exitFee = _collectExitFee(payout, "claim_project_share");
         uint256 netPayout = payout - exitFee;
         require(netPayout > 0, "Payout too small after exit fee.");
@@ -1931,45 +1905,13 @@ contract Project_DAO {
         emit EconomicProjectShareClaimed(projectId, msg.sender, netPayout);
     }
 
-    /**
-     * @notice Cancel an open or active project. Only proposer or contract owner.
-     *         Funders can then call refundProjectFunder to recover their ETH.
-     * @param projectId  ID of the project to cancel.
-     */
     function cancelProject(uint256 projectId) external whenNotPaused {
-        EconomicProject storage proj = economicProjects[projectId];
-        require(proj.id != 0, "Project not found.");
-        require(
-            msg.sender == proj.proposer || msg.sender == owner,
-            "Only proposer or owner can cancel."
-        );
-        require(
-            proj.status == ProjectStatus.Open || proj.status == ProjectStatus.Active,
-            "Project cannot be cancelled in current status."
-        );
-
-        proj.status = ProjectStatus.Cancelled;
-        require(activeProjectCount[proj.proposer] > 0, "Active project count underflow.");
-        activeProjectCount[proj.proposer]--;
-        emit EconomicProjectCancelled(projectId);
+        _projectStore.cancel(projectId, msg.sender, owner);
     }
 
-    /**
-     * @notice Funder reclaims their contribution from a cancelled project.
-     * @param projectId  ID of the cancelled project.
-     */
     function refundProjectFunder(uint256 projectId) external whenNotPaused nonReentrant {
-        EconomicProject storage proj = economicProjects[projectId];
-        require(proj.id != 0, "Project not found.");
-        require(proj.status == ProjectStatus.Cancelled, "Project is not cancelled.");
+        uint256 amount = _projectStore.refundFunder(projectId, msg.sender);
 
-        uint256 amount = projectFunderContributions[projectId][msg.sender];
-        require(amount > 0, "No contribution to refund.");
-
-        projectFunderContributions[projectId][msg.sender] = 0;
-        proj.totalFunded -= amount;
-
-        // Commerce Blackhole: exit fee on value leaving the protocol
         uint256 exitFee = _collectExitFee(amount, "refund_project_funder");
         uint256 netRefund = amount - exitFee;
         require(netRefund > 0, "Refund too small after exit fee.");
@@ -1982,56 +1924,27 @@ contract Project_DAO {
 
     // ─── Economic Project View Functions ─────────────────────────────────────
 
-    /// @notice Fetch a single economic project by ID.
     function getEconomicProject(uint256 projectId) external view returns (
-        uint256 id,
-        address proposer,
-        string memory metadataURI,
-        uint256 targetBudget,
-        uint256 totalFunded,
-        uint256 deadline,
-        ProjectStatus status,
-        uint256 createdAt,
-        uint256 contributorCount,
-        uint256 funderCount
+        uint256 id, address proposer, string memory metadataURI,
+        uint256 targetBudget, uint256 totalFunded, uint256 deadline,
+        EconomicProjectLib.ProjectStatus status, uint256 createdAt,
+        uint256 contributorCount, uint256 funderCount
     ) {
-        EconomicProject storage p = economicProjects[projectId];
-        return (
-            p.id, p.proposer, p.metadataURI, p.targetBudget,
-            p.totalFunded, p.deadline, p.status, p.createdAt,
-            p.contributorCount, p.funderCount
-        );
+        return _projectStore.getProject(projectId);
     }
 
-    /// @notice Returns approved contributor addresses for a project.
     function getProjectContributors(uint256 projectId) external view returns (address[] memory) {
-        return _projectContributors[projectId];
+        return _projectStore.getContributors(projectId);
     }
 
-    /// @notice Returns funder addresses for a project.
     function getProjectFunders(uint256 projectId) external view returns (address[] memory) {
-        return _projectFunders[projectId];
+        return _projectStore.getFunders(projectId);
     }
 
-    /**
-     * @notice Paginated list of economic projects (most recent first).
-     * @param offset  0-based starting index from the newest project.
-     * @param limit   Maximum number of projects to return.
-     */
     function getEconomicProjects(uint256 offset, uint256 limit)
-        external
-        view
-        returns (EconomicProject[] memory page, uint256 total)
+        external view returns (EconomicProjectLib.EconomicProject[] memory page, uint256 total)
     {
-        total = currentProjectId - 1;
-        if (total == 0 || offset >= total) return (new EconomicProject[](0), total);
-        uint256 end = offset + limit;
-        if (end > total) end = total;
-        page = new EconomicProject[](end - offset);
-        for (uint256 i = 0; i < page.length; i++) {
-            // Return newest first: projectId = total - offset - i
-            page[i] = economicProjects[total - offset - i];
-        }
+        return _projectStore.getProjects(offset, limit);
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -2361,29 +2274,12 @@ contract Project_DAO {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // ─── PRIORITY 2: Service Agreements with Conditional Escrow ──────────────
+    // ─── PRIORITY 2: Service Agreements (delegated to ServiceAgreementLib) ───
     // ═══════════════════════════════════════════════════════════════════════════
 
-    enum AgreementStatus { Active, Delivered, Completed, Disputed, Cancelled }
+    ServiceAgreementLib.Store private _serviceStore;
 
-    struct ServiceAgreement {
-        uint256 id;
-        address client;       // Agent requesting service
-        address provider;     // Agent delivering service
-        address arbiter;      // Optional arbiter (address(0) = no arbiter)
-        uint256 amount;       // Native ETH locked in escrow
-        string  description;  // Service description / terms
-        AgreementStatus status;
-        uint256 createdAt;
-        uint256 deadline;     // Provider must deliver before this time
-        bytes32 deliveryHash; // Proof of delivery (set by provider)
-    }
-
-    mapping(uint256 => ServiceAgreement) public serviceAgreements;
-    uint256 public currentServiceAgreementId;
-    /// @notice Tracks active agreements per agent (client + provider). Blocks leaveDAO when > 0.
-    mapping(address => uint256) public activeAgreementCount;
-
+    // Events re-declared for ABI visibility; emitted by library via delegatecall.
     event ServiceAgreementCreated(uint256 indexed agreementId, address indexed client, address indexed provider, address arbiter, uint256 amount, uint256 deadline, string description);
     event ServiceDeliverySubmitted(uint256 indexed agreementId, address indexed provider, bytes32 deliveryHash);
     event ServiceAgreementCompleted(uint256 indexed agreementId, address indexed client, address indexed provider, uint256 paidAmount);
@@ -2391,12 +2287,26 @@ contract Project_DAO {
     event ServiceDisputeResolved(uint256 indexed agreementId, bool inFavorOfProvider, address indexed resolver);
     event ServiceAgreementCancelled(uint256 indexed agreementId, address indexed cancelledBy);
 
-    /// @notice Client creates a service agreement, locking native ETH from their escrow.
-    /// @param _provider  The agent who will deliver the service.
-    /// @param _arbiter   Optional dispute resolver (address(0) for no arbiter).
-    /// @param _amount    Amount of native ETH to lock from client's escrow.
-    /// @param _deadline  Unix timestamp by which provider must deliver.
-    /// @param _description Service terms / description.
+    /// @notice Shim: expose serviceAgreements mapping from library store.
+    function serviceAgreements(uint256 agreementId) external view returns (
+        uint256 id, address client, address provider, address arbiter,
+        uint256 amount, string memory description, ServiceAgreementLib.AgreementStatus status,
+        uint256 createdAt, uint256 deadline, bytes32 deliveryHash
+    ) {
+        return _serviceStore.getAgreement(agreementId);
+    }
+
+    /// @notice Shim: expose currentServiceAgreementId from library store.
+    function currentServiceAgreementId() external view returns (uint256) {
+        uint256 v = _serviceStore.currentId;
+        return v == 0 ? 1 : v;
+    }
+
+    /// @notice Shim: expose activeAgreementCount from library store.
+    function activeAgreementCount(address agent) external view returns (uint256) {
+        return _serviceStore.activeCount[agent];
+    }
+
     function createServiceAgreement(
         address _provider,
         address _arbiter,
@@ -2405,174 +2315,90 @@ contract Project_DAO {
         string calldata _description
     ) external onlyRegisteredAgent whenNotPaused returns (uint256) {
         require(agents[_provider].registered, "Provider must be a registered agent.");
-        require(_provider != msg.sender, "Cannot create agreement with yourself.");
-        require(_amount > 0, "Amount must be greater than zero.");
-        require(_deadline > block.timestamp, "Deadline must be in the future.");
         require(agents[msg.sender].nativeEscrowBalance >= _amount, "Insufficient escrow balance.");
         if (_arbiter != address(0)) {
             require(agents[_arbiter].registered, "Arbiter must be a registered agent.");
-            require(_arbiter != msg.sender && _arbiter != _provider, "Arbiter must be a third party.");
         }
 
         agents[msg.sender].nativeEscrowBalance -= _amount;
-        activeAgreementCount[msg.sender]++;
-        activeAgreementCount[_provider]++;
-
-        uint256 id = currentServiceAgreementId++;
-        serviceAgreements[id] = ServiceAgreement({
-            id: id,
-            client: msg.sender,
-            provider: _provider,
-            arbiter: _arbiter,
-            amount: _amount,
-            description: _description,
-            status: AgreementStatus.Active,
-            createdAt: block.timestamp,
-            deadline: _deadline,
-            deliveryHash: bytes32(0)
-        });
-
-        emit ServiceAgreementCreated(id, msg.sender, _provider, _arbiter, _amount, _deadline, _description);
-        return id;
+        return _serviceStore.create(msg.sender, _provider, _arbiter, _amount, _deadline, _description);
     }
 
-    /// @notice Provider submits proof of delivery.
-    /// @param _agreementId The service agreement ID.
-    /// @param _deliveryHash Hash of the delivery proof (e.g. keccak256 of result data).
     function submitDelivery(uint256 _agreementId, bytes32 _deliveryHash) external onlyRegisteredAgent whenNotPaused {
-        ServiceAgreement storage a = serviceAgreements[_agreementId];
-        require(a.id > 0, "Agreement not found.");
-        require(a.provider == msg.sender, "Only the provider can submit delivery.");
-        require(a.status == AgreementStatus.Active, "Agreement is not active.");
-        require(block.timestamp <= a.deadline, "Delivery deadline has passed.");
-        require(_deliveryHash != bytes32(0), "Delivery hash cannot be empty.");
-
-        a.deliveryHash = _deliveryHash;
-        a.status = AgreementStatus.Delivered;
-
-        emit ServiceDeliverySubmitted(_agreementId, msg.sender, _deliveryHash);
+        _serviceStore.submitDelivery(_agreementId, msg.sender, _deliveryHash);
     }
 
-    /// @notice Client approves delivery and releases escrowed funds to provider.
-    /// @param _agreementId The service agreement ID.
     function approveDelivery(uint256 _agreementId) external onlyRegisteredAgent whenNotPaused nonReentrant {
-        ServiceAgreement storage a = serviceAgreements[_agreementId];
-        require(a.id > 0, "Agreement not found.");
-        require(a.client == msg.sender, "Only the client can approve delivery.");
-        require(a.status == AgreementStatus.Delivered, "Delivery not yet submitted.");
+        (address provider, uint256 amount) = _serviceStore.approveDelivery(_agreementId, msg.sender);
 
-        a.status = AgreementStatus.Completed;
-        activeAgreementCount[a.client]--;
-        activeAgreementCount[a.provider]--;
+        uint256 fee = _collectNativeFee(amount, "service_agreement_complete");
+        uint256 net = amount - fee;
+        agents[provider].nativeEscrowBalance += net;
 
-        uint256 fee = _collectNativeFee(a.amount, "service_agreement_complete");
-        uint256 net = a.amount - fee;
-        agents[a.provider].nativeEscrowBalance += net;
-
-        emit ServiceAgreementCompleted(_agreementId, a.client, a.provider, net);
+        emit ServiceAgreementCompleted(_agreementId, msg.sender, provider, net);
     }
 
-    /// @notice Dispute a service agreement. Can be called by client or provider.
-    ///         Requires an arbiter to have been set.
     function disputeServiceAgreement(uint256 _agreementId) external onlyRegisteredAgent whenNotPaused {
-        ServiceAgreement storage a = serviceAgreements[_agreementId];
-        require(a.id > 0, "Agreement not found.");
-        require(msg.sender == a.client || msg.sender == a.provider, "Not a party to this agreement.");
-        require(a.status == AgreementStatus.Active || a.status == AgreementStatus.Delivered, "Cannot dispute in current status.");
-        require(a.arbiter != address(0), "No arbiter assigned - use cancelServiceAgreement instead.");
-
-        a.status = AgreementStatus.Disputed;
-        emit ServiceAgreementDisputed(_agreementId, msg.sender);
+        _serviceStore.dispute(_agreementId, msg.sender);
     }
 
-    /// @notice Arbiter resolves a disputed agreement, directing funds to provider or back to client.
-    /// @param _agreementId The service agreement ID.
-    /// @param _inFavorOfProvider True = release to provider, False = refund to client.
     function resolveServiceDispute(uint256 _agreementId, bool _inFavorOfProvider) external onlyRegisteredAgent whenNotPaused nonReentrant {
-        ServiceAgreement storage a = serviceAgreements[_agreementId];
-        require(a.id > 0, "Agreement not found.");
-        require(a.arbiter == msg.sender, "Only the arbiter can resolve disputes.");
-        require(a.status == AgreementStatus.Disputed, "Agreement is not disputed.");
+        (address client, address provider, uint256 amount) = _serviceStore.resolveDispute(_agreementId, msg.sender, _inFavorOfProvider);
 
-        a.status = AgreementStatus.Completed;
-        activeAgreementCount[a.client]--;
-        activeAgreementCount[a.provider]--;
-
-        uint256 fee = _collectNativeFee(a.amount, "service_dispute_resolution");
-        uint256 net = a.amount - fee;
+        uint256 fee = _collectNativeFee(amount, "service_dispute_resolution");
+        uint256 net = amount - fee;
 
         if (_inFavorOfProvider) {
-            agents[a.provider].nativeEscrowBalance += net;
+            agents[provider].nativeEscrowBalance += net;
         } else {
-            agents[a.client].nativeEscrowBalance += net;
+            agents[client].nativeEscrowBalance += net;
         }
-
-        emit ServiceDisputeResolved(_agreementId, _inFavorOfProvider, msg.sender);
     }
 
-    /// @notice Cancel an active agreement (no delivery yet). Client gets refund.
-    ///         Only client can cancel an Active agreement. If deadline passed and
-    ///         no delivery, client can also cancel a non-delivered agreement.
     function cancelServiceAgreement(uint256 _agreementId) external onlyRegisteredAgent whenNotPaused nonReentrant {
-        ServiceAgreement storage a = serviceAgreements[_agreementId];
-        require(a.id > 0, "Agreement not found.");
-        require(a.status == AgreementStatus.Active, "Can only cancel active agreements.");
-        require(msg.sender == a.client || msg.sender == a.provider, "Not a party to this agreement.");
-        require(
-            msg.sender == a.client || block.timestamp > a.deadline,
-            "Provider can only cancel after deadline."
-        );
-
-        a.status = AgreementStatus.Cancelled;
-        activeAgreementCount[a.client]--;
-        activeAgreementCount[a.provider]--;
-        agents[a.client].nativeEscrowBalance += a.amount;
-
-        emit ServiceAgreementCancelled(_agreementId, msg.sender);
+        (address client, uint256 amount) = _serviceStore.cancel(_agreementId, msg.sender);
+        agents[client].nativeEscrowBalance += amount;
     }
 
-    /// @notice Get a service agreement by ID.
     function getServiceAgreement(uint256 _agreementId) external view returns (
         uint256 id, address client, address provider, address arbiter,
-        uint256 amount, string memory description, AgreementStatus status,
+        uint256 amount, string memory description, ServiceAgreementLib.AgreementStatus status,
         uint256 createdAt, uint256 deadline, bytes32 deliveryHash
     ) {
-        ServiceAgreement storage a = serviceAgreements[_agreementId];
-        return (a.id, a.client, a.provider, a.arbiter, a.amount, a.description, a.status, a.createdAt, a.deadline, a.deliveryHash);
+        return _serviceStore.getAgreement(_agreementId);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // ─── PRIORITY 3: Recurring Payment Streams ──────────────────────────────
+    // ─── PRIORITY 3: Payment Streams (delegated to PaymentStreamLib) ────────
     // ═══════════════════════════════════════════════════════════════════════════
 
-    enum StreamStatus { Active, Paused, Cancelled, Completed }
+    PaymentStreamLib.Store private _streamStore;
 
-    struct PaymentStream {
-        uint256 id;
-        address payer;           // Agent funding the stream
-        address recipient;       // Agent receiving payments
-        uint256 ratePerSecond;   // Wei per second
-        uint256 totalDeposited;  // Total deposited into this stream
-        uint256 totalWithdrawn;  // Total already claimed by recipient
-        uint256 startTime;       // When the stream starts
-        uint256 stopTime;        // When the stream ends
-        StreamStatus status;
-    }
-
-    mapping(uint256 => PaymentStream) public paymentStreams;
-    uint256 public currentPaymentStreamId;
-    /// @notice Tracks active streams per agent (payer + recipient). Blocks leaveDAO when > 0.
-    mapping(address => uint256) public activeStreamCount;
-
+    // Events re-declared for ABI visibility; emitted by library via delegatecall.
     event PaymentStreamCreated(uint256 indexed streamId, address indexed payer, address indexed recipient, uint256 ratePerSecond, uint256 totalDeposit, uint256 startTime, uint256 stopTime);
     event PaymentStreamWithdrawn(uint256 indexed streamId, address indexed recipient, uint256 amount);
     event PaymentStreamCancelled(uint256 indexed streamId, address indexed cancelledBy, uint256 recipientAmount, uint256 payerRefund);
 
-    /// @notice Create a payment stream from caller's escrow to recipient.
-    /// @param _recipient  Agent receiving the stream.
-    /// @param _totalDeposit Total native ETH to stream (from caller's escrow).
-    /// @param _startTime  Unix timestamp when streaming begins.
-    /// @param _stopTime   Unix timestamp when streaming ends.
+    /// @notice Shim: expose paymentStreams mapping from library store.
+    function paymentStreams(uint256 streamId) external view returns (
+        uint256 id, address payer, address recipient, uint256 ratePerSecond,
+        uint256 totalDeposited, uint256 totalWithdrawn, uint256 startTime,
+        uint256 stopTime, PaymentStreamLib.StreamStatus status, uint256 withdrawable
+    ) {
+        return _streamStore.getStream(streamId);
+    }
+
+    /// @notice Shim: expose currentPaymentStreamId from library store.
+    function currentPaymentStreamId() external view returns (uint256) {
+        uint256 v = _streamStore.currentId;
+        return v == 0 ? 1 : v;
+    }
+
+    /// @notice Shim: expose activeStreamCount from library store.
+    function activeStreamCount(address agent) external view returns (uint256) {
+        return _streamStore.activeCount[agent];
+    }
+
     function createPaymentStream(
         address _recipient,
         uint256 _totalDeposit,
@@ -2580,133 +2406,55 @@ contract Project_DAO {
         uint256 _stopTime
     ) external onlyRegisteredAgent whenNotPaused returns (uint256) {
         require(agents[_recipient].registered, "Recipient must be a registered agent.");
-        require(_recipient != msg.sender, "Cannot stream to yourself.");
-        require(_totalDeposit > 0, "Deposit must be greater than zero.");
-        require(_stopTime > _startTime, "Stop time must be after start time.");
-        require(_startTime >= block.timestamp, "Start time must be now or in the future.");
         require(agents[msg.sender].nativeEscrowBalance >= _totalDeposit, "Insufficient escrow balance.");
 
-        uint256 duration = _stopTime - _startTime;
-        uint256 ratePerSecond = _totalDeposit / duration;
-        require(ratePerSecond > 0, "Rate per second too low - increase deposit or shorten duration.");
-
-        // Adjust totalDeposit to exact multiple of rate to avoid dust
-        uint256 adjustedDeposit = ratePerSecond * duration;
+        (uint256 streamId, uint256 adjustedDeposit) = _streamStore.create(
+            msg.sender, _recipient, _totalDeposit, _startTime, _stopTime
+        );
         agents[msg.sender].nativeEscrowBalance -= adjustedDeposit;
-        activeStreamCount[msg.sender]++;
-        activeStreamCount[_recipient]++;
-
-        uint256 id = currentPaymentStreamId++;
-        paymentStreams[id] = PaymentStream({
-            id: id,
-            payer: msg.sender,
-            recipient: _recipient,
-            ratePerSecond: ratePerSecond,
-            totalDeposited: adjustedDeposit,
-            totalWithdrawn: 0,
-            startTime: _startTime,
-            stopTime: _stopTime,
-            status: StreamStatus.Active
-        });
-
-        emit PaymentStreamCreated(id, msg.sender, _recipient, ratePerSecond, adjustedDeposit, _startTime, _stopTime);
-        return id;
+        return streamId;
     }
 
-    /// @notice Calculate how much the recipient can currently withdraw from a stream.
     function streamBalanceOf(uint256 _streamId) public view returns (uint256) {
-        PaymentStream storage s = paymentStreams[_streamId];
-        if (s.id == 0 || s.status == StreamStatus.Cancelled) return 0;
-
-        uint256 elapsed;
-        if (block.timestamp >= s.stopTime) {
-            elapsed = s.stopTime - s.startTime;
-        } else if (block.timestamp > s.startTime) {
-            elapsed = block.timestamp - s.startTime;
-        } else {
-            elapsed = 0;
-        }
-
-        uint256 earned = elapsed * s.ratePerSecond;
-        return earned > s.totalWithdrawn ? earned - s.totalWithdrawn : 0;
+        return _streamStore.balanceOf(_streamId);
     }
 
-    /// @notice Recipient withdraws accrued funds from a stream into their escrow.
     function withdrawFromStream(uint256 _streamId) external onlyRegisteredAgent whenNotPaused nonReentrant {
-        PaymentStream storage s = paymentStreams[_streamId];
-        require(s.id > 0, "Stream not found.");
-        require(s.recipient == msg.sender, "Only the recipient can withdraw.");
-        require(s.status == StreamStatus.Active, "Stream is not active.");
-
-        // Inline balance calc to avoid redundant SLOAD from streamBalanceOf
-        uint256 elapsed;
-        if (block.timestamp >= s.stopTime) {
-            elapsed = s.stopTime - s.startTime;
-        } else if (block.timestamp > s.startTime) {
-            elapsed = block.timestamp - s.startTime;
-        }
-        uint256 available = elapsed * s.ratePerSecond;
-        available = available > s.totalWithdrawn ? available - s.totalWithdrawn : 0;
-        require(available > 0, "No funds available to withdraw.");
-
-        s.totalWithdrawn += available;
+        (uint256 available, , , ) = _streamStore.withdraw(_streamId, msg.sender);
 
         uint256 fee = _collectNativeFee(available, "stream_withdraw");
         uint256 net = available - fee;
         agents[msg.sender].nativeEscrowBalance += net;
 
-        // Auto-complete if fully withdrawn
-        if (s.totalWithdrawn >= s.totalDeposited) {
-            s.status = StreamStatus.Completed;
-            activeStreamCount[s.payer]--;
-            activeStreamCount[s.recipient]--;
-        }
-
         emit PaymentStreamWithdrawn(_streamId, msg.sender, net);
     }
 
-    /// @notice Cancel a stream. Accrued funds go to recipient, remainder refunded to payer.
-    ///         Either payer or recipient can cancel.
     function cancelPaymentStream(uint256 _streamId) external onlyRegisteredAgent whenNotPaused nonReentrant {
-        PaymentStream storage s = paymentStreams[_streamId];
-        require(s.id > 0, "Stream not found.");
-        require(s.status == StreamStatus.Active, "Stream is not active.");
-        require(msg.sender == s.payer || msg.sender == s.recipient, "Not a party to this stream.");
-
-        // Calculate accrued amount BEFORE changing status (streamBalanceOf returns 0 if Cancelled)
-        uint256 recipientAmount = streamBalanceOf(_streamId);
-        uint256 payerRefund = s.totalDeposited - s.totalWithdrawn - recipientAmount;
-
-        s.status = StreamStatus.Cancelled;
-        activeStreamCount[s.payer]--;
-        activeStreamCount[s.recipient]--;
+        (uint256 recipientAmount, uint256 payerRefund, address payer, address recipient) =
+            _streamStore.cancel(_streamId, msg.sender);
 
         // Pay recipient their earned portion (with fee)
         uint256 recipientNet = 0;
         if (recipientAmount > 0) {
-            s.totalWithdrawn += recipientAmount;
             uint256 fee = _collectNativeFee(recipientAmount, "stream_cancel_recipient");
             recipientNet = recipientAmount - fee;
-            agents[s.recipient].nativeEscrowBalance += recipientNet;
+            agents[recipient].nativeEscrowBalance += recipientNet;
         }
 
         // Refund payer the unearned portion (no fee on refund)
         if (payerRefund > 0) {
-            agents[s.payer].nativeEscrowBalance += payerRefund;
+            agents[payer].nativeEscrowBalance += payerRefund;
         }
 
         emit PaymentStreamCancelled(_streamId, msg.sender, recipientNet, payerRefund);
     }
 
-    /// @notice Get a payment stream by ID.
     function getPaymentStream(uint256 _streamId) external view returns (
         uint256 id, address payer, address recipient, uint256 ratePerSecond,
         uint256 totalDeposited, uint256 totalWithdrawn, uint256 startTime,
-        uint256 stopTime, StreamStatus status, uint256 withdrawable
+        uint256 stopTime, PaymentStreamLib.StreamStatus status, uint256 withdrawable
     ) {
-        PaymentStream storage s = paymentStreams[_streamId];
-        return (s.id, s.payer, s.recipient, s.ratePerSecond, s.totalDeposited, s.totalWithdrawn,
-                s.startTime, s.stopTime, s.status, streamBalanceOf(_streamId));
+        return _streamStore.getStream(_streamId);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -2921,12 +2669,14 @@ contract Project_DAO {
         address _endorsed,
         string calldata _capability
     ) external onlyRegisteredAgent whenNotPaused nonReentrant {
-        ServiceAgreement storage a = serviceAgreements[_agreementId];
-        require(a.id > 0, "Agreement not found.");
-        require(a.status == AgreementStatus.Completed, "Agreement must be completed.");
+        (uint256 aId, address client, address provider, ,
+         , , ServiceAgreementLib.AgreementStatus status,
+         , , ) = _serviceStore.getAgreement(_agreementId);
+        require(aId > 0, "Agreement not found.");
+        require(status == ServiceAgreementLib.AgreementStatus.Completed, "Agreement must be completed.");
         require(
-            (msg.sender == a.client && _endorsed == a.provider) ||
-            (msg.sender == a.provider && _endorsed == a.client),
+            (msg.sender == client && _endorsed == provider) ||
+            (msg.sender == provider && _endorsed == client),
             "Can only endorse the other party in the agreement."
         );
         uint256 weight = _getReputationTier(agentReputation[msg.sender]) + 1;
@@ -3136,9 +2886,10 @@ contract Project_DAO {
 
     /// @dev True if `who` is a party to service agreement `id`.
     function _isAgreementParty(uint256 _agreementId, address who) internal view returns (bool) {
-        ServiceAgreement storage a = serviceAgreements[_agreementId];
-        if (a.id == 0) return false;
-        return who == a.client || who == a.provider || (a.arbiter != address(0) && who == a.arbiter);
+        (uint256 aId, address client, address provider, address arbiter,
+         , , , , , ) = _serviceStore.getAgreement(_agreementId);
+        if (aId == 0) return false;
+        return who == client || who == provider || (arbiter != address(0) && who == arbiter);
     }
 
     /// @dev Require every recipient in `_recipients` to be a party to the
@@ -3161,7 +2912,7 @@ contract Project_DAO {
         string[] calldata _ciphertexts,
         bytes32 _contentHash
     ) external onlyRegisteredAgent whenNotPaused {
-        require(serviceAgreements[_agreementId].id != 0, "Agreement not found.");
+        require(_serviceStore.agreements[_agreementId].id != 0, "Agreement not found.");
         require(_isAgreementParty(_agreementId, msg.sender), "Only parties can attach encrypted payloads.");
         _requireAllPartiesInAgreement(_agreementId, _recipients);
         PKILib.attachAgreementEnvelope(
@@ -3197,7 +2948,7 @@ contract Project_DAO {
         address[] calldata _expectedSigners,
         bytes[] calldata _signatures
     ) external onlyRegisteredAgent whenNotPaused {
-        require(serviceAgreements[_agreementId].id != 0, "Agreement not found.");
+        require(_serviceStore.agreements[_agreementId].id != 0, "Agreement not found.");
         require(_isAgreementParty(_agreementId, msg.sender), "Only parties can attach encrypted payloads.");
         _requireAllPartiesInAgreement(_agreementId, _recipients);
         // Every expected signer must also be a party to the agreement.

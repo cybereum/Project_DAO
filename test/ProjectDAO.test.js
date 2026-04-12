@@ -26,12 +26,28 @@ async function _deployFixture() {
   const MessagingLib = await ethers.getContractFactory("MessagingLib");
   const msgLib = await MessagingLib.deploy();
   await msgLib.waitForDeployment();
+  const EconomicProjectLib = await ethers.getContractFactory("EconomicProjectLib");
+  const projLib = await EconomicProjectLib.deploy();
+  await projLib.waitForDeployment();
+  const ServiceAgreementLib = await ethers.getContractFactory("ServiceAgreementLib");
+  const svcLib = await ServiceAgreementLib.deploy();
+  await svcLib.waitForDeployment();
+  const PaymentStreamLib = await ethers.getContractFactory("PaymentStreamLib");
+  const streamLib = await PaymentStreamLib.deploy();
+  await streamLib.waitForDeployment();
+  const TimelockLib = await ethers.getContractFactory("TimelockLib");
+  const tlLib = await TimelockLib.deploy();
+  await tlLib.waitForDeployment();
   const DAO = await ethers.getContractFactory("Project_DAO", {
     libraries: {
       PKILib: await pkiLib.getAddress(),
       TrustLib: await trustLib.getAddress(),
       FeatureKitLib: await fkLib.getAddress(),
       MessagingLib: await msgLib.getAddress(),
+      EconomicProjectLib: await projLib.getAddress(),
+      ServiceAgreementLib: await svcLib.getAddress(),
+      PaymentStreamLib: await streamLib.getAddress(),
+      TimelockLib: await tlLib.getAddress(),
     },
   });
   const dao = await DAO.deploy();
@@ -5608,12 +5624,28 @@ describe("EIP-7825 deploy-gas guardrail", () => {
     const msgLib = await MessagingLib.deploy();
     await msgLib.waitForDeployment();
 
+    const EconomicProjectLib = await ethers.getContractFactory("EconomicProjectLib");
+    const projLib = await EconomicProjectLib.deploy();
+    await projLib.waitForDeployment();
+    const ServiceAgreementLib = await ethers.getContractFactory("ServiceAgreementLib");
+    const svcLib = await ServiceAgreementLib.deploy();
+    await svcLib.waitForDeployment();
+    const PaymentStreamLib = await ethers.getContractFactory("PaymentStreamLib");
+    const streamLib = await PaymentStreamLib.deploy();
+    await streamLib.waitForDeployment();
+    const TimelockLib = await ethers.getContractFactory("TimelockLib");
+    const tlLib = await TimelockLib.deploy();
+    await tlLib.waitForDeployment();
     const DAO = await ethers.getContractFactory("Project_DAO", {
       libraries: {
-        PKILib:        await pkiLib.getAddress(),
-        TrustLib:      await trustLib.getAddress(),
-        FeatureKitLib: await fkLib.getAddress(),
-        MessagingLib:  await msgLib.getAddress(),
+        PKILib:              await pkiLib.getAddress(),
+        TrustLib:            await trustLib.getAddress(),
+        FeatureKitLib:       await fkLib.getAddress(),
+        MessagingLib:        await msgLib.getAddress(),
+        EconomicProjectLib:  await projLib.getAddress(),
+        ServiceAgreementLib: await svcLib.getAddress(),
+        PaymentStreamLib:    await streamLib.getAddress(),
+        TimelockLib:         await tlLib.getAddress(),
       },
     });
     const deployTx = await DAO.getDeployTransaction();
@@ -5651,12 +5683,28 @@ describe("EIP-7825 deploy-gas guardrail", () => {
     const MessagingLib = await ethers.getContractFactory("MessagingLib");
     const msgLib = await MessagingLib.deploy();
     await msgLib.waitForDeployment();
+    const EconomicProjectLib = await ethers.getContractFactory("EconomicProjectLib");
+    const projLib = await EconomicProjectLib.deploy();
+    await projLib.waitForDeployment();
+    const ServiceAgreementLib = await ethers.getContractFactory("ServiceAgreementLib");
+    const svcLib = await ServiceAgreementLib.deploy();
+    await svcLib.waitForDeployment();
+    const PaymentStreamLib = await ethers.getContractFactory("PaymentStreamLib");
+    const streamLib = await PaymentStreamLib.deploy();
+    await streamLib.waitForDeployment();
+    const TimelockLib = await ethers.getContractFactory("TimelockLib");
+    const tlLib = await TimelockLib.deploy();
+    await tlLib.waitForDeployment();
     const DAO = await ethers.getContractFactory("Project_DAO", {
       libraries: {
-        PKILib:        await pkiLib.getAddress(),
-        TrustLib:      await trustLib.getAddress(),
-        FeatureKitLib: await fkLib.getAddress(),
-        MessagingLib:  await msgLib.getAddress(),
+        PKILib:              await pkiLib.getAddress(),
+        TrustLib:            await trustLib.getAddress(),
+        FeatureKitLib:       await fkLib.getAddress(),
+        MessagingLib:        await msgLib.getAddress(),
+        EconomicProjectLib:  await projLib.getAddress(),
+        ServiceAgreementLib: await svcLib.getAddress(),
+        PaymentStreamLib:    await streamLib.getAddress(),
+        TimelockLib:         await tlLib.getAddress(),
       },
     });
     const dao = await DAO.connect(deployer).deploy();
@@ -5713,12 +5761,28 @@ describe("EIP-7825 deploy-gas guardrail", () => {
     const MessagingLib = await ethers.getContractFactory("MessagingLib");
     const msgLib = await MessagingLib.deploy();
     await msgLib.waitForDeployment();
+    const EconomicProjectLib = await ethers.getContractFactory("EconomicProjectLib");
+    const projLib = await EconomicProjectLib.deploy();
+    await projLib.waitForDeployment();
+    const ServiceAgreementLib = await ethers.getContractFactory("ServiceAgreementLib");
+    const svcLib = await ServiceAgreementLib.deploy();
+    await svcLib.waitForDeployment();
+    const PaymentStreamLib = await ethers.getContractFactory("PaymentStreamLib");
+    const streamLib = await PaymentStreamLib.deploy();
+    await streamLib.waitForDeployment();
+    const TimelockLib = await ethers.getContractFactory("TimelockLib");
+    const tlLib = await TimelockLib.deploy();
+    await tlLib.waitForDeployment();
     const DAO = await ethers.getContractFactory("Project_DAO", {
       libraries: {
-        PKILib:        await pkiLib.getAddress(),
-        TrustLib:      await trustLib.getAddress(),
-        FeatureKitLib: await fkLib.getAddress(),
-        MessagingLib:  await msgLib.getAddress(),
+        PKILib:              await pkiLib.getAddress(),
+        TrustLib:            await trustLib.getAddress(),
+        FeatureKitLib:       await fkLib.getAddress(),
+        MessagingLib:        await msgLib.getAddress(),
+        EconomicProjectLib:  await projLib.getAddress(),
+        ServiceAgreementLib: await svcLib.getAddress(),
+        PaymentStreamLib:    await streamLib.getAddress(),
+        TimelockLib:         await tlLib.getAddress(),
       },
     });
     const dao = await DAO.deploy();

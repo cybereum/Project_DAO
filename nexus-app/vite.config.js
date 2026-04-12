@@ -18,6 +18,12 @@ export default defineConfig(({ mode }) => {
 
   return {
   plugins: [react(), tailwindcss()],
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: ['./src/test/setup.js'],
+    css: false,
+  },
   build: {
     // Disable source maps for production
     sourcemap: false,
