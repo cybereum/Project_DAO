@@ -843,6 +843,16 @@ cd nexus-app && npm run lint
 - No CSS preprocessors — Tailwind only
 - ethers.js v6 (not v5) — use `ethers.parseEther()` not `ethers.utils.parseEther()`
 
+### Change discipline
+
+1. **Think before changing** — State assumptions before modifying contract storage, fee logic, or the Router selector map. If a request is ambiguous (e.g., "fix the fee" — which fee path?), ask. Surface tradeoffs when multiple approaches exist, especially for contract changes that are immutable post-deployment.
+
+2. **Simplicity** — No speculative abstractions. No "flexibility" that wasn't requested. If a contract function can be 20 lines, don't make it 60. The split architecture already has complexity overhead — don't add more.
+
+3. **Surgical changes** — Touch only what the task requires. Don't refactor adjacent code, update unrelated comments, or "improve" formatting. Match existing patterns (custom store, not Redux; Tailwind classes, not CSS modules; ethers v6 syntax). If your changes orphan an import or variable, clean up *your* orphans only. If you notice pre-existing dead code, mention it — don't delete it.
+
+4. **Verify before reporting done** — After contract changes: `npx hardhat test` (all 698 tests must pass). After frontend changes: `cd nexus-app && npm run lint && npm run build`. After SDK changes: `cd sdk && npm test`. Don't report success without running the relevant check. For bug fixes, write or identify a test that reproduces the bug first.
+
 ---
 
 ## 10. SECURITY MODEL
