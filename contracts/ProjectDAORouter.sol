@@ -49,6 +49,13 @@ contract ProjectDAORouter {
         commerce = _commerce;
         network = _network;
         _deployer = msg.sender;
+
+        // Pre-set owner in proxy storage to prevent initializeCore frontrunning.
+        // ProjectDAOStorage layout: slot 0 = _reentrancyStatus, slot 1 = owner (20 bytes) + _paused (1 byte).
+        // Writing caller() to slot 1 sets owner = deployer, _paused = false.
+        // This makes initializeCore's require(msg.sender == owner) check pass
+        // only for the deployer, closing the frontrunning window.
+        assembly { sstore(1, caller()) }
     }
 
     // ─── Storage access helpers ─────────────────────────────────────────

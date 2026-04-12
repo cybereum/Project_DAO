@@ -84,11 +84,11 @@ contract ProjectDAOCommerce is ProjectDAOStorage {
     function activeProjectCount(address p) external view returns (uint256) { return _projectStore.activeProjectCount[p]; }
 
     function createEconomicProject(string calldata metadataURI, uint256 targetBudget, uint256 deadline) external whenNotPaused requireCommerceInit onlyRegisteredAgent returns (uint256) { return _projectStore.create(msg.sender, metadataURI, targetBudget, deadline); }
-    function fundProject(uint256 projectId) external payable whenNotPaused { require(msg.value > 0, "Must send ETH."); uint256 fee = _collectNativeFee(msg.value, "fundProject"); _projectStore.fund(projectId, msg.sender, msg.value - fee); }
-    function applyToProject(uint256 projectId) external whenNotPaused onlyRegisteredAgent { _projectStore.applyToProject(projectId, msg.sender); }
-    function approveContributor(uint256 projectId, address contributor, uint256 sharesBps) external whenNotPaused { _projectStore.approveContributor(projectId, msg.sender, contributor, sharesBps); }
-    function completeProject(uint256 projectId) external whenNotPaused { _projectStore.complete(projectId, msg.sender); }
-    function cancelProject(uint256 projectId) external whenNotPaused { _projectStore.cancel(projectId, msg.sender, owner); }
+    function fundProject(uint256 projectId) external payable whenNotPaused requireCommerceInit { require(msg.value > 0, "Must send ETH."); uint256 fee = _collectNativeFee(msg.value, "fundProject"); _projectStore.fund(projectId, msg.sender, msg.value - fee); }
+    function applyToProject(uint256 projectId) external whenNotPaused requireCommerceInit onlyRegisteredAgent { _projectStore.applyToProject(projectId, msg.sender); }
+    function approveContributor(uint256 projectId, address contributor, uint256 sharesBps) external whenNotPaused requireCommerceInit { _projectStore.approveContributor(projectId, msg.sender, contributor, sharesBps); }
+    function completeProject(uint256 projectId) external whenNotPaused requireCommerceInit { _projectStore.complete(projectId, msg.sender); }
+    function cancelProject(uint256 projectId) external whenNotPaused requireCommerceInit { _projectStore.cancel(projectId, msg.sender, owner); }
 
     function claimProjectShare(uint256 projectId) external whenNotPaused nonReentrant {
         uint256 payout = _projectStore.claimShare(projectId, msg.sender);
