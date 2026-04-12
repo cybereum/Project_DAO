@@ -15,8 +15,8 @@ import {ProjectDAOStorage} from "./ProjectDAOStorage.sol";
 contract ProjectDAOGovernance is ProjectDAOStorage {
 
     // ─── Storage slot placeholders (must match Core + Commerce layout) ──
-    // Core appends TimelockLib.Store (52 slots including __gap)
-    uint256[52] private __corePlaceholder;
+    // Core appends TimelockLib.Store (53 slots: delay + gracePeriod + mapping + __gap[50])
+    uint256[53] private __corePlaceholder;
     // Commerce appends 3 library stores + extras (~180 slots)
     uint256[180] private __commercePlaceholder;
 

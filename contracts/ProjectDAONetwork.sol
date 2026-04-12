@@ -20,7 +20,7 @@ contract ProjectDAONetwork is ProjectDAOStorage {
     using PKILib for PKILib.EnvelopeStore;
 
     // ─── Storage slot placeholders (must match Core + Commerce layout) ──
-    uint256[52] private __corePlaceholder;   // Core's TimelockLib.Store
+    uint256[53] private __corePlaceholder;   // Core's TimelockLib.Store (53 slots)
     uint256[180] private __commercePlaceholder; // Commerce's 3 library stores + extras
 
     // ─── Network-only state ─────────────────────────────────────────────

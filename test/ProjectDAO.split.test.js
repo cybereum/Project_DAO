@@ -309,21 +309,21 @@ describe("Split architecture: Network via Router", () => {
 
 describe("Split architecture: Cross-contract storage alignment", () => {
   it("Core state persists when calling Commerce functions", async () => {
-    const { core, comm, alice } = await deploy();
-    // Register via Core
+    const { core, comm, alice, bob } = await deploy();
+    // Register both agents via Core
     await memberAgent(core, alice);
+    await memberAgent(core, bob);
     // Deposit via Core
     await core.connect(alice).depositNativeToEscrow({ value: ethers.parseEther("1") });
     const balBefore = (await core.getAgentProfile(alice.address)).nativeEscrowBalance;
-    // Create agreement via Commerce (debits escrow)
+    // Create agreement via Commerce — debits escrow from alice
     const deadline = (await ethers.provider.getBlock("latest")).timestamp + 86400;
     await comm.connect(alice).createServiceAgreement(
-      (await ethers.getSigners())[4].address, // use carol as provider — but carol isn't registered
-      ethers.ZeroAddress, ethers.parseEther("0.05"), deadline, "cross-test"
-    ).catch(() => {}); // may fail if provider not registered, that's OK
-    // Key point: Core's agent state should still be consistent
+      bob.address, ethers.ZeroAddress, ethers.parseEther("0.05"), deadline, "cross-test"
+    );
+    // Core's agent state should reflect the debit
     const balAfter = (await core.getAgentProfile(alice.address)).nativeEscrowBalance;
-    expect(balAfter).to.be.lte(balBefore);
+    expect(balAfter).to.equal(balBefore - ethers.parseEther("0.05"));
   });
 
   it("fee config changes in Core affect Commerce operations", async () => {

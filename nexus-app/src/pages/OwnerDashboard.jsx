@@ -53,7 +53,11 @@ export default function OwnerDashboard() {
     if (!walletConnected) return;
     let cancelled = false;
     const contract = getDaoReadContract();
-    if (!contract) return;
+    if (!contract) {
+      // No contract configured — can't verify ownership
+      setContractOwner('');
+      return;
+    }
     contract.owner().then((addr) => {
       if (!cancelled) setContractOwner(addr.toLowerCase());
     }).catch(() => {

@@ -17,8 +17,8 @@ contract ProjectDAOCommerce is ProjectDAOStorage {
     using PaymentStreamLib for PaymentStreamLib.Store;
 
     // ─── Storage slot placeholder for Core's TimelockLib.Store ───────────
-    // Must match the exact slot count Core appends after ProjectDAOStorage.
-    uint256[52] private __corePlaceholder;
+    // TimelockLib.Store = delay(1) + gracePeriod(1) + mapping(1) + __gap[50] = 53 slots
+    uint256[53] private __corePlaceholder;
 
     // ─── Commerce-only state ────────────────────────────────────────────
     EconomicProjectLib.Store private _projectStore;
@@ -28,6 +28,11 @@ contract ProjectDAOCommerce is ProjectDAOStorage {
     uint256 public lastNetworkMilestone;
 
     bool private _commerceInitialized;
+
+    modifier requireCommerceInit() {
+        require(_commerceInitialized, "Commerce not initialized.");
+        _;
+    }
 
     // ─── Events ─────────────────────────────────────────────────────────
     event EconomicProjectCreated(uint256 indexed projectId, address indexed proposer, string metadataURI, uint256 targetBudget, uint256 deadline);
@@ -78,7 +83,7 @@ contract ProjectDAOCommerce is ProjectDAOStorage {
     function projectShareClaimed(uint256 pid, address c) external view returns (bool) { return _projectStore.shareClaimed[pid][c]; }
     function activeProjectCount(address p) external view returns (uint256) { return _projectStore.activeProjectCount[p]; }
 
-    function createEconomicProject(string calldata metadataURI, uint256 targetBudget, uint256 deadline) external whenNotPaused onlyRegisteredAgent returns (uint256) { return _projectStore.create(msg.sender, metadataURI, targetBudget, deadline); }
+    function createEconomicProject(string calldata metadataURI, uint256 targetBudget, uint256 deadline) external whenNotPaused requireCommerceInit onlyRegisteredAgent returns (uint256) { return _projectStore.create(msg.sender, metadataURI, targetBudget, deadline); }
     function fundProject(uint256 projectId) external payable whenNotPaused { require(msg.value > 0, "Must send ETH."); uint256 fee = _collectNativeFee(msg.value, "fundProject"); _projectStore.fund(projectId, msg.sender, msg.value - fee); }
     function applyToProject(uint256 projectId) external whenNotPaused onlyRegisteredAgent { _projectStore.applyToProject(projectId, msg.sender); }
     function approveContributor(uint256 projectId, address contributor, uint256 sharesBps) external whenNotPaused { _projectStore.approveContributor(projectId, msg.sender, contributor, sharesBps); }
@@ -116,7 +121,7 @@ contract ProjectDAOCommerce is ProjectDAOStorage {
     function currentServiceAgreementId() external view returns (uint256) { uint256 v = _serviceStore.currentId; return v == 0 ? 1 : v; }
     function activeAgreementCount(address agent) external view returns (uint256) { return _serviceStore.activeCount[agent]; }
 
-    function createServiceAgreement(address _provider, address _arbiter, uint256 _amount, uint256 _deadline, string calldata _description) external onlyRegisteredAgent whenNotPaused returns (uint256) {
+    function createServiceAgreement(address _provider, address _arbiter, uint256 _amount, uint256 _deadline, string calldata _description) external onlyRegisteredAgent whenNotPaused requireCommerceInit returns (uint256) {
         require(agents[_provider].registered, "Provider must be a registered agent.");
         require(agents[msg.sender].nativeEscrowBalance >= _amount, "Insufficient escrow balance.");
         if (_arbiter != address(0)) require(agents[_arbiter].registered, "Arbiter must be a registered agent.");
@@ -156,7 +161,7 @@ contract ProjectDAOCommerce is ProjectDAOStorage {
     function activeStreamCount(address agent) external view returns (uint256) { return _streamStore.activeCount[agent]; }
     function streamBalanceOf(uint256 _streamId) public view returns (uint256) { return _streamStore.balanceOf(_streamId); }
 
-    function createPaymentStream(address _recipient, uint256 _totalDeposit, uint256 _startTime, uint256 _stopTime) external onlyRegisteredAgent whenNotPaused returns (uint256) {
+    function createPaymentStream(address _recipient, uint256 _totalDeposit, uint256 _startTime, uint256 _stopTime) external onlyRegisteredAgent whenNotPaused requireCommerceInit returns (uint256) {
         require(agents[_recipient].registered, "Recipient must be a registered agent.");
         require(agents[msg.sender].nativeEscrowBalance >= _totalDeposit, "Insufficient escrow balance.");
         (uint256 streamId, uint256 adjustedDeposit) = _streamStore.create(msg.sender, _recipient, _totalDeposit, _startTime, _stopTime);
