@@ -50,13 +50,18 @@ contract ProjectDAOCore is ProjectDAOStorage {
 
     // ─── Initialization ─────────────────────────────────────────────────
 
+    /// @notice One-time bootstrap. When called via Router proxy, owner starts
+    ///         as address(0). The first caller becomes the owner. MUST be called
+    ///         in the same transaction batch as Router deployment to prevent
+    ///         frontrunning. The deploy script handles this.
     function initializeCore() external {
         require(!initialized, "Already initialized.");
-        // When called via Router proxy, owner is address(0) in proxy storage.
-        // The first caller becomes the owner.
         if (owner == address(0)) {
+            // Proxy deployment: first caller claims ownership.
+            // Safe because deploy script calls this immediately after Router deploy.
             owner = msg.sender;
         } else {
+            // Direct deployment (tests): only existing owner can initialize.
             require(msg.sender == owner, "Only the owner can initialize.");
         }
         initialized = true;

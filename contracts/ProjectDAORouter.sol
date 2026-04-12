@@ -27,6 +27,10 @@ contract ProjectDAORouter {
     // ─── Events ─────────────────────────────────────────────────────────
     event RouteRegistered(bytes4 indexed selector, address indexed implementation);
 
+    // ─── Deployment lock ──────────────────────────────────────────────────
+    address private immutable _deployer;
+    bool private _selectorsFrozen;
+
     constructor(
         address _core,
         address _governance,
@@ -42,23 +46,33 @@ contract ProjectDAORouter {
         governance = _governance;
         commerce = _commerce;
         network = _network;
+        _deployer = msg.sender;
     }
 
     /**
      * @notice Register function selectors for an implementation contract.
-     *         Called by the deploy script after construction.
+     *         Only the original deployer can call this, and only before
+     *         selectors are frozen. Call freezeSelectors() after setup.
      * @param implementation  Address of the implementation contract.
      * @param selectors       Array of 4-byte function selectors to route.
      */
     function registerSelectors(address implementation, bytes4[] calldata selectors) external {
-        // Only callable before any routes exist (one-time setup)
-        // Using a simple check: only the deployer can register, and only once per selector
-        require(msg.sender == tx.origin, "Only deployer can register.");
+        require(msg.sender == _deployer, "Only deployer can register.");
+        require(!_selectorsFrozen, "Selectors are frozen.");
         for (uint256 i = 0; i < selectors.length; i++) {
             require(_routes[selectors[i]] == address(0), "Selector already registered.");
             _routes[selectors[i]] = implementation;
             emit RouteRegistered(selectors[i], implementation);
         }
+    }
+
+    /**
+     * @notice Permanently freeze selector registration. No new selectors
+     *         can be registered after this call. Irreversible.
+     */
+    function freezeSelectors() external {
+        require(msg.sender == _deployer, "Only deployer can freeze.");
+        _selectorsFrozen = true;
     }
 
     /**

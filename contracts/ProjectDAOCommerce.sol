@@ -297,18 +297,27 @@ contract ProjectDAOCommerce is ProjectDAOStorage {
 
     function _checkNetworkMilestone() internal {
         uint256 count = agentAddresses.length;
-        uint256 next;
-        if (count < 10) next = 10;
-        else if (count < 50) next = 50;
-        else if (count < 100) next = 100;
-        else if (count < 500) next = 500;
-        else if (count < 1000) next = 1000;
-        else next = ((count / 1000) + 1) * 1000;
-        if (count >= next && next > lastNetworkMilestone) {
-            lastNetworkMilestone = next;
-            string memory benefit = next <= 10 ? "Early adopter rewards active" :
-                next <= 100 ? "Fee discounts unlocked" : "Network effects multiplier active";
-            emit NetworkMilestoneReached(count, next, benefit);
+        uint256 milestone = 0;
+        string memory benefit = "";
+
+        // Check top-down: largest milestone first so we don't skip levels.
+        if (count >= 5000 && lastNetworkMilestone < 5000) {
+            milestone = 5000; benefit = "5000 agents - governance may reduce fees to minimum";
+        } else if (count >= 1000 && lastNetworkMilestone < 1000) {
+            milestone = 1000; benefit = "1000 agents - governance may reduce protocol fee";
+        } else if (count >= 500 && lastNetworkMilestone < 500) {
+            milestone = 500; benefit = "500 agents - governance may reduce messaging fee";
+        } else if (count >= 100 && lastNetworkMilestone < 100) {
+            milestone = 100; benefit = "100 agents - governance may adjust fee structure";
+        } else if (count >= 50 && lastNetworkMilestone < 50) {
+            milestone = 50; benefit = "50 agents - discovery network reaching critical mass";
+        } else if (count >= 10 && lastNetworkMilestone < 10) {
+            milestone = 10; benefit = "Network bootstrapped - discovery active";
+        }
+
+        if (milestone > 0) {
+            lastNetworkMilestone = milestone;
+            emit NetworkMilestoneReached(count, milestone, benefit);
         }
     }
 

@@ -120,6 +120,10 @@ async function main() {
     }
   }
 
+  // Freeze selector registration — no more changes after this point
+  await (await router.freezeSelectors()).wait();
+  console.log("  Selectors frozen (permanent)");
+
   // ── Step 5: Initialize via Router ────────────────────────────────────
   console.log("\n=== Step 5: Initialize ===");
 
