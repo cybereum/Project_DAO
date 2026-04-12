@@ -99,11 +99,10 @@ async function deploySplit() {
   const net = Network.attach(routerAddr);
 
   // Initialize all sub-contracts
-  await core.initializeCore();
+  await core.initializeCore(treasury.address);
   await gov.initializeGovernance();
   await comm.initializeCommerce();
   await net.initializeNetwork();
-  await core.setCybereumTreasury(treasury.address);
 
   return { router, core, gov, comm, net, owner, alice, bob, carol, treasury };
 }
@@ -328,8 +327,10 @@ describe("Split architecture: Cross-contract storage alignment", () => {
 
   it("fee config changes in Core affect Commerce operations", async () => {
     const { core, comm, alice } = await deploy();
-    // Change fee via Core
-    await core.setCybereumFeeConfig(10, 2_000_000_000_000n);
+    // Change fee via Core (timelocked)
+    await core.queueSetFeeConfig(10, 2_000_000_000_000n);
+    await time.increase(24 * 3600 + 1);
+    await core.executeSetFeeConfig(10, 2_000_000_000_000n);
     expect(await core.cybereumFeeBps()).to.equal(10n);
     // Fund a project via Commerce — fee should use the new 10 bps rate
     await memberAgent(core, alice);

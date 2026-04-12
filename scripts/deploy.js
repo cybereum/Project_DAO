@@ -75,10 +75,15 @@ async function main() {
   // constants, and the Owner role. These were moved out of the
   // constructor so the deploy tx stays under EIP-7825 / Osaka's 16.78 M
   // per-transaction gas cap. initialize() is single-use and onlyOwner.
-  console.log("Initializing Project_DAO (post-deploy bootstrap)...");
-  const initTx = await dao.initialize();
+  // Treasury is set at initialization — no instant setter exists.
+  // After deployment, treasury and fee changes require the 24h timelock.
+  if (!treasury) {
+    throw new Error("CYBEREUM_TREASURY must be set. This is the address that receives all protocol fees.");
+  }
+  console.log("Initializing Project_DAO with treasury:", treasury);
+  const initTx = await dao.initialize(treasury);
   await initTx.wait();
-  console.log("Project_DAO initialized.");
+  console.log("Project_DAO initialized. Treasury locked to:", treasury);
 
   // Verify deployment
   const code = await ethers.provider.getCode(address);
@@ -91,28 +96,11 @@ async function main() {
     console.warn("WARNING: Contract exceeds 24KB EVM bytecode limit!");
   }
 
-  // Configure treasury
-  console.log("\n=== Post-deployment Configuration ===");
-  if (treasury) {
-    console.log("Setting Cybereum treasury to:", treasury);
-    const tx = await dao.setCybereumTreasury(treasury);
-    await tx.wait();
-    console.log("Treasury configured.");
-  } else {
-    console.warn("WARNING: CYBEREUM_TREASURY not set (local network). Call setCybereumTreasury() before going live.");
-  }
-
-  // Configure fee (optional)
+  // Note: fee config defaults to 5 bps + 1e12 wei asset fee (set in initialize).
+  // To change, use the timelocked path: queueSetFeeConfig → wait 24h → executeSetFeeConfig.
   const feeBps = process.env.FEE_BPS ? parseInt(process.env.FEE_BPS, 10) : 0;
-  const assetFeeWei = process.env.ASSET_FEE_WEI ? BigInt(process.env.ASSET_FEE_WEI) : 0n;
-  if (feeBps > 0 && assetFeeWei > 0n) {
-    if (feeBps < 1 || feeBps > 100) {
-      throw new Error(`FEE_BPS must be between 1 and 100, got ${feeBps}`);
-    }
-    console.log(`Setting fee config: ${feeBps} bps, asset flat fee: ${assetFeeWei} wei`);
-    const tx = await dao.setCybereumFeeConfig(feeBps, assetFeeWei);
-    await tx.wait();
-    console.log("Fee config updated.");
+  if (feeBps > 0) {
+    console.log(`NOTE: Custom fee requested (${feeBps} bps). Use queueSetFeeConfig after deployment — instant setter removed for security.`);
   }
 
   // Verify final state

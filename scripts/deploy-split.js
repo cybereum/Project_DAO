@@ -133,8 +133,15 @@ async function main() {
   const routerAsComm = Commerce.attach(routerAddr);
   const routerAsNet = Network.attach(routerAddr);
 
-  await (await routerAsCore.initializeCore()).wait();
-  console.log("  Core initialized");
+  // Treasury is set at initialization — no instant setter exists.
+  const treasury = process.env.CYBEREUM_TREASURY;
+  if (!treasury && !isLocalNetwork) {
+    throw new Error("CYBEREUM_TREASURY must be set for non-local deployments.");
+  }
+  const treasuryAddr = treasury || (await ethers.getSigners())[0].address;
+
+  await (await routerAsCore.initializeCore(treasuryAddr)).wait();
+  console.log("  Core initialized with treasury:", treasuryAddr);
 
   await (await routerAsGov.initializeGovernance()).wait();
   console.log("  Governance initialized");
@@ -145,13 +152,8 @@ async function main() {
   await (await routerAsNet.initializeNetwork()).wait();
   console.log("  Network initialized");
 
-  // ── Step 6: Configure treasury ───────────────────────────────────────
-  const treasury = process.env.CYBEREUM_TREASURY;
-  if (treasury) {
-    await (await routerAsCore.setCybereumTreasury(treasury)).wait();
-    console.log("  Treasury set to:", treasury);
-  } else if (!isLocalNetwork) {
-    console.warn("  WARNING: No CYBEREUM_TREASURY set. Configure before going live.");
+  if (!treasury && isLocalNetwork) {
+    console.warn("  NOTE: Treasury set to deployer address (local network). Use queueSetTreasury for production.");
   }
 
   // ── Summary ──────────────────────────────────────────────────────────

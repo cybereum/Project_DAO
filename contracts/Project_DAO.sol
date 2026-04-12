@@ -340,9 +340,10 @@ contract Project_DAO {
      *         consumes ~15.2M gas, leaving no budget for the ~600K of
      *         cold SSTOREs the full bootstrap requires.
      */
-    function initialize() external {
+    function initialize(address _cybereumTreasury) external {
         require(!initialized, "Already initialized.");
         require(msg.sender == owner, "Only the owner can initialize.");
+        require(_cybereumTreasury != address(0), "Invalid treasury address.");
         initialized = true;
 
         // ── Member + admin setup ─────────────────────────────────────
@@ -350,7 +351,7 @@ contract Project_DAO {
         members[owner].votingPower = 100;
         memberAddresses.push(owner);
         memberCount = 1;
-        cybereumTreasury = owner;
+        cybereumTreasury = _cybereumTreasury;
 
         // ── Counter starting points (1-based IDs) ────────────────────
         currentProposalDisputeId     = 1;
@@ -532,22 +533,13 @@ contract Project_DAO {
     // --- Agent, Payments, and Asset Value Transfer ---
 
 
-    function setCybereumTreasury(address _treasury) public onlyOwner whenNotPaused {
-        require(_treasury != address(0), "Invalid treasury address.");
-        cybereumTreasury = _treasury;
-        emit CybereumTreasuryUpdated(_treasury);
-    }
-
-    function setCybereumFeeConfig(uint256 _feeBps, uint256 _assetTransferFlatFeeWei) public onlyOwner whenNotPaused {
-        require(_feeBps >= MIN_FEE_BPS, "Fee cannot be zero: mandatory Cybereum fee floor enforced.");
-        require(_feeBps <= 100, "Fee cannot exceed 1%.");
-        require(_assetTransferFlatFeeWei > 0, "Asset transfer fee must be non-zero.");
-        cybereumFeeBps = _feeBps;
-        assetTransferFlatFeeWei = _assetTransferFlatFeeWei;
-        emit CybereumFeeConfigUpdated(_feeBps, _assetTransferFlatFeeWei);
-    }
-
     // ─── Timelocked Configuration (queue → wait → execute) ──────────────
+    //
+    // Treasury and fee configuration can ONLY be changed through the
+    // timelock: queue → wait (≥24h default) → execute.  There is no
+    // instant setter — this is intentional.  It guarantees that any
+    // redirect of protocol revenue is publicly visible on-chain for
+    // the full delay period before it takes effect.
 
     /// @notice Queue a treasury change. Must wait timelock delay before executing.
     function queueSetTreasury(address _treasury) external onlyOwner whenNotPaused returns (bytes32) {
