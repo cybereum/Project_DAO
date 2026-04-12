@@ -89,7 +89,7 @@ export function useTextHeight(text, font, lineHeight, options) {
     const el = ref.current;
     if (el && typeof ResizeObserver !== 'undefined') {
       const ro = new ResizeObserver(measure);
-      ro.observe(el); // fires callback immediately for existing element
+      ro.observe(el); // schedules initial callback at end of frame
       return () => ro.disconnect();
     }
     // No element or no ResizeObserver — measure once asynchronously
