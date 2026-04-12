@@ -10,7 +10,8 @@ import {
   ArrowUpRight, Clock, Zap, Activity, Shield, Bot, Brain, Lightbulb,
   ChevronRight, Rocket, AlertTriangle, ClipboardCheck
 } from 'lucide-react';
-import RichText, { CHIP_STYLES } from '../components/RichText';
+import RichText from '../components/RichText';
+import { CHIP_STYLES } from '../components/richTextStyles';
 import { MetricCardSkeleton } from '../components/Skeleton';
 import { FONTS } from '../config/designTokens.js';
 

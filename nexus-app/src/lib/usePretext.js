@@ -86,12 +86,15 @@ export function useTextHeight(text, font, lineHeight, options) {
   }, [prepared, lineHeight, options?.fallbackWidth]);
 
   useEffect(() => {
-    measure();
     const el = ref.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
+    if (el && typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(measure);
+      ro.observe(el); // fires callback immediately for existing element
+      return () => ro.disconnect();
+    }
+    // No element or no ResizeObserver — measure once asynchronously
+    const frame = requestAnimationFrame(measure);
+    return () => cancelAnimationFrame(frame);
   }, [measure]);
 
   return { ref, ...result };
@@ -126,12 +129,14 @@ export function useTextLines(text, font, lineHeight, options) {
   }, [prepared, lineHeight, options?.fallbackWidth]);
 
   useEffect(() => {
-    measure();
     const el = ref.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
+    if (el && typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(measure);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+    const frame = requestAnimationFrame(measure);
+    return () => cancelAnimationFrame(frame);
   }, [measure]);
 
   return { ref, ...result };
@@ -167,12 +172,14 @@ export function useRichInlineLayout(specs, lineHeight, options) {
   }, [items, lineHeight, options?.fallbackWidth]);
 
   useEffect(() => {
-    measure();
     const el = ref.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
+    if (el && typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(measure);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+    const frame = requestAnimationFrame(measure);
+    return () => cancelAnimationFrame(frame);
   }, [measure]);
 
   return { ref, ...result };
@@ -208,12 +215,14 @@ export function useAccordionHeight(text, font, lineHeight, options) {
   }, [prepared, lineHeight, options?.containerWidth, options?.paddingY]);
 
   useEffect(() => {
-    measure();
     const el = ref.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
+    if (el && typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(measure);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+    const frame = requestAnimationFrame(measure);
+    return () => cancelAnimationFrame(frame);
   }, [measure]);
 
   return { ref, contentHeight };

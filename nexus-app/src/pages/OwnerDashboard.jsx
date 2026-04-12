@@ -54,9 +54,10 @@ export default function OwnerDashboard() {
     let cancelled = false;
     const contract = getDaoReadContract();
     if (!contract) {
-      // No contract configured — can't verify ownership
-      setContractOwner('');
-      return;
+      // No contract configured — can't verify ownership.
+      // Schedule via microtask to avoid synchronous setState in effect body.
+      Promise.resolve().then(() => { if (!cancelled) setContractOwner(''); });
+      return () => { cancelled = true; };
     }
     contract.owner().then((addr) => {
       if (!cancelled) setContractOwner(addr.toLowerCase());
