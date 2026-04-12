@@ -1,6 +1,6 @@
 const { expect } = require("chai");
 const { anyValue } = require("@nomicfoundation/hardhat-chai-matchers/withArgs");
-const { loadFixture } = require("@nomicfoundation/hardhat-network-helpers");
+const { loadFixture, time } = require("@nomicfoundation/hardhat-network-helpers");
 const { ethers } = require("hardhat");
 const crypto = require("node:crypto");
 
@@ -5920,5 +5920,193 @@ describe("PKI length-bound constant exposure", () => {
     await expect(
       dao.connect(alice).publishAgentPublicKey(aboveMax)
     ).to.be.revertedWith("Public key too long.");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ─── Timelock: Treasury & Fee Config Delayed Execution ──────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("Timelock: treasury changes", () => {
+  it("initializes with 24h delay", async () => {
+    const { dao } = await deploy();
+    expect(await dao.timelockDelay()).to.equal(24n * 3600n);
+  });
+
+  it("queueSetTreasury emits TimelockQueued", async () => {
+    const { dao, alice } = await deploy();
+    await expect(dao.queueSetTreasury(alice.address))
+      .to.emit(dao, "TimelockQueued");
+  });
+
+  it("executeSetTreasury reverts before delay elapses", async () => {
+    const { dao, alice } = await deploy();
+    await dao.queueSetTreasury(alice.address);
+    await expect(dao.executeSetTreasury(alice.address))
+      .to.be.revertedWith("Timelock: not ready yet.");
+  });
+
+  it("executeSetTreasury succeeds after delay", async () => {
+    const { dao, alice } = await deploy();
+    await dao.queueSetTreasury(alice.address);
+    await time.increase(24 * 3600 + 1);
+    await expect(dao.executeSetTreasury(alice.address))
+      .to.emit(dao, "CybereumTreasuryUpdated").withArgs(alice.address);
+    expect(await dao.cybereumTreasury()).to.equal(alice.address);
+  });
+
+  it("executeSetTreasury reverts after grace period expires", async () => {
+    const { dao, alice } = await deploy();
+    await dao.queueSetTreasury(alice.address);
+    // delay (24h) + grace (48h) + 1s = expired
+    await time.increase(24 * 3600 + 48 * 3600 + 1);
+    await expect(dao.executeSetTreasury(alice.address))
+      .to.be.revertedWith("Timelock: operation expired.");
+  });
+
+  it("cannot execute twice", async () => {
+    const { dao, alice } = await deploy();
+    await dao.queueSetTreasury(alice.address);
+    await time.increase(24 * 3600 + 1);
+    await dao.executeSetTreasury(alice.address);
+    await expect(dao.executeSetTreasury(alice.address))
+      .to.be.revertedWith("Operation already executed.");
+  });
+
+  it("queueSetTreasury rejects zero address", async () => {
+    const { dao } = await deploy();
+    await expect(dao.queueSetTreasury(ethers.ZeroAddress))
+      .to.be.revertedWith("Invalid treasury address.");
+  });
+
+  it("non-owner cannot queue", async () => {
+    const { dao, alice } = await deploy();
+    await expect(dao.connect(alice).queueSetTreasury(alice.address))
+      .to.be.reverted;
+  });
+});
+
+describe("Timelock: fee config changes", () => {
+  it("queueSetFeeConfig emits TimelockQueued", async () => {
+    const { dao } = await deploy();
+    await expect(dao.queueSetFeeConfig(10, 2_000_000_000_000n))
+      .to.emit(dao, "TimelockQueued");
+  });
+
+  it("executeSetFeeConfig reverts before delay", async () => {
+    const { dao } = await deploy();
+    await dao.queueSetFeeConfig(10, 2_000_000_000_000n);
+    await expect(dao.executeSetFeeConfig(10, 2_000_000_000_000n))
+      .to.be.revertedWith("Timelock: not ready yet.");
+  });
+
+  it("executeSetFeeConfig succeeds after delay", async () => {
+    const { dao } = await deploy();
+    await dao.queueSetFeeConfig(10, 2_000_000_000_000n);
+    await time.increase(24 * 3600 + 1);
+    await dao.executeSetFeeConfig(10, 2_000_000_000_000n);
+    expect(await dao.cybereumFeeBps()).to.equal(10n);
+    expect(await dao.assetTransferFlatFeeWei()).to.equal(2_000_000_000_000n);
+  });
+
+  it("rejects fee below minimum", async () => {
+    const { dao } = await deploy();
+    await expect(dao.queueSetFeeConfig(0, 1_000_000_000_000n))
+      .to.be.revertedWith("Fee cannot be zero: mandatory Cybereum fee floor enforced.");
+  });
+
+  it("rejects fee above 1%", async () => {
+    const { dao } = await deploy();
+    await expect(dao.queueSetFeeConfig(101, 1_000_000_000_000n))
+      .to.be.revertedWith("Fee cannot exceed 1%.");
+  });
+});
+
+describe("Timelock: cancel and delay management", () => {
+  it("cancelTimelockOperation prevents execution", async () => {
+    const { dao, alice } = await deploy();
+    const tx = await dao.queueSetTreasury(alice.address);
+    const receipt = await tx.wait();
+    const event = receipt.logs.find(l => l.fragment?.name === "TimelockQueued");
+    const opId = event.args[0];
+
+    await dao.cancelTimelockOperation(opId);
+    await time.increase(24 * 3600 + 1);
+    await expect(dao.executeSetTreasury(alice.address))
+      .to.be.revertedWith("Operation was cancelled.");
+  });
+
+  it("cancelTimelockOperation emits TimelockCancelled", async () => {
+    const { dao, alice } = await deploy();
+    const tx = await dao.queueSetTreasury(alice.address);
+    const receipt = await tx.wait();
+    const event = receipt.logs.find(l => l.fragment?.name === "TimelockQueued");
+    const opId = event.args[0];
+
+    await expect(dao.cancelTimelockOperation(opId))
+      .to.emit(dao, "TimelockCancelled").withArgs(opId);
+  });
+
+  it("can re-queue after cancel", async () => {
+    const { dao, alice } = await deploy();
+    const tx = await dao.queueSetTreasury(alice.address);
+    const receipt = await tx.wait();
+    const event = receipt.logs.find(l => l.fragment?.name === "TimelockQueued");
+    const opId = event.args[0];
+
+    await dao.cancelTimelockOperation(opId);
+    // Re-queue the same operation
+    await expect(dao.queueSetTreasury(alice.address))
+      .to.emit(dao, "TimelockQueued");
+  });
+
+  it("setTimelockDelay updates the delay", async () => {
+    const { dao } = await deploy();
+    await dao.setTimelockDelay(2 * 3600); // 2 hours
+    expect(await dao.timelockDelay()).to.equal(7200n);
+  });
+
+  it("setTimelockDelay rejects below 1 hour", async () => {
+    const { dao } = await deploy();
+    await expect(dao.setTimelockDelay(1800))
+      .to.be.revertedWith("Delay below minimum (1 hour).");
+  });
+
+  it("setTimelockDelay rejects above 30 days", async () => {
+    const { dao } = await deploy();
+    await expect(dao.setTimelockDelay(31 * 24 * 3600))
+      .to.be.revertedWith("Delay exceeds maximum (30 days).");
+  });
+
+  it("getTimelockOperation returns correct status", async () => {
+    const { dao, alice } = await deploy();
+    await dao.queueSetTreasury(alice.address);
+    const opId = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(
+      ["string", "address"], ["setTreasury", alice.address]
+    ));
+    const op = await dao.getTimelockOperation(opId);
+    expect(op.id).to.equal(opId);
+    expect(op.executed).to.be.false;
+    expect(op.cancelled).to.be.false;
+    expect(op.readyTime).to.be.gt(0n);
+  });
+
+  it("non-owner cannot cancel", async () => {
+    const { dao, alice } = await deploy();
+    await dao.queueSetTreasury(alice.address);
+    const opId = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(
+      ["string", "address"], ["setTreasury", alice.address]
+    ));
+    await expect(dao.connect(alice).cancelTimelockOperation(opId))
+      .to.be.reverted;
+  });
+
+  it("shorter delay after setTimelockDelay works for new operations", async () => {
+    const { dao, alice } = await deploy();
+    await dao.setTimelockDelay(3600); // 1 hour
+    await dao.queueSetTreasury(alice.address);
+    await time.increase(3601);
+    await dao.executeSetTreasury(alice.address);
+    expect(await dao.cybereumTreasury()).to.equal(alice.address);
   });
 });

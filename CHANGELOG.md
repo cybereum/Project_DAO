@@ -12,12 +12,57 @@ All notable changes to this project are documented here. Dates reference impleme
 - Professional security audit (now covers a larger surface: on-chain PKI, EIP-712, 4 external libraries)
 - L2 deployment (Base/Arbitrum) — the main contract is still over the 24 KB Spurious Dragon limit even after four library extractions; the multi-library split needs to continue (Reputation engine, Economic projects, Payment streams, Service agreements, Referral rewards are the remaining large blocks) or the contract needs to be split into multiple deployed contracts composed at runtime
 - Event indexer/subgraph for protocol analytics (WS3)
-- Timelock/multisig on `setCybereumTreasury()` and `setCybereumFeeConfig()`
 - NexusAI rate limiting and suggestion history persistence
 - IPFS metadata pinning for feature kits (replacing `data:` URIs)
 - Broadcast notification panel in NEXUS app
 - Frontend E2E tests (Playwright/Cypress)
 - Prerender/SSR for public routes
+
+---
+
+## [0.7.0] — 2026-04-12 — Production Readiness: Timelock, SafeERC20, Monitoring, Multisig
+
+### Added — Timelock for sensitive owner operations
+- **TimelockLib** (`contracts/TimelockLib.sol`) — external library implementing delayed execution for treasury and fee configuration changes. 24-hour default delay, 48-hour grace period.
+- **Queue/execute pattern**: `queueSetTreasury`, `executeSetTreasury`, `queueSetFeeConfig`, `executeSetFeeConfig`, `cancelTimelockOperation` — all sensitive config changes now require a waiting period before taking effect.
+- **Timelock events**: `TimelockQueued`, `TimelockExecuted`, `TimelockCancelled` for full audit trail.
+
+### Added — Contract library extraction (continued)
+- **EconomicProjectLib** (`contracts/EconomicProjectLib.sol`) — economic project lifecycle extracted from main contract.
+- **ServiceAgreementLib** (`contracts/ServiceAgreementLib.sol`) — service agreement and dispute resolution extracted.
+- **PaymentStreamLib** (`contracts/PaymentStreamLib.sol`) — payment stream creation, withdrawal, and cancellation extracted.
+- Main contract bytecode reduced by ~14% (75KB to 65KB) from these three extractions. Deploy script and test fixtures updated for 8 total linked libraries.
+
+### Changed — SafeERC20 for all token operations
+- All raw `transfer()` / `transferFrom()` calls replaced with OpenZeppelin's `SafeERC20` (`safeTransfer` / `safeTransferFrom`). Handles non-standard tokens (USDT, BNB) that don't return a boolean.
+
+### Changed — Owner dashboard authentication
+- Replaced client-side passcode check (`VITE_OWNER_DASHBOARD_PASSCODE`) with on-chain `contract.owner()` verification. Only the connected wallet matching the contract owner can access the owner dashboard.
+
+### Added — Monitoring and alerting
+- **`scripts/monitor.js`** — real-time event listener for critical contract events: treasury changes, fee config updates, large transfers (configurable threshold via `ALERT_THRESHOLD_ETH`), timelock operations, membership changes, network milestones. Polls treasury balance every 5 minutes. Optional webhook alerting via `WEBHOOK_URL` env var.
+- **`scripts/monitor-config.example.env`** — example configuration for the monitor script.
+
+### Added — Multisig ownership tooling
+- **`scripts/transfer-ownership-to-safe.js`** — validates Gnosis Safe address, confirms current owner, calls `changeOwner()` with safety checks.
+- **`docs/MULTISIG_SETUP.md`** — 3-of-5 signer configuration guide, Safe creation walkthrough, timelocked operation flow, and emergency procedures.
+
+### Added — Frontend infrastructure
+- **Skeleton loading components** (`src/components/Skeleton.jsx`) — text, card, circle, metric, and table loading state variants.
+- **Vitest + React Testing Library** test infrastructure added to frontend.
+- **30 frontend tests** total: 8 Skeleton component unit tests + 22 appStore integration tests covering mock data shape validation, `waitWithTimeout` utility, `hasContractConfig` behavior, and proposal data transformation.
+- Frontend test step (`npm test`) added to CI pipeline.
+
+### Changed — Mock data cleanup
+- Extracted 7 `MOCK_*` arrays from `appStore.jsx` to `store/mockData.js`.
+- Mock data gated behind `USE_MOCK` flag (only loaded when no contract is configured).
+- Fixed `syncProposalsFromChain` to replace state with chain data instead of merging into mock proposals.
+
+### Added — Documentation
+- **`docs/GAS_OPTIMIZATION_NOTES.md`** — documents O(n) milestone iteration in `addMember`/`removeMember`, operational mitigations, and V2 fix using lazy eligibility pattern.
+- **`docs/INCIDENT_RESPONSE.md`** — formal incident response playbook with severity levels (P0-P3), detection channels, response procedures, communication templates, and emergency contract function reference.
+- **`docs/MIGRATION.md`** — contract upgrade/migration strategy for immutable deployments: V2 deployment, agent registration migration, escrow balance migration, frontend/SDK cutover, data preservation, and rollback plan.
+- Updated **OPERATIONS_RUNBOOK.md** with references to monitoring, multisig, timelocked operations, and gas optimization docs.
 
 ---
 

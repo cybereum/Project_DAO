@@ -8,6 +8,7 @@ import {
   Search, Filter, Zap, Globe, RefreshCw, AlertCircle, ExternalLink, Bot,
 } from 'lucide-react';
 import PretextTruncate from '../components/PretextTruncate';
+import { TableSkeleton } from '../components/Skeleton';
 import { FONTS, LINE_HEIGHTS } from '../config/designTokens.js';
 
 const anim = (i) => ({ initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, transition: { delay: i * 0.05 } });
@@ -316,7 +317,16 @@ export default function Projects() {
       {/* On-chain projects */}
       {tab !== 'legacy' && (
         <>
-          {filteredOnChain.length > 0 && (
+          {economicProjectsLoading && (
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <Globe size={14} className="text-nexus-cyan" />
+                <span className="text-xs font-semibold text-nexus-cyan uppercase tracking-widest">On-chain Projects</span>
+              </div>
+              <TableSkeleton rows={4} />
+            </div>
+          )}
+          {!economicProjectsLoading && filteredOnChain.length > 0 && (
             <div>
               <div className="flex items-center gap-2 mb-3">
                 <Globe size={14} className="text-nexus-cyan" />

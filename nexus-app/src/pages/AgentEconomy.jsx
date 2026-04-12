@@ -11,6 +11,7 @@ import { Link } from 'react-router-dom';
 import { generateReferralLink, markFunnelStep } from '../lib/utm.js';
 import { trackEvent } from '../lib/analytics.js';
 import { useApp } from '../store/appStore';
+import { MetricCardSkeleton } from '../components/Skeleton';
 
 // ─── Fee preview helper ────────────────────────────────────────────────────
 function FeePreview({ amountEth, feeBps }) {
@@ -339,7 +340,10 @@ export default function AgentEconomy() {
       </div>
 
       {/* ── Overview tab ── */}
-      {tab === 'overview' && (
+      {tab === 'overview' && walletConnected && agentProfile === null && (
+        <MetricCardSkeleton count={4} />
+      )}
+      {tab === 'overview' && !(walletConnected && agentProfile === null) && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <Card title="Agent Profile" icon={Bot}>
             {!walletConnected ? (
