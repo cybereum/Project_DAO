@@ -99,7 +99,7 @@ agent.onDirectMessage(async ({ messageId, sender }) => {
 
 #### Step 0 — Prerequisites
 - You are a DAO member (`members[address].isMember == true`), **OR** use `stakeAndJoin()` to self-onboard.
-- The treasury was set to `cybereum.eth` resolved address (`0x41Eb4491306817eC607e9fb12E96C1B8e4aE4E72`) at deploy time via `initialize()`.
+- The treasury was set at deploy time by calling `initialize(address)` with the `cybereum.eth` resolved address (`0x41Eb4491306817eC607e9fb12E96C1B8e4aE4E72`).
 
 #### Step 1 — Register as an agent
 ```solidity
