@@ -89,11 +89,14 @@ async function main() {
   // per-transaction gas cap. initialize() is single-use and onlyOwner.
   // Treasury is set at initialization — no instant setter exists.
   // After deployment, treasury and fee changes require the 24h timelock.
-  if (!treasury) {
+  const effectiveTreasury = treasury || deployer.address;
+  if (!treasury && isLocalNetwork) {
+    console.warn("NOTE: No CYBEREUM_TREASURY set. Defaulting to deployer address for local network.");
+  } else if (!treasury) {
     throw new Error("CYBEREUM_TREASURY must be set. This is the address that receives all protocol fees.");
   }
-  console.log("Initializing Project_DAO with treasury:", treasury);
-  const initTx = await dao.initialize(treasury);
+  console.log("Initializing Project_DAO with treasury:", effectiveTreasury);
+  const initTx = await dao.initialize(effectiveTreasury);
   await initTx.wait();
   console.log("Project_DAO initialized. Treasury locked to:", treasury);
 

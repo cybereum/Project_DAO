@@ -208,7 +208,7 @@ export const PROJECT_DAO_ABI = [
   'event PaymentStreamCancelled(uint256 indexed streamId, address indexed cancelledBy, uint256 recipientAmount, uint256 payerRefund)',
 
   // ─── Lifecycle: deploy-time initialize() ──────────────────────────────
-  'function initialize() external',
+  'function initialize(address _cybereumTreasury) external',
   'function initialized() external view returns (bool)',
 
   // ─── PKI: Agent public key registry ───────────────────────────────────

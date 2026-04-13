@@ -190,8 +190,14 @@ export function useRichInlineLayout(specs, lineHeight, options) {
       ro.observe(el);
       return () => ro.disconnect();
     }
-    const frame = requestAnimationFrame(measure);
-    return () => cancelAnimationFrame(frame);
+    if (typeof requestAnimationFrame === 'function') {
+      const frame = requestAnimationFrame(measure);
+      return () => {
+        if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame);
+      };
+    }
+    const timeout = setTimeout(measure, 0);
+    return () => clearTimeout(timeout);
   }, [measure]);
 
   return { ref, ...result };
@@ -233,8 +239,14 @@ export function useAccordionHeight(text, font, lineHeight, options) {
       ro.observe(el);
       return () => ro.disconnect();
     }
-    const frame = requestAnimationFrame(measure);
-    return () => cancelAnimationFrame(frame);
+    if (typeof requestAnimationFrame === 'function') {
+      const frame = requestAnimationFrame(measure);
+      return () => {
+        if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame);
+      };
+    }
+    const timeout = setTimeout(measure, 0);
+    return () => clearTimeout(timeout);
   }, [measure]);
 
   return { ref, contentHeight };

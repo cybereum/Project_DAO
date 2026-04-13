@@ -146,20 +146,28 @@ describe("Cybereum treasury", () => {
     const [owner] = await ethers.getSigners();
     const PKILib = await ethers.getContractFactory("PKILib");
     const pkiLib = await PKILib.deploy();
+    await pkiLib.waitForDeployment();
     const TrustLib = await ethers.getContractFactory("TrustLib");
     const trustLib = await TrustLib.deploy();
+    await trustLib.waitForDeployment();
     const FeatureKitLib = await ethers.getContractFactory("FeatureKitLib");
     const fkLib = await FeatureKitLib.deploy();
+    await fkLib.waitForDeployment();
     const MessagingLib = await ethers.getContractFactory("MessagingLib");
     const msgLib = await MessagingLib.deploy();
+    await msgLib.waitForDeployment();
     const EconomicProjectLib = await ethers.getContractFactory("EconomicProjectLib");
     const projLib = await EconomicProjectLib.deploy();
+    await projLib.waitForDeployment();
     const ServiceAgreementLib = await ethers.getContractFactory("ServiceAgreementLib");
     const svcLib = await ServiceAgreementLib.deploy();
+    await svcLib.waitForDeployment();
     const PaymentStreamLib = await ethers.getContractFactory("PaymentStreamLib");
     const streamLib = await PaymentStreamLib.deploy();
+    await streamLib.waitForDeployment();
     const TimelockLib = await ethers.getContractFactory("TimelockLib");
     const tlLib = await TimelockLib.deploy();
+    await tlLib.waitForDeployment();
     const DAO = await ethers.getContractFactory("Project_DAO", {
       libraries: {
         PKILib: await pkiLib.getAddress(),
