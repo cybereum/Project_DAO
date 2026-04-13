@@ -66,9 +66,13 @@ async function main() {
   const queueTx = await dao.queueChangeOwner(safeParsed);
   await queueTx.wait();
   console.log("Ownership transfer queued. Must wait timelock delay before executing.");
-  console.log("After the delay, run:");
-  console.log(`  SAFE_ADDRESS=${safeParsed} npx hardhat run scripts/execute-ownership-transfer.js --network <network>`);
-  console.log("\nOr execute manually:");
+  console.log("After the delay, open a Hardhat console:");
+  console.log(`  npx hardhat console --network <network>`);
+  console.log("\nThen run:");
+  console.log(`  const libNames = ["PKILib", "TrustLib", "FeatureKitLib", "MessagingLib", "EconomicProjectLib", "ServiceAgreementLib", "PaymentStreamLib", "TimelockLib"];`);
+  console.log(`  const libraries = Object.fromEntries(libNames.map(n => [n, ethers.ZeroAddress]));`);
+  console.log(`  const Factory = await ethers.getContractFactory("Project_DAO", { libraries });`);
+  console.log(`  const dao = Factory.attach("${contractParsed}");`);
   console.log(`  await dao.executeChangeOwner("${safeParsed}")`);
 }
 
