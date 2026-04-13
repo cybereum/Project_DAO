@@ -173,6 +173,7 @@ describe("Cybereum treasury", () => {
       },
     });
     const dao = await DAO.deploy();
+    await dao.waitForDeployment();
     await expect(dao.initialize(ethers.ZeroAddress)).to.be.revertedWith(
       "Invalid treasury address."
     );
