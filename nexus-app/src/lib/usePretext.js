@@ -86,12 +86,21 @@ export function useTextHeight(text, font, lineHeight, options) {
   }, [prepared, lineHeight, options?.fallbackWidth]);
 
   useEffect(() => {
-    measure();
     const el = ref.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
+    if (el && typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(measure);
+      ro.observe(el); // schedules initial callback at end of frame
+      return () => ro.disconnect();
+    }
+    // No element or no ResizeObserver — measure once asynchronously
+    if (typeof requestAnimationFrame === 'function') {
+      const frame = requestAnimationFrame(measure);
+      return () => {
+        if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame);
+      };
+    }
+    const timeout = setTimeout(measure, 0);
+    return () => clearTimeout(timeout);
   }, [measure]);
 
   return { ref, ...result };
@@ -126,12 +135,20 @@ export function useTextLines(text, font, lineHeight, options) {
   }, [prepared, lineHeight, options?.fallbackWidth]);
 
   useEffect(() => {
-    measure();
     const el = ref.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
+    if (el && typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(measure);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+    if (typeof requestAnimationFrame === 'function') {
+      const frame = requestAnimationFrame(measure);
+      return () => {
+        if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame);
+      };
+    }
+    const timeout = setTimeout(measure, 0);
+    return () => clearTimeout(timeout);
   }, [measure]);
 
   return { ref, ...result };
@@ -167,12 +184,20 @@ export function useRichInlineLayout(specs, lineHeight, options) {
   }, [items, lineHeight, options?.fallbackWidth]);
 
   useEffect(() => {
-    measure();
     const el = ref.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
+    if (el && typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(measure);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+    if (typeof requestAnimationFrame === 'function') {
+      const frame = requestAnimationFrame(measure);
+      return () => {
+        if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame);
+      };
+    }
+    const timeout = setTimeout(measure, 0);
+    return () => clearTimeout(timeout);
   }, [measure]);
 
   return { ref, ...result };
@@ -208,12 +233,20 @@ export function useAccordionHeight(text, font, lineHeight, options) {
   }, [prepared, lineHeight, options?.containerWidth, options?.paddingY]);
 
   useEffect(() => {
-    measure();
     const el = ref.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
+    if (el && typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(measure);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+    if (typeof requestAnimationFrame === 'function') {
+      const frame = requestAnimationFrame(measure);
+      return () => {
+        if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame);
+      };
+    }
+    const timeout = setTimeout(measure, 0);
+    return () => clearTimeout(timeout);
   }, [measure]);
 
   return { ref, contentHeight };

@@ -105,7 +105,7 @@ function wordSegmenter() {
   return _wordSegmenter;
 }
 
-function graphemeSegmenter() {
+export function graphemeSegmenter() {
   if (!_graphemeSegmenter) _graphemeSegmenter = new Intl.Segmenter(_locale, { granularity: 'grapheme' });
   return _graphemeSegmenter;
 }

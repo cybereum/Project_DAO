@@ -55,8 +55,7 @@ async function _deployFixture() {
   // Constructor only sets owner; the rest of the bootstrap runs in a
   // separate initialize() tx so the deploy transaction fits under the
   // EIP-7825 / Osaka per-tx gas cap.
-  await dao.initialize();
-  await dao.setCybereumTreasury(treasury.address);
+  await dao.initialize(treasury.address);
   return { dao, owner, alice, bob, carol, treasury };
 }
 
@@ -81,32 +80,32 @@ describe("Fee configuration", () => {
     expect(await dao.cybereumFeeBps()).to.equal(5n);
   });
 
-  it("owner can update fee config", async () => {
+  it("fee config change requires timelock (no instant setter)", async () => {
     const { dao } = await deploy();
-    await dao.setCybereumFeeConfig(10, ethers.parseUnits("2", 12));
+    await dao.queueSetFeeConfig(10, ethers.parseUnits("2", 12));
+    await time.increase(24 * 3600 + 1);
+    await dao.executeSetFeeConfig(10, ethers.parseUnits("2", 12));
     expect(await dao.cybereumFeeBps()).to.equal(10n);
     expect(await dao.assetTransferFlatFeeWei()).to.equal(ethers.parseUnits("2", 12));
   });
 
   it("reverts if feeBps < MIN_FEE_BPS (1)", async () => {
     const { dao } = await deploy();
-    await expect(dao.setCybereumFeeConfig(0, 1000n)).to.be.revertedWith(
+    await expect(dao.queueSetFeeConfig(0, 1000n)).to.be.revertedWith(
       "Fee cannot be zero: mandatory Cybereum fee floor enforced."
     );
   });
 
   it("reverts if feeBps > 100 (1%)", async () => {
     const { dao } = await deploy();
-    await expect(dao.setCybereumFeeConfig(101, 1000n)).to.be.revertedWith(
+    await expect(dao.queueSetFeeConfig(101, 1000n)).to.be.revertedWith(
       "Fee cannot exceed 1%."
     );
   });
 
-  it("non-owner cannot update fee config", async () => {
+  it("non-owner cannot queue fee config change", async () => {
     const { dao, alice } = await deploy();
-    await expect(dao.connect(alice).setCybereumFeeConfig(5, 1000n)).to.be.revertedWith(
-      "Only the owner can call this function."
-    );
+    await expect(dao.connect(alice).queueSetFeeConfig(5, 1000n)).to.be.reverted;
   });
 
   it("previewFee returns correct fee and net", async () => {
@@ -128,24 +127,69 @@ describe("Fee configuration", () => {
 // ─── Treasury ────────────────────────────────────────────────────────────────
 
 describe("Cybereum treasury", () => {
-  it("owner can set treasury", async () => {
+  it("initialize sets treasury", async () => {
+    const { dao, treasury } = await deploy();
+    expect(await dao.cybereumTreasury()).to.equal(treasury.address);
+  });
+
+  it("treasury change requires timelock (no instant setter)", async () => {
     const { dao, alice } = await deploy();
-    await dao.setCybereumTreasury(alice.address);
+    // The instant setCybereumTreasury was removed — only timelocked path exists
+    await dao.queueSetTreasury(alice.address);
+    await time.increase(24 * 3600 + 1);
+    await dao.executeSetTreasury(alice.address);
     expect(await dao.cybereumTreasury()).to.equal(alice.address);
   });
 
-  it("reverts on zero address", async () => {
-    const { dao } = await deploy();
-    await expect(dao.setCybereumTreasury(ethers.ZeroAddress)).to.be.revertedWith(
+  it("initialize reverts on zero treasury address", async () => {
+    // Deploy a fresh un-initialized contract to test initialize() validation
+    const [owner] = await ethers.getSigners();
+    const PKILib = await ethers.getContractFactory("PKILib");
+    const pkiLib = await PKILib.deploy();
+    await pkiLib.waitForDeployment();
+    const TrustLib = await ethers.getContractFactory("TrustLib");
+    const trustLib = await TrustLib.deploy();
+    await trustLib.waitForDeployment();
+    const FeatureKitLib = await ethers.getContractFactory("FeatureKitLib");
+    const fkLib = await FeatureKitLib.deploy();
+    await fkLib.waitForDeployment();
+    const MessagingLib = await ethers.getContractFactory("MessagingLib");
+    const msgLib = await MessagingLib.deploy();
+    await msgLib.waitForDeployment();
+    const EconomicProjectLib = await ethers.getContractFactory("EconomicProjectLib");
+    const projLib = await EconomicProjectLib.deploy();
+    await projLib.waitForDeployment();
+    const ServiceAgreementLib = await ethers.getContractFactory("ServiceAgreementLib");
+    const svcLib = await ServiceAgreementLib.deploy();
+    await svcLib.waitForDeployment();
+    const PaymentStreamLib = await ethers.getContractFactory("PaymentStreamLib");
+    const streamLib = await PaymentStreamLib.deploy();
+    await streamLib.waitForDeployment();
+    const TimelockLib = await ethers.getContractFactory("TimelockLib");
+    const tlLib = await TimelockLib.deploy();
+    await tlLib.waitForDeployment();
+    const DAO = await ethers.getContractFactory("Project_DAO", {
+      libraries: {
+        PKILib: await pkiLib.getAddress(),
+        TrustLib: await trustLib.getAddress(),
+        FeatureKitLib: await fkLib.getAddress(),
+        MessagingLib: await msgLib.getAddress(),
+        EconomicProjectLib: await projLib.getAddress(),
+        ServiceAgreementLib: await svcLib.getAddress(),
+        PaymentStreamLib: await streamLib.getAddress(),
+        TimelockLib: await tlLib.getAddress(),
+      },
+    });
+    const dao = await DAO.deploy();
+    await dao.waitForDeployment();
+    await expect(dao.initialize(ethers.ZeroAddress)).to.be.revertedWith(
       "Invalid treasury address."
     );
   });
 
-  it("non-owner cannot set treasury", async () => {
+  it("non-owner cannot queue treasury change", async () => {
     const { dao, alice, bob } = await deploy();
-    await expect(dao.connect(alice).setCybereumTreasury(bob.address)).to.be.revertedWith(
-      "Only the owner can call this function."
-    );
+    await expect(dao.connect(alice).queueSetTreasury(bob.address)).to.be.reverted;
   });
 });
 
@@ -1403,31 +1447,44 @@ describe("Role & Permission Management", () => {
 // ─── Access Control & Edge Cases ────────────────────────────────────────────
 
 describe("Access Control & Edge Cases", () => {
-  it("changeOwner works and old owner loses access", async () => {
+  it("changeOwner requires timelock and old owner loses access after execution", async () => {
     const { dao, owner, alice } = await deploy();
-    await dao.changeOwner(alice.address);
+    await dao.queueChangeOwner(alice.address);
+    // Not executed yet — owner hasn't changed
+    expect(await dao.owner()).to.equal(owner.address);
+    await time.increase(24 * 3600 + 1);
+    await dao.executeChangeOwner(alice.address);
     expect(await dao.owner()).to.equal(alice.address);
     // Old owner can no longer call onlyOwner functions
     await expect(
-      dao.setCybereumTreasury(owner.address)
+      dao.queueSetTreasury(owner.address)
     ).to.be.revertedWith("Only the owner can call this function.");
     // New owner can call onlyOwner functions
-    await dao.connect(alice).setCybereumTreasury(alice.address);
+    await dao.connect(alice).queueSetTreasury(alice.address);
+    await time.increase(24 * 3600 + 1);
+    await dao.connect(alice).executeSetTreasury(alice.address);
     expect(await dao.cybereumTreasury()).to.equal(alice.address);
   });
 
-  it("changeOwner reverts on zero address", async () => {
+  it("queueChangeOwner reverts on zero address", async () => {
     const { dao } = await deploy();
-    await expect(dao.changeOwner(ethers.ZeroAddress)).to.be.revertedWith(
+    await expect(dao.queueChangeOwner(ethers.ZeroAddress)).to.be.revertedWith(
       "Invalid new owner address."
     );
   });
 
-  it("changeOwner reverts on self-transfer", async () => {
+  it("queueChangeOwner reverts on self-transfer", async () => {
     const { dao, owner } = await deploy();
-    await expect(dao.changeOwner(owner.address)).to.be.revertedWith(
+    await expect(dao.queueChangeOwner(owner.address)).to.be.revertedWith(
       "Already the owner."
     );
+  });
+
+  it("executeChangeOwner reverts before timelock delay", async () => {
+    const { dao, alice } = await deploy();
+    await dao.queueChangeOwner(alice.address);
+    await expect(dao.executeChangeOwner(alice.address))
+      .to.be.revertedWith("Timelock: not ready yet.");
   });
 
   it("grantPrivilege works for a member", async () => {
@@ -3326,9 +3383,11 @@ describe("Event emissions for audit trail", () => {
     expect(dispute.resolved).to.be.true;
   });
 
-  it("changeOwner emits OwnerChanged", async () => {
+  it("executeChangeOwner emits OwnerChanged", async () => {
     const { dao, owner, alice } = await deploy();
-    await expect(dao.changeOwner(alice.address))
+    await dao.queueChangeOwner(alice.address);
+    await time.increase(24 * 3600 + 1);
+    await expect(dao.executeChangeOwner(alice.address))
       .to.emit(dao, "OwnerChanged")
       .withArgs(owner.address, alice.address);
   });
@@ -3432,19 +3491,19 @@ describe("depositTokenToEscrow input validation", () => {
 // ─── Production Readiness: whenNotPaused on owner config functions ────────────
 
 describe("Owner config functions respect whenNotPaused", () => {
-  it("setCybereumTreasury reverts when paused", async () => {
+  it("queueSetTreasury reverts when paused", async () => {
     const { dao, treasury } = await deploy();
     await dao.pauseContract();
     await expect(
-      dao.setCybereumTreasury(treasury.address)
+      dao.queueSetTreasury(treasury.address)
     ).to.be.revertedWith("Contract is paused.");
   });
 
-  it("setCybereumFeeConfig reverts when paused", async () => {
+  it("queueSetFeeConfig reverts when paused", async () => {
     const { dao } = await deploy();
     await dao.pauseContract();
     await expect(
-      dao.setCybereumFeeConfig(5, 1000000000000n)
+      dao.queueSetFeeConfig(5, 1000000000000n)
     ).to.be.revertedWith("Contract is paused.");
   });
 
@@ -3464,17 +3523,21 @@ describe("Owner config functions respect whenNotPaused", () => {
     ).to.be.revertedWith("Contract is paused.");
   });
 
-  it("setCybereumTreasury works when unpaused", async () => {
+  it("timelocked treasury change works when unpaused", async () => {
     const { dao, alice } = await deploy();
-    await dao.setCybereumTreasury(alice.address);
+    await dao.queueSetTreasury(alice.address);
+    await time.increase(24 * 3600 + 1);
+    await dao.executeSetTreasury(alice.address);
     expect(await dao.cybereumTreasury()).to.equal(alice.address);
   });
 
-  it("setCybereumFeeConfig works when unpaused after resume", async () => {
+  it("timelocked fee config change works after resume", async () => {
     const { dao } = await deploy();
     await dao.pauseContract();
     await dao.resumeContract();
-    await dao.setCybereumFeeConfig(3, 2000000000000n);
+    await dao.queueSetFeeConfig(3, 2000000000000n);
+    await time.increase(24 * 3600 + 1);
+    await dao.executeSetFeeConfig(3, 2000000000000n);
     expect(await dao.cybereumFeeBps()).to.equal(3n);
   });
 });
@@ -4133,40 +4196,40 @@ describe("Referral Rewards", () => {
     });
   });
 
-  describe("referral config", () => {
-    it("owner can update referral config", async () => {
+  describe("referral config (timelocked)", () => {
+    it("referral config change requires timelock", async () => {
       const { dao } = await deploy();
-      await dao.setReferralConfig(2000, 500);
+      await dao.queueSetReferralConfig(2000, 500);
+      await time.increase(24 * 3600 + 1);
+      await dao.executeSetReferralConfig(2000, 500);
       expect(await dao.referralRewardBps()).to.equal(2000n);
       expect(await dao.referralTier2Bps()).to.equal(500n);
     });
 
     it("reverts if tier-1 exceeds 25%", async () => {
       const { dao } = await deploy();
-      await expect(dao.setReferralConfig(2501, 300)).to.be.revertedWith(
+      await expect(dao.queueSetReferralConfig(2501, 300)).to.be.revertedWith(
         "Tier-1 reward cannot exceed 25% of fee."
       );
     });
 
     it("reverts if tier-2 exceeds 10%", async () => {
       const { dao } = await deploy();
-      await expect(dao.setReferralConfig(1000, 1001)).to.be.revertedWith(
+      await expect(dao.queueSetReferralConfig(1000, 1001)).to.be.revertedWith(
         "Tier-2 reward cannot exceed 10% of fee."
       );
     });
 
     it("reverts if combined exceeds 30%", async () => {
       const { dao } = await deploy();
-      await expect(dao.setReferralConfig(2500, 1000)).to.be.revertedWith(
+      await expect(dao.queueSetReferralConfig(2500, 1000)).to.be.revertedWith(
         "Combined rewards cannot exceed 30% of fee."
       );
     });
 
-    it("non-owner cannot update referral config", async () => {
+    it("non-owner cannot queue referral config change", async () => {
       const { dao, alice } = await deploy();
-      await expect(dao.connect(alice).setReferralConfig(1000, 300)).to.be.revertedWith(
-        "Only the owner can call this function."
-      );
+      await expect(dao.connect(alice).queueSetReferralConfig(1000, 300)).to.be.reverted;
     });
   });
 
@@ -5665,7 +5728,7 @@ describe("EIP-7825 deploy-gas guardrail", () => {
     const { dao } = await deploy();
     // deploy() already called initialize() inside the helper; a second
     // call must revert.
-    await expect(dao.initialize()).to.be.revertedWith("Already initialized.");
+    await expect(dao.initialize(ethers.ZeroAddress)).to.be.revertedWith("Already initialized.");
   });
 
   it("only the deployer / owner can call initialize()", async () => {
@@ -5710,11 +5773,11 @@ describe("EIP-7825 deploy-gas guardrail", () => {
     const dao = await DAO.connect(deployer).deploy();
     await dao.waitForDeployment();
     // Stranger cannot steal initialization.
-    await expect(dao.connect(stranger).initialize()).to.be.revertedWith(
+    await expect(dao.connect(stranger).initialize(deployer.address)).to.be.revertedWith(
       "Only the owner can initialize."
     );
     // Deployer can.
-    await dao.connect(deployer).initialize();
+    await dao.connect(deployer).initialize(deployer.address);
     expect(await dao.initialized()).to.be.true;
   });
 
@@ -5788,7 +5851,8 @@ describe("EIP-7825 deploy-gas guardrail", () => {
     const dao = await DAO.deploy();
     await dao.waitForDeployment();
     // Estimate the initialize() call on the deployed contract.
-    const initGas = await dao.initialize.estimateGas();
+    const [, , , , treasury] = await ethers.getSigners();
+    const initGas = await dao.initialize.estimateGas(treasury.address);
     process.stdout.write(
       `    Project_DAO initialize() gas: ${initGas.toString()}\n`
     );

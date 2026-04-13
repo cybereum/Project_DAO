@@ -340,9 +340,10 @@ contract Project_DAO {
      *         consumes ~15.2M gas, leaving no budget for the ~600K of
      *         cold SSTOREs the full bootstrap requires.
      */
-    function initialize() external {
+    function initialize(address _cybereumTreasury) external {
         require(!initialized, "Already initialized.");
         require(msg.sender == owner, "Only the owner can initialize.");
+        require(_cybereumTreasury != address(0), "Invalid treasury address.");
         initialized = true;
 
         // ── Member + admin setup ─────────────────────────────────────
@@ -350,7 +351,7 @@ contract Project_DAO {
         members[owner].votingPower = 100;
         memberAddresses.push(owner);
         memberCount = 1;
-        cybereumTreasury = owner;
+        cybereumTreasury = _cybereumTreasury;
 
         // ── Counter starting points (1-based IDs) ────────────────────
         currentProposalDisputeId     = 1;
@@ -532,22 +533,13 @@ contract Project_DAO {
     // --- Agent, Payments, and Asset Value Transfer ---
 
 
-    function setCybereumTreasury(address _treasury) public onlyOwner whenNotPaused {
-        require(_treasury != address(0), "Invalid treasury address.");
-        cybereumTreasury = _treasury;
-        emit CybereumTreasuryUpdated(_treasury);
-    }
-
-    function setCybereumFeeConfig(uint256 _feeBps, uint256 _assetTransferFlatFeeWei) public onlyOwner whenNotPaused {
-        require(_feeBps >= MIN_FEE_BPS, "Fee cannot be zero: mandatory Cybereum fee floor enforced.");
-        require(_feeBps <= 100, "Fee cannot exceed 1%.");
-        require(_assetTransferFlatFeeWei > 0, "Asset transfer fee must be non-zero.");
-        cybereumFeeBps = _feeBps;
-        assetTransferFlatFeeWei = _assetTransferFlatFeeWei;
-        emit CybereumFeeConfigUpdated(_feeBps, _assetTransferFlatFeeWei);
-    }
-
     // ─── Timelocked Configuration (queue → wait → execute) ──────────────
+    //
+    // Treasury and fee configuration can ONLY be changed through the
+    // timelock: queue → wait (≥24h default) → execute.  There is no
+    // instant setter — this is intentional.  It guarantees that any
+    // redirect of protocol revenue is publicly visible on-chain for
+    // the full delay period before it takes effect.
 
     /// @notice Queue a treasury change. Must wait timelock delay before executing.
     function queueSetTreasury(address _treasury) external onlyOwner whenNotPaused returns (bytes32) {
@@ -1125,7 +1117,20 @@ contract Project_DAO {
         emit PrivilegeGranted(_member, _privilege);
     }
 
-    function changeOwner(address _newOwner) public onlyOwner {
+    /// @notice Queue an ownership transfer. Must wait timelock delay before executing.
+    function queueChangeOwner(address _newOwner) external onlyOwner whenNotPaused returns (bytes32) {
+        require(_newOwner != address(0), "Invalid new owner address.");
+        require(_newOwner != owner, "Already the owner.");
+        bytes32 opId = keccak256(abi.encode("changeOwner", _newOwner));
+        _timelock.queue(opId);
+        return opId;
+    }
+
+    /// @notice Execute a previously queued ownership transfer after the delay.
+    function executeChangeOwner(address _newOwner) external onlyOwner whenNotPaused {
+        bytes32 opId = keccak256(abi.encode("changeOwner", _newOwner));
+        _timelock.assertReady(opId);
+        _timelock.markExecuted(opId);
         require(_newOwner != address(0), "Invalid new owner address.");
         require(_newOwner != owner, "Already the owner.");
         address previousOwner = owner;
@@ -2482,7 +2487,21 @@ contract Project_DAO {
     /// @notice Owner configures referral reward percentages.
     /// @param _tier1Bps Tier-1 reward (direct referrer) in bps of protocol fee. Max 2500.
     /// @param _tier2Bps Tier-2 reward (referrer's referrer) in bps of fee. Max 1000.
-    function setReferralConfig(uint256 _tier1Bps, uint256 _tier2Bps) external onlyOwner whenNotPaused {
+    /// @notice Queue a referral config change. Must wait timelock delay before executing.
+    function queueSetReferralConfig(uint256 _tier1Bps, uint256 _tier2Bps) external onlyOwner whenNotPaused returns (bytes32) {
+        require(_tier1Bps <= 2500, "Tier-1 reward cannot exceed 25% of fee.");
+        require(_tier2Bps <= 1000, "Tier-2 reward cannot exceed 10% of fee.");
+        require(_tier1Bps + _tier2Bps <= 3000, "Combined rewards cannot exceed 30% of fee.");
+        bytes32 opId = keccak256(abi.encode("setReferralConfig", _tier1Bps, _tier2Bps));
+        _timelock.queue(opId);
+        return opId;
+    }
+
+    /// @notice Execute a previously queued referral config change after the delay.
+    function executeSetReferralConfig(uint256 _tier1Bps, uint256 _tier2Bps) external onlyOwner whenNotPaused {
+        bytes32 opId = keccak256(abi.encode("setReferralConfig", _tier1Bps, _tier2Bps));
+        _timelock.assertReady(opId);
+        _timelock.markExecuted(opId);
         require(_tier1Bps <= 2500, "Tier-1 reward cannot exceed 25% of fee.");
         require(_tier2Bps <= 1000, "Tier-2 reward cannot exceed 10% of fee.");
         require(_tier1Bps + _tier2Bps <= 3000, "Combined rewards cannot exceed 30% of fee.");

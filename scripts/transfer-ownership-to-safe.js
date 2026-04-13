@@ -62,15 +62,18 @@ async function main() {
     if (answer.trim().toLowerCase() !== "yes") { console.log("Aborted."); return; }
   }
 
-  console.log("Transferring ownership...");
-  const tx = await dao.changeOwner(safeParsed);
-  await tx.wait();
-
-  const newOwner = await dao.owner();
-  if (newOwner !== safeParsed) {
-    throw new Error(`Verification failed: owner is ${newOwner}, expected ${safeParsed}`);
-  }
-  console.log("Ownership transferred successfully. New owner:", newOwner);
+  console.log("Queuing ownership transfer (24h timelock)...");
+  const queueTx = await dao.queueChangeOwner(safeParsed);
+  await queueTx.wait();
+  console.log("Ownership transfer queued. Must wait timelock delay before executing.");
+  console.log("After the delay, open a Hardhat console:");
+  console.log(`  npx hardhat console --network <network>`);
+  console.log("\nThen run:");
+  console.log(`  const libNames = ["PKILib", "TrustLib", "FeatureKitLib", "MessagingLib", "EconomicProjectLib", "ServiceAgreementLib", "PaymentStreamLib", "TimelockLib"];`);
+  console.log(`  const libraries = Object.fromEntries(libNames.map(n => [n, ethers.ZeroAddress]));`);
+  console.log(`  const Factory = await ethers.getContractFactory("Project_DAO", { libraries });`);
+  console.log(`  const dao = Factory.attach("${contractParsed}");`);
+  console.log(`  await dao.executeChangeOwner("${safeParsed}")`);
 }
 
 main()

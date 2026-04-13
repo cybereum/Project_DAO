@@ -21,7 +21,7 @@ const STEPS = [
   {
     step: '02', icon: Shield, title: 'Configure Cybereum fee rail',
     desc: 'Set the treasury to cybereum.eth resolved address. Fee floor is enforced at 1 bps — cannot be zeroed.',
-    code: 'await contract.setCybereumTreasury(\n  "0x<cybereum_eth_resolved_address>"\n);\n// Optional: tune fee (min 1 bps, max 100 bps)\nawait contract.setCybereumFeeConfig(5, 1e12);',
+    code: '// Treasury is set at deployment via initialize().\n// Changes require 24h timelock:\nawait contract.queueSetTreasury(newAddr);\n// ... wait 24 hours ...\nawait contract.executeSetTreasury(newAddr);',
   },
   {
     step: '03', icon: Code2, title: 'Integrate ABI in your app',

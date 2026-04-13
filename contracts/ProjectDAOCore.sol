@@ -53,9 +53,10 @@ contract ProjectDAOCore is ProjectDAOStorage {
     /// @notice One-time bootstrap. The Router constructor pre-sets owner
     ///         in proxy storage via assembly, so only the deployer can call this.
     ///         For direct deployment (tests), the constructor sets owner.
-    function initializeCore() external {
+    function initializeCore(address _cybereumTreasury) external {
         require(!initialized, "Already initialized.");
         require(msg.sender == owner, "Only the owner can initialize.");
+        require(_cybereumTreasury != address(0), "Invalid treasury address.");
         initialized = true;
         _reentrancyStatus = 1;
 
@@ -63,7 +64,7 @@ contract ProjectDAOCore is ProjectDAOStorage {
         members[owner].votingPower = 100;
         memberAddresses.push(owner);
         memberCount = 1;
-        cybereumTreasury = owner;
+        cybereumTreasury = _cybereumTreasury;
 
         currentAgentPaymentRequestId = 1;
 
@@ -89,21 +90,9 @@ contract ProjectDAOCore is ProjectDAOStorage {
     function resumeContract() public onlyOwner { _paused = false; emit ContractResumedEvent(msg.sender); }
 
     // ─── Fee Config ─────────────────────────────────────────────────────
-
-    function setCybereumTreasury(address _treasury) public onlyOwner whenNotPaused {
-        require(_treasury != address(0), "Invalid treasury address.");
-        cybereumTreasury = _treasury;
-        emit CybereumTreasuryUpdated(_treasury);
-    }
-
-    function setCybereumFeeConfig(uint256 _feeBps, uint256 _assetFlatFeeWei) public onlyOwner whenNotPaused {
-        require(_feeBps >= MIN_FEE_BPS, "Fee cannot be zero: mandatory Cybereum fee floor enforced.");
-        require(_feeBps <= 100, "Fee cannot exceed 1%.");
-        require(_assetFlatFeeWei > 0, "Asset transfer fee must be non-zero.");
-        cybereumFeeBps = _feeBps;
-        assetTransferFlatFeeWei = _assetFlatFeeWei;
-        emit CybereumFeeConfigUpdated(_feeBps, _assetFlatFeeWei);
-    }
+    //
+    // Treasury and fee configuration can ONLY be changed through the
+    // timelock (queueSetTreasury/executeSetTreasury). No instant setter.
 
     function setAIServiceFee(uint256 _feeWei) public onlyOwner whenNotPaused {
         aiServiceFeeWei = _feeWei;
@@ -404,8 +393,22 @@ contract ProjectDAOCore is ProjectDAOStorage {
         emit PrivilegeGranted(_member, _privilege);
     }
 
-    function changeOwner(address _newOwner) public onlyOwner {
+    /// @notice Queue an ownership transfer. Must wait timelock delay before executing.
+    function queueChangeOwner(address _newOwner) external onlyOwner whenNotPaused returns (bytes32) {
         require(_newOwner != address(0), "Invalid new owner address.");
+        require(_newOwner != owner, "Already the owner.");
+        bytes32 opId = keccak256(abi.encode("changeOwner", _newOwner));
+        _timelock.queue(opId);
+        return opId;
+    }
+
+    /// @notice Execute a previously queued ownership transfer after the delay.
+    function executeChangeOwner(address _newOwner) external onlyOwner whenNotPaused {
+        bytes32 opId = keccak256(abi.encode("changeOwner", _newOwner));
+        _timelock.assertReady(opId);
+        _timelock.markExecuted(opId);
+        require(_newOwner != address(0), "Invalid new owner address.");
+        require(_newOwner != owner, "Already the owner.");
         address old = owner;
         owner = _newOwner;
         emit OwnerChanged(old, _newOwner);

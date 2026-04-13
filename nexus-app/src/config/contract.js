@@ -6,7 +6,8 @@ export const PROJECT_DAO_ABI = [
   'function members(address) external view returns (address memberAddress, uint256 votingPower, bool isMember)',
   'function addMember(address _newMember, uint256 _votingPower) external',
   'function removeMember(address _member) external',
-  'function changeOwner(address _newOwner) external',
+  'function queueChangeOwner(address _newOwner) external returns (bytes32)',
+  'function executeChangeOwner(address _newOwner) external',
   'function pauseContract() external',
   'function resumeContract() external',
 
@@ -15,9 +16,11 @@ export const PROJECT_DAO_ABI = [
   'function getProposal(uint256 _proposalId) external view returns (tuple(uint256 id,string description,uint256 votingDeadline,bool executed,bool proposalPassed,uint256 yesVotes,uint256 noVotes,uint256 votePercentage))',
   'function getProposalCount() external view returns (uint256)',
 
-  // ─── Fee config (owner) ──────────────────────────────────────────────────
-  'function setCybereumTreasury(address _treasury) external',
-  'function setCybereumFeeConfig(uint256 _feeBps, uint256 _assetTransferFlatFeeWei) external',
+  // ─── Fee config (owner, timelocked) ──────────────────────────────────────
+  'function queueSetTreasury(address _treasury) external returns (bytes32)',
+  'function executeSetTreasury(address _treasury) external',
+  'function queueSetFeeConfig(uint256 _feeBps, uint256 _assetFlatFeeWei) external returns (bytes32)',
+  'function executeSetFeeConfig(uint256 _feeBps, uint256 _assetFlatFeeWei) external',
 
   // ─── Fee reads ───────────────────────────────────────────────────────────
   'function cybereumFeeBps() external view returns (uint256)',
@@ -205,7 +208,7 @@ export const PROJECT_DAO_ABI = [
   'event PaymentStreamCancelled(uint256 indexed streamId, address indexed cancelledBy, uint256 recipientAmount, uint256 payerRefund)',
 
   // ─── Lifecycle: deploy-time initialize() ──────────────────────────────
-  'function initialize() external',
+  'function initialize(address _cybereumTreasury) external',
   'function initialized() external view returns (bool)',
 
   // ─── PKI: Agent public key registry ───────────────────────────────────
