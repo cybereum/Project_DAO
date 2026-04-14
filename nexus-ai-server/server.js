@@ -20,14 +20,33 @@ import cors from 'cors';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { normaliseWalletAddress, secureKeyMatch } from './lib/security.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const FEEDBACK_STORE_PATH = path.join(__dirname, 'data', 'feedback-memory.json');
 
 const app = express();
-app.use(cors());
+const ALLOWED_ORIGINS = (process.env.NEXUS_AI_ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(cors({
+  origin(origin, cb) {
+    // No origin: allow CLI/server-to-server clients.
+    if (!origin) return cb(null, true);
+    if (ALLOWED_ORIGINS.length === 0) return cb(null, true); // dev-default: allow all
+    if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+    return cb(new Error('CORS blocked: origin not allowed.'));
+  },
+}));
 app.use(express.json({ limit: '1mb' }));
+
+// Optional proxy trust support for deployments behind load balancers.
+if (process.env.NEXUS_AI_TRUST_PROXY === 'true') {
+  app.set('trust proxy', true);
+}
 
 // Simple in-memory rate limiter
 const rateLimitMap = new Map();
@@ -60,19 +79,30 @@ setInterval(() => {
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('X-XSS-Protection', '0');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'; base-uri 'none'");
   next();
+});
+
+app.use((err, _req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    return res.status(400).json({ error: 'Invalid JSON body.' });
+  }
+  return next(err);
 });
 
 app.use('/api/', rateLimit);
 
 // API key authentication — permissive in dev (no key = no auth), enforced when env var is set
 const API_KEY = process.env.NEXUS_AI_API_KEY;
+const ALLOW_QUERY_API_KEY = process.env.NEXUS_AI_ALLOW_QUERY_API_KEY === 'true';
 
 function apiAuth(req, res, next) {
   if (!API_KEY) return next(); // Skip auth if no key configured (dev mode)
-  const provided = req.headers['x-api-key'] || req.query.apiKey;
-  if (provided !== API_KEY) {
+  const provided = req.headers['x-api-key'] || (ALLOW_QUERY_API_KEY ? req.query.apiKey : undefined);
+  if (!secureKeyMatch(provided, API_KEY)) {
     return res.status(401).json({ error: 'Invalid or missing API key.' });
   }
   next();
@@ -98,9 +128,9 @@ function checkFreeTier(key) {
 function recordUsage(key) {
   if (!key) return;
   const today = new Date().toISOString().slice(0, 10);
-  const entry = usageMap.get(walletAddress);
+  const entry = usageMap.get(key);
   if (!entry || entry.date !== today) {
-    usageMap.set(walletAddress, { date: today, count: 1 });
+    usageMap.set(key, { date: today, count: 1 });
   } else {
     entry.count++;
   }
@@ -520,7 +550,7 @@ app.post('/api/analyse', async (req, res) => {
   }
 
   // ── Usage metering ──
-  const walletAddress = (req.headers['x-wallet-address'] || '').toLowerCase().trim();
+  const walletAddress = normaliseWalletAddress(req.headers['x-wallet-address']);
   const paymentTxHash = (req.headers['x-payment-tx'] || '').trim();
   const usageKey = walletAddress || req.ip || req.connection.remoteAddress;
   const freeTier = checkFreeTier(usageKey);
@@ -679,7 +709,7 @@ app.get('/api/modes', (_req, res) => {
 // ─── /api/usage — check free tier remaining ──────────────────────────────
 
 app.get('/api/usage', (req, res) => {
-  const walletAddress = (req.headers['x-wallet-address'] || req.query.wallet || '').toLowerCase().trim();
+  const walletAddress = normaliseWalletAddress(req.headers['x-wallet-address'] || req.query.wallet);
   const usageKey = walletAddress || req.ip || req.connection.remoteAddress;
   const tier = checkFreeTier(usageKey);
   res.json({
